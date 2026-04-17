@@ -17,9 +17,10 @@ interface Props {
   active: string;
   onChange: (page: string) => void;
   dueCount: number;
+  onSignOut: () => void;
 }
 
-export default function Sidebar({ active, onChange, dueCount }: Props) {
+export default function Sidebar({ active, onChange, dueCount, onSignOut }: Props) {
   return (
     <>
       {/* Desktop sidebar */}
@@ -49,8 +50,15 @@ export default function Sidebar({ active, onChange, dueCount }: Props) {
             </button>
           ))}
         </nav>
-        <div className="mt-auto pt-4 border-t border-[#2d3148]">
+        <div className="mt-auto pt-4 border-t border-[#2d3148] space-y-2">
           <p className="text-xs text-[#6b7280] px-2">Bachelor Prüfungsvorbereitung</p>
+          <button
+            onClick={onSignOut}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-[#9ca3af] hover:bg-red-500/10 hover:text-red-400 border border-transparent transition-all"
+          >
+            <span className="text-base w-5 text-center">⏻</span>
+            <span>Abmelden</span>
+          </button>
         </div>
       </aside>
 

@@ -4,6 +4,7 @@ import { isDueToday } from './types/card';
 import { useCards } from './hooks/useCards';
 import { useSettings } from './hooks/useSettings';
 import { useToast } from './hooks/useToast';
+import { useAuth } from './hooks/useAuth';
 import { updateStreak, saveSettings, getSettings } from './utils/storage';
 import { calculateDailyPlan } from './utils/dailyGoal';
 
@@ -16,13 +17,25 @@ import CardEditor from './pages/CardEditor';
 import StudySession, { type DailyPlanSession } from './pages/StudySession';
 import ImportExport from './pages/ImportExport';
 import Settings from './pages/Settings';
+import AuthPage from './pages/AuthPage';
 
 type Page = 'dashboard' | 'library' | 'new-card' | 'edit-card' | 'study' | 'import-export' | 'settings';
 
 export default function App() {
+  const { user, loading: authLoading, signOut } = useAuth();
   const { cards, addCard, updateCard, removeCard, rateCard, importCards } = useCards();
   const { settings, updateSettings, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag } = useSettings();
   const { toasts, showToast, dismissToast } = useToast();
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
+        <div className="text-[#9ca3af] text-sm">Laden…</div>
+      </div>
+    );
+  }
+
+  if (!user) return <AuthPage />;
 
   const [page, setPage] = useState<Page>('dashboard');
   const [editingCard, setEditingCard] = useState<Flashcard | undefined>();
@@ -128,7 +141,7 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar active={page} onChange={navigate} dueCount={dueCount} />
+      <Sidebar active={page} onChange={navigate} dueCount={dueCount} onSignOut={signOut} />
 
       <main className="flex-1 min-w-0 overflow-y-auto pb-20 md:pb-0">
         {page === 'dashboard' && (

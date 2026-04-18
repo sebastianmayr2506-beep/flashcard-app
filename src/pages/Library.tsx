@@ -224,7 +224,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
         </div>
       )}
       {selectionMode && filtered.length > 0 && (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button
             onClick={allFilteredSelected ? clearSelection : selectAll}
             className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
@@ -233,6 +233,14 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
           </button>
           {selectedCount > 0 && (
             <span className="text-xs text-[#9ca3af]">{selectedCount} ausgewählt</span>
+          )}
+          {selectedCount > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              className="ml-auto text-sm font-semibold px-4 py-1.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-400 transition-colors"
+            >
+              🗑 {selectedCount} Karte{selectedCount !== 1 ? 'n' : ''} löschen
+            </button>
           )}
         </div>
       )}

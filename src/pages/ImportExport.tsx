@@ -55,9 +55,12 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
           // fall through to regular JSON import
         }
         imported = importFromJSON(text);
-        // Resolve parent_question links after import
+        onImport(imported, mergeMode);
+        showToast(`${imported.length} Karten erfolgreich importiert!`, 'success');
+        // Resolve parent_question links AFTER cards are saved
         const hints = extractParentLinks(text);
         if (hints.length > 0) onImportLinks(text, imported);
+        return;
       } else if (file.name.endsWith('.csv')) {
         imported = importFromCSV(text);
       } else {

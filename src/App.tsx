@@ -200,11 +200,12 @@ export default function App() {
   const handleImportLinks = useCallback((jsonText: string, importedCards: typeof cards) => {
     const hints = extractParentLinks(jsonText);
     if (hints.length === 0) return;
+    // getCards() reads from localStorage — called after onImport so new cards are already saved
     const allKnownCards = [...getCards()];
     hints.forEach(({ childFront, parentFront }) => {
       const child = importedCards.find(c => c.front === childFront) ?? allKnownCards.find(c => c.front === childFront);
-      const parent = allKnownCards.find(c => c.front === parentFront);
-      if (child && parent) addLink(child.id, parent.id, 'child');
+      const parent = importedCards.find(c => c.front === parentFront) ?? allKnownCards.find(c => c.front === parentFront);
+      if (child && parent && child.id !== parent.id) addLink(child.id, parent.id, 'child');
     });
   }, [addLink]);
 

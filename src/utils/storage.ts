@@ -241,7 +241,12 @@ const defaultSettings: AppSettings = {
   autoUnflagEnabled: true,
 };
 
-const OLD_PLACEHOLDER_EXAMINERS = new Set(['Prof. Müller', 'Prof. Schmidt', 'Prof. Weber', 'Prof. Fischer']);
+const OLD_PLACEHOLDER_EXAMINERS = new Set([
+  'Prof. Müller', 'Prof. Schmidt', 'Prof. Weber', 'Prof. Fischer',
+  'Ulm', 'Hermann', 'Miksche', 'Raschke', 'Jaklin', 'Batka', 'Schieber',
+  'Güttel', 'Bolzer/Hollaus', 'Gneisz-Al-Ani', 'Rainsberger', 'Rotter',
+  'Rührig', 'Winter', 'Kessler', 'Wrbka',
+]);
 const OLD_PLACEHOLDER_SUBJECTS = new Set(['Mathematik', 'BWL', 'Informatik', 'Statistik', 'Wirtschaftsrecht', 'Marketing', 'Rechnungswesen', 'VWL', 'Englisch']);
 
 export function getSettings(): AppSettings {

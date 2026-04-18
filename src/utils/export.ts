@@ -1,4 +1,4 @@
-import type { Flashcard } from '../types/card';
+import type { Flashcard, CardSet } from '../types/card';
 
 export function exportJSON(cards: Flashcard[]): void {
   const json = JSON.stringify(cards, null, 2);
@@ -6,6 +6,23 @@ export function exportJSON(cards: Flashcard[]): void {
 }
 
 export function exportCSV(cards: Flashcard[]): void {
+  const csv = buildCSV(cards);
+  downloadFile('\uFEFF' + csv, 'karteikarten_export.csv', 'text/csv;charset=utf-8');
+}
+
+export function exportSetJSON(set: CardSet, cards: Flashcard[]): void {
+  const payload = { set, cards };
+  const filename = `set_${set.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.json`;
+  downloadFile(JSON.stringify(payload, null, 2), filename, 'application/json');
+}
+
+export function exportSetCSV(set: CardSet, cards: Flashcard[]): void {
+  const csv = buildCSV(cards);
+  const filename = `set_${set.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.csv`;
+  downloadFile('\uFEFF' + csv, filename, 'text/csv;charset=utf-8');
+}
+
+function buildCSV(cards: Flashcard[]): string {
   const headers = ['front_text', 'back_text', 'subjects', 'examiners', 'difficulty', 'customTags'];
   const rows = cards.map(card => [
     escapeCsv(card.front),
@@ -15,8 +32,7 @@ export function exportCSV(cards: Flashcard[]): void {
     escapeCsv(card.difficulty),
     escapeCsv(card.customTags.join(';')),
   ]);
-  const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-  downloadFile('\uFEFF' + csv, 'karteikarten_export.csv', 'text/csv;charset=utf-8');
+  return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
 }
 
 function escapeCsv(value: string): string {

@@ -1,0 +1,80 @@
+import { supabase } from '../lib/supabase';
+import type { CardSet, Flashcard } from '../types/card';
+
+export interface SharedSetPayload {
+  set: {
+    name: string;
+    description?: string;
+    subject?: string;
+    examiner?: string;
+    color: string;
+  };
+  cards: Array<{
+    front: string;
+    back: string;
+    frontImage?: Flashcard['frontImage'];
+    backImage?: Flashcard['backImage'];
+    subjects: string[];
+    examiners: string[];
+    difficulty: Flashcard['difficulty'];
+    customTags: string[];
+  }>;
+}
+
+function generateCode(): string {
+  // Unambiguous characters (no O/0, I/1/l)
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 8; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return code;
+}
+
+export async function createShareCode(
+  set: CardSet,
+  cards: Flashcard[],
+  userId: string
+): Promise<string> {
+  const setCards = cards.filter(c => c.setId === set.id);
+  const payload: SharedSetPayload = {
+    set: {
+      name: set.name,
+      description: set.description,
+      subject: set.subject,
+      examiner: set.examiner,
+      color: set.color,
+    },
+    cards: setCards.map(c => ({
+      front: c.front,
+      back: c.back,
+      frontImage: c.frontImage,
+      backImage: c.backImage,
+      subjects: c.subjects,
+      examiners: c.examiners,
+      difficulty: c.difficulty,
+      customTags: c.customTags,
+    })),
+  };
+
+  const code = generateCode();
+  const { error } = await supabase.from('shared_sets').insert({
+    share_code: code,
+    created_by: userId,
+    set_data: payload,
+  });
+
+  if (error) throw new Error(error.message);
+  return code;
+}
+
+export async function importByShareCode(code: string): Promise<SharedSetPayload> {
+  const { data, error } = await supabase
+    .from('shared_sets')
+    .select('set_data')
+    .eq('share_code', code.toUpperCase().trim())
+    .single();
+
+  if (error || !data) throw new Error('Ungültiger Code oder Set nicht gefunden');
+  return data.set_data as SharedSetPayload;
+}

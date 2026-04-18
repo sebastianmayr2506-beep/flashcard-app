@@ -7,6 +7,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { id: 'dashboard',   icon: '⬡', label: 'Dashboard' },
   { id: 'library',     icon: '⊞', label: 'Bibliothek' },
+  { id: 'sets',        icon: '📂', label: 'Meine Sets' },
   { id: 'new-card',    icon: '+', label: 'Neue Karte' },
   { id: 'study',       icon: '▶', label: 'Lernen' },
   { id: 'import-export', icon: '⇅', label: 'Import / Export' },
@@ -22,6 +23,8 @@ interface Props {
 }
 
 export default function Sidebar({ active, onChange, dueCount, onSignOut, userEmail }: Props) {
+  // set-detail is a sub-page of sets — highlight sets nav item
+  const effectiveActive = active === 'set-detail' ? 'sets' : active;
   return (
     <>
       {/* Desktop sidebar */}
@@ -36,7 +39,7 @@ export default function Sidebar({ active, onChange, dueCount, onSignOut, userEma
               key={item.id}
               onClick={() => onChange(item.id)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 relative group
-                ${active === item.id
+                ${effectiveActive === item.id
                   ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
                   : 'text-[#9ca3af] hover:bg-[#252840] hover:text-white border border-transparent'
                 }`}
@@ -79,7 +82,7 @@ export default function Sidebar({ active, onChange, dueCount, onSignOut, userEma
             key={item.id}
             onClick={() => onChange(item.id)}
             className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 relative
-              ${active === item.id ? 'text-indigo-400' : 'text-[#6b7280]'}`}
+              ${effectiveActive === item.id ? 'text-indigo-400' : 'text-[#6b7280]'}`}
           >
             <span className="text-lg leading-none">{item.icon}</span>
             <span className="text-[9px] font-medium">{item.label.split(' ')[0]}</span>

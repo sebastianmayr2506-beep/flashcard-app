@@ -1,12 +1,14 @@
 import { useState, useCallback } from 'react';
-import type { Flashcard, RatingValue } from './types/card';
+import type { Flashcard, RatingValue, CardSet } from './types/card';
 import { isDueToday } from './types/card';
 import { useCards } from './hooks/useCards';
 import { useSettings } from './hooks/useSettings';
+import { useSets } from './hooks/useSets';
 import { useToast } from './hooks/useToast';
 import { useAuth } from './hooks/useAuth';
-import { updateStreak, saveSettings, getSettings } from './utils/storage';
+import { updateStreak, saveSettings, getSettings, saveAllCards, getCards } from './utils/storage';
 import { calculateDailyPlan } from './utils/dailyGoal';
+import { v4 as uuidv4 } from 'uuid';
 
 import Sidebar from './components/Sidebar';
 import ToastContainer from './components/ToastContainer';
@@ -18,18 +20,22 @@ import StudySession, { type DailyPlanSession } from './pages/StudySession';
 import ImportExport from './pages/ImportExport';
 import Settings from './pages/Settings';
 import AuthPage from './pages/AuthPage';
+import SetsPage from './pages/SetsPage';
+import SetDetail from './pages/SetDetail';
 
-type Page = 'dashboard' | 'library' | 'new-card' | 'edit-card' | 'study' | 'import-export' | 'settings';
+type Page = 'dashboard' | 'library' | 'new-card' | 'edit-card' | 'study' | 'import-export' | 'settings' | 'sets' | 'set-detail';
 
 export default function App() {
   // All hooks must be called unconditionally before any early returns
   const { user, loading: authLoading, signOut } = useAuth();
-  const { cards, addCard, updateCard, removeCard, rateCard, importCards } = useCards();
+  const { cards, addCard, updateCard, removeCard, rateCard, importCards, refresh: refreshCards } = useCards();
   const { settings, updateSettings, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag } = useSettings();
+  const { sets, addSet, updateSet, removeSet } = useSets();
   const { toasts, showToast, dismissToast } = useToast();
 
   const [page, setPage] = useState<Page>('dashboard');
   const [editingCard, setEditingCard] = useState<Flashcard | undefined>();
+  const [viewingSet, setViewingSet] = useState<CardSet | undefined>();
   const [studyFilteredCards, setStudyFilteredCards] = useState<Flashcard[] | null>(null);
   const [activeDailyPlan, setActiveDailyPlan] = useState<DailyPlanSession | null>(null);
 
@@ -38,6 +44,7 @@ export default function App() {
   const navigate = useCallback((target: string) => {
     if (target !== 'edit-card') setEditingCard(undefined);
     if (target !== 'study') { setStudyFilteredCards(null); setActiveDailyPlan(null); }
+    if (target !== 'set-detail') setViewingSet(undefined);
     setPage(target as Page);
   }, []);
 
@@ -110,6 +117,31 @@ export default function App() {
     rateCard(id, rating, settings.examDate);
   }, [rateCard, settings.examDate]);
 
+  const handleViewSet = useCallback((set: CardSet) => {
+    setViewingSet(set);
+    setPage('set-detail');
+  }, []);
+
+  // Import a full set + its cards (from share code or set-JSON file)
+  const handleImportSet = useCallback((
+    setData: Omit<CardSet, 'id' | 'createdAt' | 'updatedAt' | 'userId'>,
+    newCards: Flashcard[],
+    userId: string
+  ) => {
+    const newSet = addSet(setData, userId);
+    // Assign the fresh setId to all imported cards, then add them
+    const tagged = newCards.map(c => ({
+      ...c,
+      id: c.id || uuidv4(),
+      setId: newSet.id,
+    }));
+    const existing = getCards();
+    const existingIds = new Set(existing.map(c => c.id));
+    const toAdd = tagged.filter(c => !existingIds.has(c.id));
+    saveAllCards([...existing, ...toAdd]);
+    refreshCards();
+  }, [addSet, refreshCards]);
+
   // Early returns after all hooks
   if (authLoading) {
     return (
@@ -127,6 +159,7 @@ export default function App() {
         <StudySession
           cards={cards}
           settings={settings}
+          sets={sets}
           preFilteredCards={studyFilteredCards}
           dailyPlan={activeDailyPlan}
           onRate={handleRate}
@@ -155,6 +188,7 @@ export default function App() {
           <Library
             cards={cards}
             settings={settings}
+            sets={sets}
             onEdit={handleEditCard}
             onDelete={handleDeleteCard}
             onStudyFiltered={handleStudyFiltered}
@@ -165,14 +199,43 @@ export default function App() {
           <CardEditor
             card={editingCard}
             settings={settings}
+            sets={sets}
             onSave={handleSaveCard}
             onCancel={() => navigate('library')}
+          />
+        )}
+        {page === 'sets' && (
+          <SetsPage
+            sets={sets}
+            cards={cards}
+            settings={settings}
+            userId={user.id}
+            onAddSet={addSet}
+            onUpdateSet={updateSet}
+            onDeleteSet={removeSet}
+            onViewSet={handleViewSet}
+            onStudySet={handleStudyFiltered}
+          />
+        )}
+        {page === 'set-detail' && viewingSet && (
+          <SetDetail
+            set={viewingSet}
+            cards={cards}
+            userId={user.id}
+            onBack={() => navigate('sets')}
+            onEdit={handleEditCard}
+            onDelete={handleDeleteCard}
+            onStudy={handleStudyFiltered}
+            showToast={showToast}
           />
         )}
         {page === 'import-export' && (
           <ImportExport
             cards={cards}
+            sets={sets}
+            userId={user.id}
             onImport={importCards}
+            onImportSet={handleImportSet}
             showToast={showToast}
           />
         )}

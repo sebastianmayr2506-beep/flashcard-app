@@ -7,6 +7,24 @@ export interface CardImage {
   mimeType?: string;
 }
 
+export interface CardSet {
+  id: string;
+  userId: string;
+  name: string;
+  description?: string;
+  subject?: string;
+  examiner?: string;
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const SET_COLORS = [
+  '#6366f1', '#8b5cf6', '#ec4899', '#ef4444',
+  '#f59e0b', '#22c55e', '#14b8a6', '#3b82f6',
+  '#f97316', '#a855f7', '#06b6d4', '#84cc16',
+];
+
 export interface Flashcard {
   id: string;
   front: string;
@@ -17,6 +35,7 @@ export interface Flashcard {
   examiners: string[];
   difficulty: Difficulty;
   customTags: string[];
+  setId?: string;
   createdAt: string; // ISO date string
   updatedAt: string; // ISO date string
   // SM-2 SRS fields

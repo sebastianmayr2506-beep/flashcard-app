@@ -1,19 +1,25 @@
 import { useRef, useState } from 'react';
-import type { Flashcard } from '../types/card';
+import type { Flashcard, CardSet } from '../types/card';
 import { exportJSON, exportCSV } from '../utils/export';
 import { importFromJSON, importFromCSV } from '../utils/import';
+import { importByShareCode } from '../utils/shareCode';
 
 interface Props {
   cards: Flashcard[];
+  sets: CardSet[];
+  userId: string;
   onImport: (cards: Flashcard[], merge: boolean) => void;
+  onImportSet: (set: Omit<CardSet, 'id' | 'createdAt' | 'updatedAt' | 'userId'>, cards: Flashcard[], userId: string) => void;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-export default function ImportExport({ cards, onImport, showToast }: Props) {
+export default function ImportExport({ cards, sets, userId, onImport, onImportSet, showToast }: Props) {
   const jsonRef = useRef<HTMLInputElement>(null);
   const csvRef = useRef<HTMLInputElement>(null);
   const [mergeMode, setMergeMode] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
+  const [shareCodeInput, setShareCodeInput] = useState('');
+  const [shareLoading, setShareLoading] = useState(false);
 
   const handleExportJSON = () => {
     exportJSON(cards);
@@ -30,6 +36,23 @@ export default function ImportExport({ cards, onImport, showToast }: Props) {
       const text = await file.text();
       let imported: Flashcard[];
       if (file.name.endsWith('.json')) {
+        // Check if it's a set export (has { set, cards } shape)
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed && typeof parsed === 'object' && 'set' in parsed && 'cards' in parsed) {
+            const setData = parsed.set as CardSet;
+            const setCards = parsed.cards as Flashcard[];
+            onImportSet(
+              { name: setData.name, description: setData.description, subject: setData.subject, examiner: setData.examiner, color: setData.color ?? '#6366f1' },
+              setCards,
+              userId
+            );
+            showToast(`Set "${setData.name}" mit ${setCards.length} Karten importiert!`, 'success');
+            return;
+          }
+        } catch {
+          // fall through to regular JSON import
+        }
         imported = importFromJSON(text);
       } else if (file.name.endsWith('.csv')) {
         imported = importFromCSV(text);
@@ -55,6 +78,32 @@ export default function ImportExport({ cards, onImport, showToast }: Props) {
     setIsDragging(false);
     const file = e.dataTransfer.files[0];
     if (file) processFile(file);
+  };
+
+  const handleShareImport = async () => {
+    const code = shareCodeInput.trim();
+    if (!code) return;
+    setShareLoading(true);
+    try {
+      const payload = await importByShareCode(code);
+      const freshCards: Flashcard[] = payload.cards.map(c => ({
+        ...c,
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        interval: 0,
+        repetitions: 0,
+        easeFactor: 2.5,
+        nextReviewDate: new Date().toISOString(),
+      }));
+      onImportSet(payload.set, freshCards, userId);
+      showToast(`Set "${payload.set.name}" mit ${freshCards.length} Karten importiert!`, 'success');
+      setShareCodeInput('');
+    } catch (err) {
+      showToast(`Import fehlgeschlagen: ${(err as Error).message}`, 'error');
+    } finally {
+      setShareLoading(false);
+    }
   };
 
   return (
@@ -85,11 +134,40 @@ export default function ImportExport({ cards, onImport, showToast }: Props) {
             disabled={cards.length === 0}
           />
         </div>
+        {sets.length > 0 && (
+          <p className="text-xs text-[#6b7280]">
+            Sets einzeln exportieren: Sets-Seite → Set öffnen → Exportieren
+          </p>
+        )}
+      </div>
+
+      {/* Share code import */}
+      <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-4">
+        <h3 className="font-semibold text-white">Set per Code importieren</h3>
+        <p className="text-sm text-[#9ca3af]">Gib den 8-stelligen Code ein um ein geteiltes Set zu importieren.</p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={shareCodeInput}
+            onChange={e => setShareCodeInput(e.target.value.toUpperCase())}
+            onKeyDown={e => e.key === 'Enter' && handleShareImport()}
+            placeholder="z.B. AB3K7PQX"
+            maxLength={8}
+            className="flex-1 font-mono text-base bg-[#252840] border border-[#2d3148] rounded-xl px-4 py-2.5 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none tracking-widest"
+          />
+          <button
+            onClick={handleShareImport}
+            disabled={shareCodeInput.trim().length < 4 || shareLoading}
+            className="px-5 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-sm transition-colors"
+          >
+            {shareLoading ? '⟳' : 'Importieren'}
+          </button>
+        </div>
       </div>
 
       {/* Import */}
       <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-4">
-        <h3 className="font-semibold text-white">Import</h3>
+        <h3 className="font-semibold text-white">Datei importieren</h3>
 
         <label className="flex items-center gap-3 cursor-pointer">
           <div
@@ -113,7 +191,7 @@ export default function ImportExport({ cards, onImport, showToast }: Props) {
         >
           <p className="text-3xl mb-3">📂</p>
           <p className="text-sm font-medium text-white">Datei hier ablegen</p>
-          <p className="text-xs text-[#9ca3af] mt-1 mb-4">JSON oder CSV</p>
+          <p className="text-xs text-[#9ca3af] mt-1 mb-4">JSON oder CSV · Set-JSON wird automatisch erkannt</p>
           <div className="flex gap-3 justify-center">
             <button
               onClick={() => jsonRef.current?.click()}

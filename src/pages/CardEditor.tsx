@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import type { Flashcard, Difficulty, AppSettings, CardImage } from '../types/card';
+import type { Flashcard, Difficulty, AppSettings, CardImage, CardSet } from '../types/card';
 import ImageInput from '../components/ImageInput';
 
 interface Props {
   card?: Flashcard;
   settings: AppSettings;
+  sets: CardSet[];
   onSave: (data: Omit<Flashcard, 'id' | 'createdAt' | 'updatedAt' | 'interval' | 'repetitions' | 'easeFactor' | 'nextReviewDate'>) => void;
   onCancel: () => void;
 }
@@ -15,7 +16,7 @@ const DIFFICULTIES: { value: Difficulty; label: string }[] = [
   { value: 'schwer',  label: 'Schwer' },
 ];
 
-export default function CardEditor({ card, settings, onSave, onCancel }: Props) {
+export default function CardEditor({ card, settings, sets, onSave, onCancel }: Props) {
   const [front, setFront] = useState(card?.front ?? '');
   const [back, setBack] = useState(card?.back ?? '');
   const [frontImage, setFrontImage] = useState<CardImage | undefined>(card?.frontImage);
@@ -24,6 +25,7 @@ export default function CardEditor({ card, settings, onSave, onCancel }: Props) 
   const [examiners, setExaminers] = useState<string[]>(card?.examiners ?? []);
   const [difficulty, setDifficulty] = useState<Difficulty>(card?.difficulty ?? 'mittel');
   const [tagsInput, setTagsInput] = useState(card?.customTags.join(', ') ?? '');
+  const [selectedSetId, setSelectedSetId] = useState<string>(card?.setId ?? '');
   const [errors, setErrors] = useState<string[]>([]);
 
   useEffect(() => {
@@ -33,6 +35,7 @@ export default function CardEditor({ card, settings, onSave, onCancel }: Props) 
       setSubjects(card.subjects ?? []); setExaminers(card.examiners ?? []);
       setDifficulty(card.difficulty);
       setTagsInput(card.customTags.join(', '));
+      setSelectedSetId(card.setId ?? '');
     }
   }, [card]);
 
@@ -49,8 +52,15 @@ export default function CardEditor({ card, settings, onSave, onCancel }: Props) 
     const errs = validate();
     if (errs.length > 0) { setErrors(errs); return; }
     const customTags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
-    onSave({ front: front.trim(), back: back.trim(), frontImage, backImage, subjects, examiners, difficulty, customTags });
+    onSave({
+      front: front.trim(), back: back.trim(),
+      frontImage, backImage,
+      subjects, examiners, difficulty, customTags,
+      setId: selectedSetId || undefined,
+    });
   };
+
+  const selectedSet = sets.find(s => s.id === selectedSetId);
 
   return (
     <div className="p-4 md:p-6 lg:p-8 fade-in">
@@ -195,6 +205,24 @@ export default function CardEditor({ card, settings, onSave, onCancel }: Props) 
                 </div>
               )}
             </div>
+            {sets.length > 0 && (
+              <div>
+                <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-1.5">Set / Ordner</label>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selectedSetId}
+                    onChange={e => setSelectedSetId(e.target.value)}
+                    className="flex-1 text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="">Kein Set</option>
+                    {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                  {selectedSet && (
+                    <div className="w-5 h-5 rounded-full shrink-0" style={{ backgroundColor: selectedSet.color }} />
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex gap-3">

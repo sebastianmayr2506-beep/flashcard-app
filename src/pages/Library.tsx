@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import type { Flashcard, AppSettings, Difficulty, SRSStatus } from '../types/card';
+import type { Flashcard, AppSettings, Difficulty, SRSStatus, CardSet } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
 import DifficultyBadge from '../components/DifficultyBadge';
 import SRSBadge from '../components/SRSBadge';
@@ -8,6 +8,7 @@ import MarkdownText from '../components/MarkdownText';
 interface Props {
   cards: Flashcard[];
   settings: AppSettings;
+  sets: CardSet[];
   onEdit: (card: Flashcard) => void;
   onDelete: (id: string) => void;
   onStudyFiltered: (cards: Flashcard[]) => void;
@@ -16,13 +17,14 @@ interface Props {
 
 type ViewMode = 'grid' | 'list';
 
-export default function Library({ cards, settings, onEdit, onDelete, onStudyFiltered, onNavigate }: Props) {
+export default function Library({ cards, settings, sets, onEdit, onDelete, onStudyFiltered, onNavigate }: Props) {
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminer, setFilterExaminer] = useState('');
   const [filterDifficulty, setFilterDifficulty] = useState<Difficulty | ''>('');
   const [filterTag, setFilterTag] = useState('');
   const [filterSRS, setFilterSRS] = useState<SRSStatus | ''>('');
+  const [filterSet, setFilterSet] = useState('');
   const [filterDue, setFilterDue] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
 
@@ -41,16 +43,18 @@ export default function Library({ cards, settings, onEdit, onDelete, onStudyFilt
       if (filterDifficulty && c.difficulty !== filterDifficulty) return false;
       if (filterTag && !c.customTags.includes(filterTag)) return false;
       if (filterSRS && getSRSStatus(c) !== filterSRS) return false;
+      if (filterSet && c.setId !== filterSet) return false;
       if (filterDue && !isDueToday(c)) return false;
       return true;
     });
-  }, [cards, search, filterSubject, filterExaminer, filterDifficulty, filterTag, filterSRS, filterDue]);
+  }, [cards, search, filterSubject, filterExaminer, filterDifficulty, filterTag, filterSRS, filterSet, filterDue]);
 
-  const hasFilters = search || filterSubject || filterExaminer || filterDifficulty || filterTag || filterSRS || filterDue;
+  const hasFilters = search || filterSubject || filterExaminer || filterDifficulty || filterTag || filterSRS || filterSet || filterDue;
 
   const clearFilters = () => {
     setSearch(''); setFilterSubject(''); setFilterExaminer('');
-    setFilterDifficulty(''); setFilterTag(''); setFilterSRS(''); setFilterDue(false);
+    setFilterDifficulty(''); setFilterTag(''); setFilterSRS('');
+    setFilterSet(''); setFilterDue(false);
   };
 
   return (
@@ -94,6 +98,16 @@ export default function Library({ cards, settings, onEdit, onDelete, onStudyFilt
           <Select value={filterSRS} onChange={v => setFilterSRS(v as SRSStatus | '')} placeholder="SRS-Status"
             options={['neu','lernend','wiederholen','beherrscht']}
           />
+          {sets.length > 0 && (
+            <select
+              value={filterSet}
+              onChange={e => setFilterSet(e.target.value)}
+              className="text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none appearance-none cursor-pointer"
+            >
+              <option value="">Set</option>
+              {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
           <button
             onClick={() => setFilterDue(!filterDue)}
             className={`px-3 py-2 rounded-xl text-sm border transition-colors ${filterDue
@@ -133,13 +147,13 @@ export default function Library({ cards, settings, onEdit, onDelete, onStudyFilt
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(card => (
-            <CardGridItem key={card.id} card={card} onEdit={onEdit} onDelete={onDelete} />
+            <CardGridItem key={card.id} card={card} sets={sets} onEdit={onEdit} onDelete={onDelete} />
           ))}
         </div>
       ) : (
         <div className="flex flex-col gap-2">
           {filtered.map(card => (
-            <CardListItem key={card.id} card={card} onEdit={onEdit} onDelete={onDelete} />
+            <CardListItem key={card.id} card={card} sets={sets} onEdit={onEdit} onDelete={onDelete} />
           ))}
         </div>
       )}
@@ -162,7 +176,21 @@ function Select({ value, onChange, placeholder, options }: {
   );
 }
 
-function CardGridItem({ card, onEdit, onDelete }: { card: Flashcard; onEdit: (c: Flashcard) => void; onDelete: (id: string) => void }) {
+function SetDot({ setId, sets }: { setId?: string; sets: CardSet[] }) {
+  if (!setId) return null;
+  const set = sets.find(s => s.id === setId);
+  if (!set) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border"
+      style={{ backgroundColor: set.color + '22', borderColor: set.color + '55', color: set.color }}
+    >
+      📂 {set.name}
+    </span>
+  );
+}
+
+function CardGridItem({ card, sets, onEdit, onDelete }: { card: Flashcard; sets: CardSet[]; onEdit: (c: Flashcard) => void; onDelete: (id: string) => void }) {
   const status = getSRSStatus(card);
   const due = isDueToday(card);
 
@@ -184,6 +212,7 @@ function CardGridItem({ card, onEdit, onDelete }: { card: Flashcard; onEdit: (c:
         <DifficultyBadge difficulty={card.difficulty} />
         <SRSBadge status={status} />
         {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
+        <SetDot setId={card.setId} sets={sets} />
       </div>
       {card.customTags.length > 0 && (
         <div className="flex gap-1 flex-wrap">
@@ -211,7 +240,7 @@ function CardGridItem({ card, onEdit, onDelete }: { card: Flashcard; onEdit: (c:
   );
 }
 
-function CardListItem({ card, onEdit, onDelete }: { card: Flashcard; onEdit: (c: Flashcard) => void; onDelete: (id: string) => void }) {
+function CardListItem({ card, sets, onEdit, onDelete }: { card: Flashcard; sets: CardSet[]; onEdit: (c: Flashcard) => void; onDelete: (id: string) => void }) {
   const status = getSRSStatus(card);
   const due = isDueToday(card);
   return (
@@ -227,6 +256,7 @@ function CardListItem({ card, onEdit, onDelete }: { card: Flashcard; onEdit: (c:
         <DifficultyBadge difficulty={card.difficulty} />
         <SRSBadge status={status} />
         {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
+        <SetDot setId={card.setId} sets={sets} />
       </div>
       <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
         <button onClick={() => onEdit(card)} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] transition-colors">Bearbeiten</button>

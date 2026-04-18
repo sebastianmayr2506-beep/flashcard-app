@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { Flashcard, AppSettings, RatingValue } from '../types/card';
+import type { Flashcard, AppSettings, RatingValue, CardSet } from '../types/card';
 import { isDueToday, STUDY_RATINGS } from '../types/card';
 import DifficultyBadge from '../components/DifficultyBadge';
 import MarkdownText from '../components/MarkdownText';
@@ -13,6 +13,7 @@ export interface DailyPlanSession {
 interface Props {
   cards: Flashcard[];
   settings: AppSettings;
+  sets: CardSet[];
   preFilteredCards?: Flashcard[] | null;
   dailyPlan?: DailyPlanSession | null;
   onRate: (id: string, rating: RatingValue) => void;
@@ -26,7 +27,7 @@ interface RatingCount {
   nochmal: number; schwer: number; gut: number; einfach: number;
 }
 
-export default function StudySession({ cards, settings, preFilteredCards, dailyPlan, onRate, onSessionComplete, onNavigate }: Props) {
+export default function StudySession({ cards, settings, sets, preFilteredCards, dailyPlan, onRate, onSessionComplete, onNavigate }: Props) {
   const isDailyMode = !!dailyPlan;
   const [sessionState, setSessionState] = useState<SessionState>(
     (preFilteredCards || dailyPlan) ? 'studying' : 'setup'
@@ -34,6 +35,7 @@ export default function StudySession({ cards, settings, preFilteredCards, dailyP
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminer, setFilterExaminer] = useState('');
   const [filterDifficulty, setFilterDifficulty] = useState('');
+  const [filterSet, setFilterSet] = useState('');
   const [onlyDue, setOnlyDue] = useState(true);
   const [sessionCards, setSessionCards] = useState<Flashcard[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -48,10 +50,11 @@ export default function StudySession({ cards, settings, preFilteredCards, dailyP
       if (filterSubject) result = result.filter(c => c.subjects?.includes(filterSubject));
       if (filterExaminer) result = result.filter(c => c.examiners?.includes(filterExaminer));
       if (filterDifficulty) result = result.filter(c => c.difficulty === filterDifficulty);
+      if (filterSet) result = result.filter(c => c.setId === filterSet);
       if (onlyDue) result = result.filter(isDueToday);
     }
     return result;
-  }, [cards, preFilteredCards, filterSubject, filterDifficulty, onlyDue]);
+  }, [cards, preFilteredCards, filterSubject, filterExaminer, filterDifficulty, filterSet, onlyDue]);
 
   useEffect(() => {
     if (dailyPlan) {
@@ -136,6 +139,16 @@ export default function StudySession({ cards, settings, preFilteredCards, dailyP
                 <option value="schwer">Schwer</option>
               </select>
             </div>
+            {sets.length > 0 && (
+              <div>
+                <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">Set</label>
+                <select value={filterSet} onChange={e => setFilterSet(e.target.value)}
+                  className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none">
+                  <option value="">Alle Sets</option>
+                  {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            )}
             <label className="flex items-center gap-3 cursor-pointer">
               <div
                 onClick={() => setOnlyDue(!onlyDue)}

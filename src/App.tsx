@@ -140,7 +140,7 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar active={page} onChange={navigate} dueCount={dueCount} onSignOut={signOut} />
+      <Sidebar active={page} onChange={navigate} dueCount={dueCount} onSignOut={signOut} userEmail={user.email ?? undefined} />
 
       <main className="flex-1 min-w-0 overflow-y-auto pb-20 md:pb-0">
         {page === 'dashboard' && (

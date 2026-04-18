@@ -18,9 +18,10 @@ interface Props {
   onChange: (page: string) => void;
   dueCount: number;
   onSignOut: () => void;
+  userEmail?: string;
 }
 
-export default function Sidebar({ active, onChange, dueCount, onSignOut }: Props) {
+export default function Sidebar({ active, onChange, dueCount, onSignOut, userEmail }: Props) {
   return (
     <>
       {/* Desktop sidebar */}
@@ -51,7 +52,16 @@ export default function Sidebar({ active, onChange, dueCount, onSignOut }: Props
           ))}
         </nav>
         <div className="mt-auto pt-4 border-t border-[#2d3148] space-y-2">
-          <p className="text-xs text-[#6b7280] px-2">Bachelor Prüfungsvorbereitung</p>
+          {userEmail && (
+            <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-[#252840] border border-[#2d3148]">
+              <div className="w-7 h-7 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
+                <span className="text-xs font-bold text-indigo-400">
+                  {userEmail[0].toUpperCase()}
+                </span>
+              </div>
+              <span className="text-xs text-[#9ca3af] truncate">{userEmail}</span>
+            </div>
+          )}
           <button
             onClick={onSignOut}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-[#9ca3af] hover:bg-red-500/10 hover:text-red-400 border border-transparent transition-all"

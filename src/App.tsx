@@ -5,7 +5,6 @@ import { useCards } from './hooks/useCards';
 import { useSettings } from './hooks/useSettings';
 import { useToast } from './hooks/useToast';
 import { useAuth } from './hooks/useAuth';
-import { updateStreak, saveSettings, getSettings } from './utils/storage';
 import { calculateDailyPlan } from './utils/dailyGoal';
 
 import Sidebar from './components/Sidebar';
@@ -23,11 +22,11 @@ type Page = 'dashboard' | 'library' | 'new-card' | 'edit-card' | 'study' | 'impo
 
 export default function App() {
   const { user, loading: authLoading, signOut } = useAuth();
-  const { cards, addCard, updateCard, removeCard, rateCard, importCards } = useCards();
-  const { settings, updateSettings, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag } = useSettings();
+  const { cards, loading: cardsLoading, addCard, updateCard, removeCard, rateCard, importCards } = useCards();
+  const { settings, loading: settingsLoading, updateSettings, updateStreak, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag } = useSettings();
   const { toasts, showToast, dismissToast } = useToast();
 
-  if (authLoading) {
+  if (authLoading || cardsLoading || settingsLoading) {
     return (
       <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
         <div className="text-[#9ca3af] text-sm">Laden…</div>
@@ -83,15 +82,6 @@ export default function App() {
     const plan = calculateDailyPlan(cards, settings);
     if (plan.totalToday === 0) return;
 
-    // Persist snapshot so the Dashboard progress bar knows the original total
-    const s = getSettings();
-    saveSettings({
-      ...s,
-      dailyPlanSnapshot: {
-        date: new Date().toDateString(),
-        totalCards: plan.totalToday,
-      },
-    });
     updateSettings({
       dailyPlanSnapshot: {
         date: new Date().toDateString(),
@@ -108,14 +98,14 @@ export default function App() {
     setPage('study');
   }, [cards, settings, updateSettings]);
 
-  const handleSessionComplete = useCallback(() => {
-    const updated = updateStreak();
+  const handleSessionComplete = useCallback(async () => {
+    const updated = await updateStreak();
     if (updated.studyStreak > 1) {
       showToast(`🔥 ${updated.studyStreak} Tage in Folge! Weiter so!`, 'success');
     } else {
       showToast('✅ Session abgeschlossen!', 'success');
     }
-  }, [showToast]);
+  }, [showToast, updateStreak]);
 
   const handleRate = useCallback((id: string, rating: RatingValue) => {
     rateCard(id, rating, settings.examDate);

@@ -10,6 +10,7 @@ const navItems: NavItem[] = [
   { id: 'sets',        icon: '📂', label: 'Meine Sets' },
   { id: 'new-card',    icon: '+', label: 'Neue Karte' },
   { id: 'study',       icon: '▶', label: 'Lernen' },
+  { id: 'exam',        icon: '🎯', label: 'Prüfungsmodus' },
   { id: 'import-export', icon: '⇅', label: 'Import / Export' },
   { id: 'settings',    icon: '⚙', label: 'Einstellungen' },
 ];

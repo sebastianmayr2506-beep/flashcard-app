@@ -22,8 +22,9 @@ import Settings from './pages/Settings';
 import AuthPage from './pages/AuthPage';
 import SetsPage from './pages/SetsPage';
 import SetDetail from './pages/SetDetail';
+import ExamMode from './pages/ExamMode';
 
-type Page = 'dashboard' | 'library' | 'new-card' | 'edit-card' | 'study' | 'import-export' | 'settings' | 'sets' | 'set-detail';
+type Page = 'dashboard' | 'library' | 'new-card' | 'edit-card' | 'study' | 'import-export' | 'settings' | 'sets' | 'set-detail' | 'exam';
 
 export default function App() {
   // All hooks must be called unconditionally before any early returns
@@ -104,6 +105,11 @@ export default function App() {
     setPage('study');
   }, [cards, settings, updateSettings]);
 
+  const handleFlagCards = useCallback((cardIds: string[]) => {
+    cardIds.forEach(id => updateCard(id, { flagged: true }));
+    showToast(`${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} geflaggt 🚩`, 'info');
+  }, [updateCard, showToast]);
+
   const handleSessionComplete = useCallback(() => {
     const updated = updateStreak();
     if (updated.studyStreak > 1) {
@@ -157,6 +163,21 @@ export default function App() {
   }
 
   if (!user) return <AuthPage />;
+
+  if (page === 'exam') {
+    return (
+      <>
+        <ExamMode
+          cards={cards}
+          sets={sets}
+          settings={settings}
+          onFlagCards={handleFlagCards}
+          onNavigate={navigate}
+        />
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      </>
+    );
+  }
 
   if (page === 'study') {
     return (

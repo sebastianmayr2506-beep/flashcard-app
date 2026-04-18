@@ -36,6 +36,7 @@ export interface Flashcard {
   difficulty: Difficulty;
   customTags: string[];
   setId?: string;
+  flagged?: boolean;
   createdAt: string; // ISO date string
   updatedAt: string; // ISO date string
   // SM-2 SRS fields

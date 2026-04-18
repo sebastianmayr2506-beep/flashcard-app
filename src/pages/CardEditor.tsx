@@ -26,6 +26,7 @@ export default function CardEditor({ card, settings, sets, onSave, onCancel }: P
   const [difficulty, setDifficulty] = useState<Difficulty>(card?.difficulty ?? 'mittel');
   const [tagsInput, setTagsInput] = useState(card?.customTags.join(', ') ?? '');
   const [selectedSetId, setSelectedSetId] = useState<string>(card?.setId ?? '');
+  const [flagged, setFlagged] = useState<boolean>(card?.flagged ?? false);
   const [errors, setErrors] = useState<string[]>([]);
 
   useEffect(() => {
@@ -36,6 +37,7 @@ export default function CardEditor({ card, settings, sets, onSave, onCancel }: P
       setDifficulty(card.difficulty);
       setTagsInput(card.customTags.join(', '));
       setSelectedSetId(card.setId ?? '');
+      setFlagged(card.flagged ?? false);
     }
   }, [card]);
 
@@ -57,6 +59,7 @@ export default function CardEditor({ card, settings, sets, onSave, onCancel }: P
       frontImage, backImage,
       subjects, examiners, difficulty, customTags,
       setId: selectedSetId || undefined,
+      flagged,
     });
   };
 
@@ -223,6 +226,21 @@ export default function CardEditor({ card, settings, sets, onSave, onCancel }: P
                 </div>
               </div>
             )}
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-1.5">Markierung</label>
+            <button
+              type="button"
+              onClick={() => setFlagged(f => !f)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all ${
+                flagged
+                  ? 'bg-red-500/15 border-red-500/40 text-red-400'
+                  : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'
+              }`}
+            >
+              🚩 {flagged ? 'Geflaggt (zum Entfernen klicken)' : 'Karte flaggen'}
+            </button>
           </div>
 
           <div className="flex gap-3">

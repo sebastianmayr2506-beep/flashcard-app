@@ -27,6 +27,7 @@ export default function Library({ cards, settings, sets, onEdit, onDelete, onStu
   const [filterSRS, setFilterSRS] = useState<SRSStatus | ''>('');
   const [filterSet, setFilterSet] = useState('');
   const [filterDue, setFilterDue] = useState(false);
+  const [filterFlagged, setFilterFlagged] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
 
   // Selection mode
@@ -51,16 +52,17 @@ export default function Library({ cards, settings, sets, onEdit, onDelete, onStu
       if (filterSRS && getSRSStatus(c) !== filterSRS) return false;
       if (filterSet && c.setId !== filterSet) return false;
       if (filterDue && !isDueToday(c)) return false;
+      if (filterFlagged && !c.flagged) return false;
       return true;
     });
-  }, [cards, search, filterSubject, filterExaminer, filterDifficulty, filterTag, filterSRS, filterSet, filterDue]);
+  }, [cards, search, filterSubject, filterExaminer, filterDifficulty, filterTag, filterSRS, filterSet, filterDue, filterFlagged]);
 
-  const hasFilters = search || filterSubject || filterExaminer || filterDifficulty || filterTag || filterSRS || filterSet || filterDue;
+  const hasFilters = search || filterSubject || filterExaminer || filterDifficulty || filterTag || filterSRS || filterSet || filterDue || filterFlagged;
 
   const clearFilters = () => {
     setSearch(''); setFilterSubject(''); setFilterExaminer('');
     setFilterDifficulty(''); setFilterTag(''); setFilterSRS('');
-    setFilterSet(''); setFilterDue(false);
+    setFilterSet(''); setFilterDue(false); setFilterFlagged(false);
   };
 
   const toggleSelection = (id: string) => {
@@ -159,6 +161,14 @@ export default function Library({ cards, settings, sets, onEdit, onDelete, onStu
               : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
           >
             📅 Fällig
+          </button>
+          <button
+            onClick={() => setFilterFlagged(!filterFlagged)}
+            className={`px-3 py-2 rounded-xl text-sm border transition-colors ${filterFlagged
+              ? 'bg-red-500/15 border-red-500/40 text-red-400'
+              : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
+          >
+            🚩 Geflaggt
           </button>
         </div>
         {hasFilters && (
@@ -337,6 +347,7 @@ function CardGridItem({ card, sets, selectionMode, selected, onToggleSelect, onE
         <DifficultyBadge difficulty={card.difficulty} />
         <SRSBadge status={status} />
         {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
+        {card.flagged && <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400">🚩</span>}
         <SetDot setId={card.setId} sets={sets} />
       </div>
       {card.customTags.length > 0 && (
@@ -395,6 +406,7 @@ function CardListItem({ card, sets, selectionMode, selected, onToggleSelect, onE
         <DifficultyBadge difficulty={card.difficulty} />
         <SRSBadge status={status} />
         {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
+        {card.flagged && <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400">🚩</span>}
         <SetDot setId={card.setId} sets={sets} />
       </div>
       {!selectionMode && (

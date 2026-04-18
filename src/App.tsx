@@ -22,20 +22,11 @@ import AuthPage from './pages/AuthPage';
 type Page = 'dashboard' | 'library' | 'new-card' | 'edit-card' | 'study' | 'import-export' | 'settings';
 
 export default function App() {
+  // All hooks must be called unconditionally before any early returns
   const { user, loading: authLoading, signOut } = useAuth();
   const { cards, addCard, updateCard, removeCard, rateCard, importCards } = useCards();
   const { settings, updateSettings, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag } = useSettings();
   const { toasts, showToast, dismissToast } = useToast();
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
-        <div className="text-[#9ca3af] text-sm">Laden…</div>
-      </div>
-    );
-  }
-
-  if (!user) return <AuthPage />;
 
   const [page, setPage] = useState<Page>('dashboard');
   const [editingCard, setEditingCard] = useState<Flashcard | undefined>();
@@ -78,12 +69,10 @@ export default function App() {
     setPage('study');
   }, []);
 
-  // Start daily plan session from Dashboard "Jetzt lernen"
   const handleStartDailySession = useCallback(() => {
     const plan = calculateDailyPlan(cards, settings);
     if (plan.totalToday === 0) return;
 
-    // Persist snapshot so the Dashboard progress bar knows the original total
     const s = getSettings();
     saveSettings({
       ...s,
@@ -121,7 +110,17 @@ export default function App() {
     rateCard(id, rating, settings.examDate);
   }, [rateCard, settings.examDate]);
 
-  // Study session is fullscreen – no sidebar
+  // Early returns after all hooks
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
+        <div className="text-[#9ca3af] text-sm">Laden…</div>
+      </div>
+    );
+  }
+
+  if (!user) return <AuthPage />;
+
   if (page === 'study') {
     return (
       <>

@@ -80,12 +80,19 @@ export default function StudySession({ cards, settings, preFilteredCards, dailyP
     onRate(card.id, rating);
     const key = ['nochmal', 'schwer', 'gut', 'einfach'][rating] as keyof RatingCount;
     setRatings(prev => ({ ...prev, [key]: prev[key] + 1 }));
+    setIsFlipped(false);
 
-    if (currentIdx + 1 >= sessionCards.length) {
+    if (rating === 0) {
+      // Re-queue at end: remove from current position, append to end
+      setSessionCards(prev => {
+        const rest = prev.filter((_, i) => i !== currentIdx);
+        return [...rest, card];
+      });
+      // currentIdx stays the same — next card slides into this position
+    } else if (currentIdx + 1 >= sessionCards.length) {
       setSessionState('summary');
     } else {
       setCurrentIdx(idx => idx + 1);
-      setIsFlipped(false);
     }
   };
 

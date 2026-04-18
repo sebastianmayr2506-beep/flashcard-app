@@ -62,6 +62,14 @@ export interface AppSettings {
   };
 }
 
+export interface CardLink {
+  id: string;
+  cardId: string;
+  linkedCardId: string;
+  linkType: 'child' | 'related';
+  createdAt: string;
+}
+
 export type RatingValue = 0 | 1 | 2 | 3; // Nochmal | Schwer | Gut | Einfach
 
 export interface StudyRating {

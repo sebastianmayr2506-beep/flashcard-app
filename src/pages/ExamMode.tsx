@@ -1,7 +1,8 @@
 import { useState, useMemo, useRef } from 'react';
-import type { Flashcard, AppSettings, CardSet } from '../types/card';
+import type { Flashcard, AppSettings, CardSet, CardLink } from '../types/card';
 import MarkdownText from '../components/MarkdownText';
 import DifficultyBadge from '../components/DifficultyBadge';
+import { LinkedCardsPanel } from '../components/LinkedCards';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -25,6 +26,7 @@ interface Props {
   cards: Flashcard[];
   settings: AppSettings;
   sets: CardSet[];
+  links: CardLink[];
   onFlagCards: (ids: string[]) => void;
   onNavigate: (page: string) => void;
 }
@@ -122,7 +124,7 @@ function DonutChart({ correct, total }: { correct: number; total: number }) {
 
 // ─── Main Component ───────────────────────────────────────────
 
-export default function ExamMode({ cards, settings, sets, onFlagCards, onNavigate }: Props) {
+export default function ExamMode({ cards, settings, sets, links, onFlagCards, onNavigate }: Props) {
   const [phase, setPhase] = useState<Phase>('setup');
   const [config, setConfig] = useState<ExamConfig>({
     source: 'all',
@@ -447,7 +449,21 @@ export default function ExamMode({ cards, settings, sets, onFlagCards, onNavigat
         </div>
 
         {/* Answer buttons */}
-        <div className="shrink-0 px-4 md:px-8 pb-6 md:pb-8">
+        <div className="shrink-0 px-4 md:px-8 pb-6 md:pb-8 space-y-3">
+          {isFlipped && (
+            <LinkedCardsPanel
+              cardId={card.id}
+              allCards={cards}
+              links={links}
+              title="🔗 Verwandte Fragen"
+              onAnswer={(linkedCardId, isCorrect) => {
+                const linkedCard = cards.find(c => c.id === linkedCardId);
+                if (!linkedCard) return;
+                if (isCorrect) setCorrect(prev => [...prev, linkedCard]);
+                else setWrong(prev => [...prev, linkedCard]);
+              }}
+            />
+          )}
           {!isFlipped ? (
             <button
               onClick={() => setIsFlipped(true)}

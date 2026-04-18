@@ -4,9 +4,11 @@ import { isDueToday } from './types/card';
 import { useCards } from './hooks/useCards';
 import { useSettings } from './hooks/useSettings';
 import { useSets } from './hooks/useSets';
+import { useCardLinks } from './hooks/useCardLinks';
 import { useToast } from './hooks/useToast';
 import { useAuth } from './hooks/useAuth';
 import { updateStreak, saveSettings, getSettings, saveAllCards, getCards } from './utils/storage';
+import { extractParentLinks } from './utils/import';
 import { calculateDailyPlan } from './utils/dailyGoal';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -32,6 +34,7 @@ export default function App() {
   const { cards, addCard, updateCard, removeCard, rateCard, importCards, refresh: refreshCards } = useCards();
   const { settings, updateSettings, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag } = useSettings();
   const { sets, addSet, updateSet, removeSet } = useSets();
+  const { links, addLink, removeLink } = useCardLinks();
   const { toasts, showToast, dismissToast } = useToast();
 
   const [page, setPage] = useState<Page>('dashboard');
@@ -153,6 +156,17 @@ export default function App() {
     refreshCards();
   }, [addSet, refreshCards]);
 
+  const handleImportLinks = useCallback((jsonText: string, importedCards: typeof cards) => {
+    const hints = extractParentLinks(jsonText);
+    if (hints.length === 0) return;
+    const allKnownCards = [...getCards()];
+    hints.forEach(({ childFront, parentFront }) => {
+      const child = importedCards.find(c => c.front === childFront) ?? allKnownCards.find(c => c.front === childFront);
+      const parent = allKnownCards.find(c => c.front === parentFront);
+      if (child && parent) addLink(child.id, parent.id, 'child');
+    });
+  }, [addLink]);
+
   // Early returns after all hooks
   if (authLoading) {
     return (
@@ -171,6 +185,7 @@ export default function App() {
           cards={cards}
           sets={sets}
           settings={settings}
+          links={links}
           onFlagCards={handleFlagCards}
           onNavigate={navigate}
         />
@@ -186,6 +201,7 @@ export default function App() {
           cards={cards}
           settings={settings}
           sets={sets}
+          links={links}
           preFilteredCards={studyFilteredCards}
           dailyPlan={activeDailyPlan}
           onRate={handleRate}
@@ -215,6 +231,7 @@ export default function App() {
             cards={cards}
             settings={settings}
             sets={sets}
+            links={links}
             onEdit={handleEditCard}
             onDelete={handleDeleteCard}
             onStudyFiltered={handleStudyFiltered}
@@ -227,8 +244,12 @@ export default function App() {
             card={editingCard}
             settings={settings}
             sets={sets}
+            allCards={cards}
+            links={links}
             onSave={handleSaveCard}
             onCancel={() => navigate('library')}
+            onAddLink={addLink}
+            onRemoveLink={removeLink}
           />
         )}
         {page === 'sets' && (
@@ -263,6 +284,7 @@ export default function App() {
             userId={user.id}
             onImport={importCards}
             onImportSet={handleImportSet}
+            onImportLinks={handleImportLinks}
             showToast={showToast}
           />
         )}

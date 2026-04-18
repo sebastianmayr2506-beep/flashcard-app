@@ -1,13 +1,18 @@
 import { useState, useEffect } from 'react';
-import type { Flashcard, Difficulty, AppSettings, CardImage, CardSet } from '../types/card';
+import type { Flashcard, Difficulty, AppSettings, CardImage, CardSet, CardLink } from '../types/card';
 import ImageInput from '../components/ImageInput';
+import LinkedCards from '../components/LinkedCards';
 
 interface Props {
   card?: Flashcard;
   settings: AppSettings;
   sets: CardSet[];
+  allCards: Flashcard[];
+  links: CardLink[];
   onSave: (data: Omit<Flashcard, 'id' | 'createdAt' | 'updatedAt' | 'interval' | 'repetitions' | 'easeFactor' | 'nextReviewDate'>) => void;
   onCancel: () => void;
+  onAddLink: (cardId: string, linkedCardId: string, linkType: 'child' | 'related') => void;
+  onRemoveLink: (linkId: string) => void;
 }
 
 const DIFFICULTIES: { value: Difficulty; label: string }[] = [
@@ -16,7 +21,7 @@ const DIFFICULTIES: { value: Difficulty; label: string }[] = [
   { value: 'schwer',  label: 'Schwer' },
 ];
 
-export default function CardEditor({ card, settings, sets, onSave, onCancel }: Props) {
+export default function CardEditor({ card, settings, sets, allCards, links, onSave, onCancel, onAddLink, onRemoveLink }: Props) {
   const [front, setFront] = useState(card?.front ?? '');
   const [back, setBack] = useState(card?.back ?? '');
   const [frontImage, setFrontImage] = useState<CardImage | undefined>(card?.frontImage);
@@ -229,7 +234,7 @@ export default function CardEditor({ card, settings, sets, onSave, onCancel }: P
           </div>
 
           <div>
-            <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-1.5">Markierung</label>
+            <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-1.5">Flaggen</label>
             <button
               type="button"
               onClick={() => setFlagged(f => !f)}
@@ -242,6 +247,16 @@ export default function CardEditor({ card, settings, sets, onSave, onCancel }: P
               🚩 {flagged ? 'Geflaggt (zum Entfernen klicken)' : 'Karte flaggen'}
             </button>
           </div>
+
+          {card && (
+            <LinkedCards
+              card={card}
+              allCards={allCards.filter(c => c.id !== card.id)}
+              links={links}
+              onAddLink={onAddLink}
+              onRemoveLink={onRemoveLink}
+            />
+          )}
 
           <div className="flex gap-3">
             <button

@@ -34,6 +34,30 @@ function validateCard(raw: unknown): Flashcard {
   };
 }
 
+export interface ParentLinkHint {
+  childFront: string;
+  parentFront: string;
+}
+
+export function extractParentLinks(jsonText: string): ParentLinkHint[] {
+  try {
+    const data = JSON.parse(jsonText);
+    if (!Array.isArray(data)) return [];
+    const hints: ParentLinkHint[] = [];
+    for (const item of data) {
+      if (typeof item === 'object' && item !== null) {
+        const c = item as Record<string, unknown>;
+        if (typeof c.parent_question === 'string' && c.parent_question.trim() && typeof c.front === 'string') {
+          hints.push({ childFront: String(c.front), parentFront: String(c.parent_question) });
+        }
+      }
+    }
+    return hints;
+  } catch {
+    return [];
+  }
+}
+
 export function importFromCSV(csvText: string): Flashcard[] {
   const lines = csvText.replace(/\r\n/g, '\n').split('\n').filter(l => l.trim());
   if (lines.length < 2) throw new Error('CSV ist leer oder hat keine Daten');

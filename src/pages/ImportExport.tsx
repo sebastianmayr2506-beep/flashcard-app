@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import type { Flashcard, CardSet } from '../types/card';
 import { exportJSON, exportCSV } from '../utils/export';
-import { importFromJSON, importFromCSV } from '../utils/import';
+import { importFromJSON, importFromCSV, extractParentLinks } from '../utils/import';
 import { importByShareCode } from '../utils/shareCode';
 
 interface Props {
@@ -10,10 +10,11 @@ interface Props {
   userId: string;
   onImport: (cards: Flashcard[], merge: boolean) => void;
   onImportSet: (set: Omit<CardSet, 'id' | 'createdAt' | 'updatedAt' | 'userId'>, cards: Flashcard[], userId: string) => void;
+  onImportLinks: (jsonText: string, importedCards: Flashcard[]) => void;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-export default function ImportExport({ cards, sets, userId, onImport, onImportSet, showToast }: Props) {
+export default function ImportExport({ cards, sets, userId, onImport, onImportSet, onImportLinks, showToast }: Props) {
   const jsonRef = useRef<HTMLInputElement>(null);
   const csvRef = useRef<HTMLInputElement>(null);
   const [mergeMode, setMergeMode] = useState(true);
@@ -54,6 +55,9 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
           // fall through to regular JSON import
         }
         imported = importFromJSON(text);
+        // Resolve parent_question links after import
+        const hints = extractParentLinks(text);
+        if (hints.length > 0) onImportLinks(text, imported);
       } else if (file.name.endsWith('.csv')) {
         imported = importFromCSV(text);
       } else {

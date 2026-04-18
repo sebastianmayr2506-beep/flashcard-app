@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { Flashcard, AppSettings, RatingValue, CardSet } from '../types/card';
+import type { Flashcard, AppSettings, RatingValue, CardSet, CardLink } from '../types/card';
 import { isDueToday, STUDY_RATINGS } from '../types/card';
 import DifficultyBadge from '../components/DifficultyBadge';
 import MarkdownText from '../components/MarkdownText';
+import { LinkedCardsPanel } from '../components/LinkedCards';
 
 export interface DailyPlanSession {
   reviewCards: Flashcard[];
@@ -14,6 +15,7 @@ interface Props {
   cards: Flashcard[];
   settings: AppSettings;
   sets: CardSet[];
+  links: CardLink[];
   preFilteredCards?: Flashcard[] | null;
   dailyPlan?: DailyPlanSession | null;
   onRate: (id: string, rating: RatingValue) => void;
@@ -27,7 +29,7 @@ interface RatingCount {
   nochmal: number; schwer: number; gut: number; einfach: number;
 }
 
-export default function StudySession({ cards, settings, sets, preFilteredCards, dailyPlan, onRate, onSessionComplete, onNavigate }: Props) {
+export default function StudySession({ cards, settings, sets, links, preFilteredCards, dailyPlan, onRate, onSessionComplete, onNavigate }: Props) {
   const isDailyMode = !!dailyPlan;
   const [sessionState, setSessionState] = useState<SessionState>(
     (preFilteredCards || dailyPlan) ? 'studying' : 'setup'
@@ -335,7 +337,15 @@ export default function StudySession({ cards, settings, sets, preFilteredCards, 
       </div>
 
       {/* Rating buttons */}
-      <div className="shrink-0 px-4 md:px-8 pb-6 md:pb-8">
+      <div className="shrink-0 px-4 md:px-8 pb-6 md:pb-8 space-y-3">
+        {isFlipped && (
+          <LinkedCardsPanel
+            cardId={currentCard.id}
+            allCards={cards}
+            links={links}
+            title="🔗 Tiefer gehen?"
+          />
+        )}
         {!isFlipped ? (
           <button
             onClick={() => setIsFlipped(true)}

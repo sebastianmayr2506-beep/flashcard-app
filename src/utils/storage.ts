@@ -45,12 +45,13 @@
 // create policy "delete own shares" on public.shared_sets for delete using (auth.uid() = created_by);
 // ============================================================
 
-import type { Flashcard, AppSettings, CardSet } from '../types/card';
+import type { Flashcard, AppSettings, CardSet, CardLink } from '../types/card';
 import { DEFAULT_SUBJECTS, DEFAULT_EXAMINERS } from '../types/card';
 
 const CARDS_KEY = 'flashcard_app_cards';
 const SETTINGS_KEY = 'flashcard_app_settings';
 const SETS_KEY = 'flashcard_app_sets';
+const LINKS_KEY = 'flashcard_app_card_links';
 
 // ─── Cards ───────────────────────────────────────────────────
 
@@ -130,6 +131,54 @@ export function deleteSet(id: string): void {
 
 export function saveAllSets(sets: CardSet[]): void {
   localStorage.setItem(SETS_KEY, JSON.stringify(sets));
+}
+
+// ─── Card Links ──────────────────────────────────────────────
+//
+// SUPABASE SQL (run in Supabase SQL editor):
+// create table public.card_links (
+//   id uuid primary key default gen_random_uuid(),
+//   card_id uuid references public.cards(id) on delete cascade not null,
+//   linked_card_id uuid references public.cards(id) on delete cascade not null,
+//   link_type text default 'related',
+//   created_by uuid references auth.users not null,
+//   created_at timestamptz default now(),
+//   unique(card_id, linked_card_id)
+// );
+// alter table public.card_links enable row level security;
+// create policy "read own links" on public.card_links for select using (auth.uid() = created_by);
+// create policy "create own links" on public.card_links for insert with check (auth.uid() = created_by);
+// create policy "delete own links" on public.card_links for delete using (auth.uid() = created_by);
+
+export function getLinks(): CardLink[] {
+  try {
+    const raw = localStorage.getItem(LINKS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as CardLink[];
+  } catch {
+    return [];
+  }
+}
+
+export function saveLink(link: CardLink): void {
+  const links = getLinks();
+  const idx = links.findIndex(l => l.id === link.id);
+  if (idx >= 0) { links[idx] = link; } else { links.push(link); }
+  localStorage.setItem(LINKS_KEY, JSON.stringify(links));
+}
+
+export function deleteLink(id: string): void {
+  const links = getLinks().filter(l => l.id !== id);
+  localStorage.setItem(LINKS_KEY, JSON.stringify(links));
+}
+
+export function deleteLinksForCard(cardId: string): void {
+  const links = getLinks().filter(l => l.cardId !== cardId && l.linkedCardId !== cardId);
+  localStorage.setItem(LINKS_KEY, JSON.stringify(links));
+}
+
+export function saveAllLinks(links: CardLink[]): void {
+  localStorage.setItem(LINKS_KEY, JSON.stringify(links));
 }
 
 // ─── Settings ────────────────────────────────────────────────

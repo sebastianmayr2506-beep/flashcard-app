@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import type { Flashcard, AppSettings, Difficulty, SRSStatus, CardSet } from '../types/card';
+import type { Flashcard, AppSettings, Difficulty, SRSStatus, CardSet, CardLink } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
 import DifficultyBadge from '../components/DifficultyBadge';
 import SRSBadge from '../components/SRSBadge';
@@ -9,6 +9,7 @@ interface Props {
   cards: Flashcard[];
   settings: AppSettings;
   sets: CardSet[];
+  links: CardLink[];
   onEdit: (card: Flashcard) => void;
   onDelete: (id: string) => void;
   onStudyFiltered: (cards: Flashcard[]) => void;
@@ -18,7 +19,7 @@ interface Props {
 
 type ViewMode = 'grid' | 'list';
 
-export default function Library({ cards, settings, sets, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onNavigate }: Props) {
+export default function Library({ cards, settings, sets, links, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onNavigate }: Props) {
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminer, setFilterExaminer] = useState('');
@@ -215,7 +216,7 @@ export default function Library({ cards, settings, sets, onEdit, onDelete, onStu
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(card => (
             <CardGridItem
-              key={card.id} card={card} sets={sets}
+              key={card.id} card={card} sets={sets} links={links}
               selectionMode={selectionMode}
               selected={selectedIds.has(card.id)}
               onToggleSelect={() => toggleSelection(card.id)}
@@ -227,7 +228,7 @@ export default function Library({ cards, settings, sets, onEdit, onDelete, onStu
         <div className="flex flex-col gap-2">
           {filtered.map(card => (
             <CardListItem
-              key={card.id} card={card} sets={sets}
+              key={card.id} card={card} sets={sets} links={links}
               selectionMode={selectionMode}
               selected={selectedIds.has(card.id)}
               onToggleSelect={() => toggleSelection(card.id)}
@@ -304,6 +305,7 @@ function SetDot({ setId, sets }: { setId?: string; sets: CardSet[] }) {
 interface CardItemProps {
   card: Flashcard;
   sets: CardSet[];
+  links: CardLink[];
   selectionMode: boolean;
   selected: boolean;
   onToggleSelect: () => void;
@@ -311,9 +313,10 @@ interface CardItemProps {
   onDelete: (id: string) => void;
 }
 
-function CardGridItem({ card, sets, selectionMode, selected, onToggleSelect, onEdit, onDelete }: CardItemProps) {
+function CardGridItem({ card, sets, links, selectionMode, selected, onToggleSelect, onEdit, onDelete }: CardItemProps) {
   const status = getSRSStatus(card);
   const due = isDueToday(card);
+  const linkCount = links.filter(l => l.cardId === card.id || l.linkedCardId === card.id).length;
 
   const imgSrc = card.frontImage
     ? (card.frontImage.type === 'base64' ? `data:${card.frontImage.mimeType ?? 'image/png'};base64,${card.frontImage.data}` : card.frontImage.data)
@@ -348,6 +351,7 @@ function CardGridItem({ card, sets, selectionMode, selected, onToggleSelect, onE
         <SRSBadge status={status} />
         {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
         {card.flagged && <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400">🚩</span>}
+        {linkCount > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">🔗 {linkCount}</span>}
         <SetDot setId={card.setId} sets={sets} />
       </div>
       {card.customTags.length > 0 && (
@@ -378,9 +382,10 @@ function CardGridItem({ card, sets, selectionMode, selected, onToggleSelect, onE
   );
 }
 
-function CardListItem({ card, sets, selectionMode, selected, onToggleSelect, onEdit, onDelete }: CardItemProps) {
+function CardListItem({ card, sets, links, selectionMode, selected, onToggleSelect, onEdit, onDelete }: CardItemProps) {
   const status = getSRSStatus(card);
   const due = isDueToday(card);
+  const linkCount = links.filter(l => l.cardId === card.id || l.linkedCardId === card.id).length;
   return (
     <div
       onClick={() => { if (selectionMode) onToggleSelect(); }}
@@ -407,6 +412,7 @@ function CardListItem({ card, sets, selectionMode, selected, onToggleSelect, onE
         <SRSBadge status={status} />
         {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
         {card.flagged && <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400">🚩</span>}
+        {linkCount > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">🔗 {linkCount}</span>}
         <SetDot setId={card.setId} sets={sets} />
       </div>
       {!selectionMode && (

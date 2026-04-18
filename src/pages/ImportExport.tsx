@@ -11,12 +11,14 @@ interface Props {
   onImport: (cards: Flashcard[], merge: boolean) => void;
   onImportSet: (set: Omit<CardSet, 'id' | 'createdAt' | 'updatedAt' | 'userId'>, cards: Flashcard[], userId: string) => void;
   onImportLinks: (jsonText: string, importedCards: Flashcard[]) => void;
+  onRepairLinks: (jsonText: string) => number;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-export default function ImportExport({ cards, sets, userId, onImport, onImportSet, onImportLinks, showToast }: Props) {
+export default function ImportExport({ cards, sets, userId, onImport, onImportSet, onImportLinks, onRepairLinks, showToast }: Props) {
   const jsonRef = useRef<HTMLInputElement>(null);
   const csvRef = useRef<HTMLInputElement>(null);
+  const repairRef = useRef<HTMLInputElement>(null);
   const [mergeMode, setMergeMode] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
   const [shareCodeInput, setShareCodeInput] = useState('');
@@ -223,8 +225,34 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
         </div>
       </div>
 
+      {/* Repair links */}
+      <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-3">
+        <h3 className="font-semibold text-white">🔗 Links reparieren</h3>
+        <p className="text-sm text-[#9ca3af]">
+          Falls Verknüpfungen aus <code className="text-indigo-400">parent_question</code>-Feldern fehlen: dieselbe JSON-Datei hier hochladen. Es werden keine Karten importiert — nur fehlende Links erstellt.
+        </p>
+        <button
+          onClick={() => repairRef.current?.click()}
+          className="px-4 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-400 text-sm font-medium transition-colors"
+        >
+          🔗 JSON für Link-Reparatur wählen
+        </button>
+      </div>
+
       <input ref={jsonRef} type="file" accept=".json" className="hidden" onChange={handleFile} />
       <input ref={csvRef} type="file" accept=".csv" className="hidden" onChange={handleFile} />
+      <input ref={repairRef} type="file" accept=".json" className="hidden" onChange={async e => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        e.target.value = '';
+        try {
+          const text = await file.text();
+          const count = onRepairLinks(text);
+          showToast(count > 0 ? `🔗 ${count} Link${count !== 1 ? 's' : ''} erstellt` : 'Keine neuen Links gefunden', count > 0 ? 'success' : 'info');
+        } catch {
+          showToast('Fehler beim Lesen der Datei', 'error');
+        }
+      }} />
     </div>
   );
 }

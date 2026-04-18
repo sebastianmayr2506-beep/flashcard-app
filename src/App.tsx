@@ -7,7 +7,7 @@ import { useSets } from './hooks/useSets';
 import { useCardLinks } from './hooks/useCardLinks';
 import { useToast } from './hooks/useToast';
 import { useAuth } from './hooks/useAuth';
-import { updateStreak, saveSettings, getSettings, saveAllCards, getCards, saveFlagAttempt, getDistinctCorrectDays, getFlagAttempts } from './utils/storage';
+import { updateStreak, saveSettings, getSettings, saveAllCards, getCards, getLinks, saveFlagAttempt, getDistinctCorrectDays, getFlagAttempts } from './utils/storage';
 import { extractParentLinks } from './utils/import';
 import { calculateDailyPlan } from './utils/dailyGoal';
 import { v4 as uuidv4 } from 'uuid';
@@ -197,6 +197,26 @@ export default function App() {
     refreshCards();
   }, [addSet, refreshCards]);
 
+  const handleRepairLinks = useCallback((jsonText: string): number => {
+    const hints = extractParentLinks(jsonText);
+    if (hints.length === 0) return 0;
+    const allKnownCards = getCards();
+    let created = 0;
+    hints.forEach(({ childFront, parentFront }) => {
+      const child = allKnownCards.find(c => c.front === childFront);
+      const parent = allKnownCards.find(c => c.front === parentFront);
+      if (child && parent && child.id !== parent.id) {
+        const existingLinks = getLinks();
+        const already = existingLinks.some(l =>
+          (l.cardId === child.id && l.linkedCardId === parent.id) ||
+          (l.cardId === parent.id && l.linkedCardId === child.id)
+        );
+        if (!already) { addLink(child.id, parent.id, 'child'); created++; }
+      }
+    });
+    return created;
+  }, [addLink]);
+
   const handleImportLinks = useCallback((jsonText: string, importedCards: typeof cards) => {
     const hints = extractParentLinks(jsonText);
     if (hints.length === 0) return;
@@ -332,6 +352,7 @@ export default function App() {
             onImport={importCards}
             onImportSet={handleImportSet}
             onImportLinks={handleImportLinks}
+            onRepairLinks={handleRepairLinks}
             showToast={showToast}
           />
         )}

@@ -167,6 +167,11 @@ export default function App() {
     showToast(`${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} zugewiesen`, 'success');
   }, [updateCard, showToast]);
 
+  const handleBulkDelete = useCallback((cardIds: string[]) => {
+    cardIds.forEach(id => removeCard(id));
+    showToast(`${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} gelöscht`, 'info');
+  }, [removeCard, showToast]);
+
   const handleViewSet = useCallback((set: CardSet) => {
     setViewingSet(set);
     setPage('set-detail');
@@ -276,6 +281,7 @@ export default function App() {
             onDelete={handleDeleteCard}
             onStudyFiltered={handleStudyFiltered}
             onBulkAssignSet={handleBulkAssignSet}
+            onBulkDelete={handleBulkDelete}
             onNavigate={navigate}
           />
         )}

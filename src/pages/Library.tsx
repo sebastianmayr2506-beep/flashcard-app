@@ -16,12 +16,13 @@ interface Props {
   onDelete: (id: string) => void;
   onStudyFiltered: (cards: Flashcard[]) => void;
   onBulkAssignSet: (cardIds: string[], setId: string | undefined) => void;
+  onBulkDelete: (cardIds: string[]) => void;
   onNavigate: (page: string) => void;
 }
 
 type ViewMode = 'grid' | 'list';
 
-export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onNavigate }: Props) {
+export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkDelete, onNavigate }: Props) {
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminer, setFilterExaminer] = useState('');
@@ -99,6 +100,13 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
     exitSelectionMode();
   };
 
+  const handleBulkDelete = () => {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`${selectedIds.size} Karte${selectedIds.size !== 1 ? 'n' : ''} wirklich löschen?`)) return;
+    onBulkDelete(Array.from(selectedIds));
+    exitSelectionMode();
+  };
+
   const selectedCount = selectedIds.size;
   const allFilteredSelected = filtered.length > 0 && filtered.every(c => selectedIds.has(c.id));
 
@@ -117,18 +125,16 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
           >
             {viewMode === 'grid' ? '☰' : '⊞'}
           </button>
-          {sets.length > 0 && (
-            <button
-              onClick={() => { setSelectionMode(!selectionMode); clearSelection(); }}
-              className={`text-sm font-medium px-3 py-2 rounded-xl border transition-colors ${
-                selectionMode
-                  ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-400'
-                  : 'bg-[#1e2130] border-[#2d3148] text-[#9ca3af] hover:text-white'
-              }`}
-            >
-              ☑ Auswählen
-            </button>
-          )}
+          <button
+            onClick={() => { setSelectionMode(!selectionMode); clearSelection(); }}
+            className={`text-sm font-medium px-3 py-2 rounded-xl border transition-colors ${
+              selectionMode
+                ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-400'
+                : 'bg-[#1e2130] border-[#2d3148] text-[#9ca3af] hover:text-white'
+            }`}
+          >
+            ☑ Auswählen
+          </button>
           <button
             onClick={() => onNavigate('new-card')}
             className="bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors"
@@ -273,20 +279,31 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
             <span className="text-sm font-semibold text-white shrink-0">
               {selectedCount > 0 ? `${selectedCount} Karte${selectedCount !== 1 ? 'n' : ''}` : 'Karten auswählen'}
             </span>
-            <select
-              value={bulkSetId}
-              onChange={e => setBulkSetId(e.target.value)}
-              className="flex-1 min-w-[120px] text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
-            >
-              <option value="">Kein Set</option>
-              {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
+            {sets.length > 0 && (
+              <>
+                <select
+                  value={bulkSetId}
+                  onChange={e => setBulkSetId(e.target.value)}
+                  className="flex-1 min-w-[120px] text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="">Kein Set</option>
+                  {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <button
+                  onClick={handleBulkAssign}
+                  disabled={selectedCount === 0}
+                  className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors shrink-0"
+                >
+                  Zuweisen
+                </button>
+              </>
+            )}
             <button
-              onClick={handleBulkAssign}
+              onClick={handleBulkDelete}
               disabled={selectedCount === 0}
-              className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors shrink-0"
+              className="px-4 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 disabled:opacity-40 disabled:cursor-not-allowed text-red-400 text-sm font-semibold transition-colors shrink-0"
             >
-              Zuweisen
+              🗑 Löschen
             </button>
             <button
               onClick={exitSelectionMode}

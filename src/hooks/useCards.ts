@@ -1,17 +1,24 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import type { Flashcard, RatingValue } from '../types/card';
-import { getCards, saveCard, deleteCard, saveAllCards } from '../utils/storage';
+import { getCards, saveCard, deleteCard, saveAllCards, insertCards } from '../utils/storage';
 import { applySM2, createInitialSRS, getDaysUntilExam } from '../utils/srs';
 
 export function useCards() {
-  const [cards, setCards] = useState<Flashcard[]>(() => getCards());
+  const [cards, setCards] = useState<Flashcard[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(() => {
-    setCards(getCards());
+  useEffect(() => {
+    getCards()
+      .then(setCards)
+      .finally(() => setLoading(false));
   }, []);
 
-  const addCard = useCallback((data: Omit<Flashcard, 'id' | 'createdAt' | 'updatedAt' | 'interval' | 'repetitions' | 'easeFactor' | 'nextReviewDate'>) => {
+  const refresh = useCallback(async () => {
+    setCards(await getCards());
+  }, []);
+
+  const addCard = useCallback(async (data: Omit<Flashcard, 'id' | 'createdAt' | 'updatedAt' | 'interval' | 'repetitions' | 'easeFactor' | 'nextReviewDate'>) => {
     const now = new Date().toISOString();
     const card: Flashcard = {
       ...data,
@@ -20,47 +27,51 @@ export function useCards() {
       updatedAt: now,
       ...createInitialSRS(),
     };
-    saveCard(card);
-    setCards(getCards());
+    setCards(prev => [...prev, card]);
+    await saveCard(card);
     return card;
   }, []);
 
-  const updateCard = useCallback((id: string, data: Partial<Flashcard>) => {
-    const cards = getCards();
-    const card = cards.find(c => c.id === id);
-    if (!card) return;
-    const updated: Flashcard = { ...card, ...data, updatedAt: new Date().toISOString() };
-    saveCard(updated);
-    setCards(getCards());
+  const updateCard = useCallback(async (id: string, data: Partial<Flashcard>) => {
+    const now = new Date().toISOString();
+    let toSave: Flashcard | null = null;
+    setCards(prev => prev.map(c => {
+      if (c.id !== id) return c;
+      toSave = { ...c, ...data, updatedAt: now };
+      return toSave;
+    }));
+    if (toSave) await saveCard(toSave);
   }, []);
 
-  const removeCard = useCallback((id: string) => {
-    deleteCard(id);
-    setCards(getCards());
+  const removeCard = useCallback(async (id: string) => {
+    setCards(prev => prev.filter(c => c.id !== id));
+    await deleteCard(id);
   }, []);
 
-  const rateCard = useCallback((id: string, rating: RatingValue, examDate?: string) => {
-    const cards = getCards();
-    const card = cards.find(c => c.id === id);
-    if (!card) return;
+  const rateCard = useCallback(async (id: string, rating: RatingValue, examDate?: string) => {
     const daysUntilExam = getDaysUntilExam(examDate);
-    const updates = applySM2(card, rating, daysUntilExam);
-    const updated: Flashcard = { ...card, ...updates };
-    saveCard(updated);
-    setCards(getCards());
+    let toSave: Flashcard | null = null;
+    setCards(prev => prev.map(c => {
+      if (c.id !== id) return c;
+      toSave = { ...c, ...applySM2(c, rating, daysUntilExam) };
+      return toSave;
+    }));
+    if (toSave) await saveCard(toSave);
   }, []);
 
-  const importCards = useCallback((newCards: Flashcard[], merge: boolean) => {
+  const importCards = useCallback(async (newCards: Flashcard[], merge: boolean) => {
     if (merge) {
-      const existing = getCards();
-      const existingIds = new Set(existing.map(c => c.id));
-      const toAdd = newCards.filter(c => !existingIds.has(c.id));
-      saveAllCards([...existing, ...toAdd]);
+      setCards(prev => {
+        const existingIds = new Set(prev.map(c => c.id));
+        const toAdd = newCards.filter(c => !existingIds.has(c.id));
+        insertCards(toAdd);
+        return [...prev, ...toAdd];
+      });
     } else {
-      saveAllCards(newCards);
+      setCards(newCards);
+      await saveAllCards(newCards);
     }
-    setCards(getCards());
   }, []);
 
-  return { cards, refresh, addCard, updateCard, removeCard, rateCard, importCards };
+  return { cards, loading, refresh, addCard, updateCard, removeCard, rateCard, importCards };
 }

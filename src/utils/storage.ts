@@ -1,69 +1,78 @@
-// ============================================================
-// Storage Layer – localStorage implementation
-//
-// HOW TO REPLACE WITH SUPABASE:
-// 1. Replace CARDS_KEY reads/writes with Supabase table queries:
-//    - getCards()    → supabase.from('cards').select('*')
-//    - saveCard()    → supabase.from('cards').upsert(card)
-//    - deleteCard()  → supabase.from('cards').delete().eq('id', id)
-// 2. Replace SETTINGS_KEY reads/writes with a user_settings table
-//    or Supabase's user metadata.
-// 3. Remove all JSON.parse/JSON.stringify calls.
-// 4. Add auth via supabase.auth for multi-user support.
-// ============================================================
-
-import type { Flashcard, AppSettings } from '../types/card';
+import { supabase } from '../lib/supabase';
+import type { Flashcard, AppSettings, CardImage, Difficulty } from '../types/card';
 import { DEFAULT_SUBJECTS, DEFAULT_EXAMINERS } from '../types/card';
 
-const CARDS_KEY = 'flashcard_app_cards';
-const SETTINGS_KEY = 'flashcard_app_settings';
+// ─── DB Row Types ─────────────────────────────────────────────
 
-// ─── Cards ───────────────────────────────────────────────────
-
-export function getCards(): Flashcard[] {
-  try {
-    const raw = localStorage.getItem(CARDS_KEY);
-    if (!raw) return [];
-    const cards = JSON.parse(raw) as (Flashcard & { examiner?: string })[];
-    // Migrate old single-field strings to arrays
-    return cards.map(c => {
-      const card = c as Flashcard & { examiner?: string; subject?: string };
-      let result = { ...card };
-      if (!Array.isArray(result.examiners)) {
-        result = { ...result, examiners: card.examiner ? [card.examiner] : [] };
-      }
-      if (!Array.isArray((result as unknown as { subjects?: unknown }).subjects)) {
-        const s = (result as unknown as { subject?: string }).subject;
-        result = { ...result, subjects: s ? [s] : [] } as unknown as typeof result;
-      }
-      return result as unknown as Flashcard;
-    });
-  } catch {
-    return [];
-  }
+interface CardRow {
+  id: string;
+  front: string;
+  front_image: CardImage | null;
+  back: string;
+  back_image: CardImage | null;
+  subjects: string[];
+  examiners: string[];
+  difficulty: Difficulty;
+  custom_tags: string[];
+  created_at: string;
+  updated_at: string;
+  interval: number;
+  repetitions: number;
+  ease_factor: number;
+  next_review_date: string;
 }
 
-export function saveCard(card: Flashcard): void {
-  const cards = getCards();
-  const idx = cards.findIndex(c => c.id === card.id);
-  if (idx >= 0) {
-    cards[idx] = card;
-  } else {
-    cards.push(card);
-  }
-  localStorage.setItem(CARDS_KEY, JSON.stringify(cards));
+interface SettingsRow {
+  user_id?: string;
+  subjects: string[];
+  examiners: string[];
+  custom_tags: string[];
+  study_streak: number;
+  last_studied_date: string | null;
+  exam_date: string | null;
+  daily_new_card_goal: number;
+  daily_plan_snapshot: { date: string; totalCards: number } | null;
 }
 
-export function deleteCard(id: string): void {
-  const cards = getCards().filter(c => c.id !== id);
-  localStorage.setItem(CARDS_KEY, JSON.stringify(cards));
+// ─── Mappers ──────────────────────────────────────────────────
+
+function rowToCard(row: CardRow): Flashcard {
+  return {
+    id: row.id,
+    front: row.front,
+    frontImage: row.front_image ?? undefined,
+    back: row.back,
+    backImage: row.back_image ?? undefined,
+    subjects: row.subjects ?? [],
+    examiners: row.examiners ?? [],
+    difficulty: row.difficulty,
+    customTags: row.custom_tags ?? [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    interval: row.interval,
+    repetitions: row.repetitions,
+    easeFactor: row.ease_factor,
+    nextReviewDate: row.next_review_date,
+  };
 }
 
-export function saveAllCards(cards: Flashcard[]): void {
-  localStorage.setItem(CARDS_KEY, JSON.stringify(cards));
+function cardToRow(card: Flashcard): Omit<CardRow, 'created_at' | 'updated_at'> {
+  return {
+    id: card.id,
+    front: card.front,
+    front_image: card.frontImage ?? null,
+    back: card.back,
+    back_image: card.backImage ?? null,
+    subjects: card.subjects,
+    examiners: card.examiners,
+    difficulty: card.difficulty,
+    custom_tags: card.customTags,
+    interval: card.interval,
+    repetitions: card.repetitions,
+    ease_factor: card.easeFactor,
+    next_review_date: card.nextReviewDate,
+  };
 }
-
-// ─── Settings ────────────────────────────────────────────────
 
 const defaultSettings: AppSettings = {
   subjects: DEFAULT_SUBJECTS,
@@ -74,50 +83,123 @@ const defaultSettings: AppSettings = {
   dailyNewCardGoal: 10,
 };
 
-const OLD_PLACEHOLDER_EXAMINERS = new Set(['Prof. Müller', 'Prof. Schmidt', 'Prof. Weber', 'Prof. Fischer']);
-const OLD_PLACEHOLDER_SUBJECTS = new Set(['Mathematik', 'BWL', 'Informatik', 'Statistik', 'Wirtschaftsrecht', 'Marketing', 'Rechnungswesen', 'VWL', 'Englisch']);
+function rowToSettings(row: SettingsRow): AppSettings {
+  return {
+    subjects: row.subjects?.length ? row.subjects : DEFAULT_SUBJECTS,
+    examiners: row.examiners?.length ? row.examiners : DEFAULT_EXAMINERS,
+    customTags: row.custom_tags ?? [],
+    studyStreak: row.study_streak ?? 0,
+    lastStudiedDate: row.last_studied_date ?? null,
+    examDate: row.exam_date ?? undefined,
+    dailyNewCardGoal: row.daily_new_card_goal ?? 10,
+    dailyPlanSnapshot: row.daily_plan_snapshot ?? undefined,
+  };
+}
 
-export function getSettings(): AppSettings {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return { ...defaultSettings };
-    const saved = JSON.parse(raw) as Partial<AppSettings>;
-    if (Array.isArray(saved.examiners) && saved.examiners.every(e => OLD_PLACEHOLDER_EXAMINERS.has(e))) {
-      saved.examiners = DEFAULT_EXAMINERS;
-    }
-    if (Array.isArray(saved.subjects) && saved.subjects.every(s => OLD_PLACEHOLDER_SUBJECTS.has(s))) {
-      saved.subjects = DEFAULT_SUBJECTS;
-    }
-    return { ...defaultSettings, ...saved } as AppSettings;
-  } catch {
-    return { ...defaultSettings };
+function settingsToRow(settings: AppSettings, userId: string): SettingsRow {
+  return {
+    user_id: userId,
+    subjects: settings.subjects,
+    examiners: settings.examiners,
+    custom_tags: settings.customTags,
+    study_streak: settings.studyStreak,
+    last_studied_date: settings.lastStudiedDate,
+    exam_date: settings.examDate ?? null,
+    daily_new_card_goal: settings.dailyNewCardGoal,
+    daily_plan_snapshot: settings.dailyPlanSnapshot ?? null,
+  };
+}
+
+async function getUserId(): Promise<string> {
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) throw new Error('Not authenticated');
+  return data.user.id;
+}
+
+// ─── Cards ────────────────────────────────────────────────────
+
+export async function getCards(): Promise<Flashcard[]> {
+  const { data, error } = await supabase
+    .from('cards')
+    .select('*')
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data as CardRow[]).map(rowToCard);
+}
+
+export async function saveCard(card: Flashcard): Promise<void> {
+  const { error } = await supabase
+    .from('cards')
+    .upsert(cardToRow(card));
+  if (error) throw error;
+}
+
+export async function deleteCard(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('cards')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function saveAllCards(cards: Flashcard[]): Promise<void> {
+  const { error: delErr } = await supabase
+    .from('cards')
+    .delete()
+    .not('id', 'is', null);
+  if (delErr) throw delErr;
+  if (cards.length > 0) {
+    const { error: insErr } = await supabase
+      .from('cards')
+      .insert(cards.map(cardToRow));
+    if (insErr) throw insErr;
   }
 }
 
-export function saveSettings(settings: AppSettings): void {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+export async function insertCards(cards: Flashcard[]): Promise<void> {
+  if (cards.length === 0) return;
+  const { error } = await supabase
+    .from('cards')
+    .insert(cards.map(cardToRow));
+  if (error) throw error;
 }
 
-// ─── Streak ──────────────────────────────────────────────────
+// ─── Settings ─────────────────────────────────────────────────
 
-export function updateStreak(): AppSettings {
-  const settings = getSettings();
+export async function getSettings(): Promise<AppSettings> {
+  const { data, error } = await supabase
+    .from('user_settings')
+    .select('*')
+    .single();
+  if (error?.code === 'PGRST116') return { ...defaultSettings };
+  if (error) throw error;
+  return rowToSettings(data as SettingsRow);
+}
+
+export async function saveSettings(settings: AppSettings): Promise<void> {
+  const userId = await getUserId();
+  const { error } = await supabase
+    .from('user_settings')
+    .upsert(settingsToRow(settings, userId), { onConflict: 'user_id' });
+  if (error) throw error;
+}
+
+// ─── Streak ───────────────────────────────────────────────────
+
+export async function updateStreak(): Promise<AppSettings> {
+  const settings = await getSettings();
   const today = new Date().toDateString();
-  const last = settings.lastStudiedDate;
-
-  if (last === today) {
-    return settings; // already studied today
-  }
+  if (settings.lastStudiedDate === today) return settings;
 
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  const isConsecutive = last === yesterday.toDateString();
+  const isConsecutive = settings.lastStudiedDate === yesterday.toDateString();
 
   const updated: AppSettings = {
     ...settings,
     studyStreak: isConsecutive ? settings.studyStreak + 1 : 1,
     lastStudiedDate: today,
   };
-  saveSettings(updated);
+  await saveSettings(updated);
   return updated;
 }

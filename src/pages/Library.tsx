@@ -12,12 +12,13 @@ interface Props {
   onEdit: (card: Flashcard) => void;
   onDelete: (id: string) => void;
   onStudyFiltered: (cards: Flashcard[]) => void;
+  onBulkAssignSet: (cardIds: string[], setId: string | undefined) => void;
   onNavigate: (page: string) => void;
 }
 
 type ViewMode = 'grid' | 'list';
 
-export default function Library({ cards, settings, sets, onEdit, onDelete, onStudyFiltered, onNavigate }: Props) {
+export default function Library({ cards, settings, sets, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onNavigate }: Props) {
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminer, setFilterExaminer] = useState('');
@@ -27,6 +28,11 @@ export default function Library({ cards, settings, sets, onEdit, onDelete, onStu
   const [filterSet, setFilterSet] = useState('');
   const [filterDue, setFilterDue] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+
+  // Selection mode
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkSetId, setBulkSetId] = useState('');
 
   const allTags = useMemo(() => {
     const s = new Set<string>();
@@ -57,6 +63,32 @@ export default function Library({ cards, settings, sets, onEdit, onDelete, onStu
     setFilterSet(''); setFilterDue(false);
   };
 
+  const toggleSelection = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => setSelectedIds(new Set(filtered.map(c => c.id)));
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+    setBulkSetId('');
+  };
+
+  const handleBulkAssign = () => {
+    if (selectedIds.size === 0) return;
+    onBulkAssignSet(Array.from(selectedIds), bulkSetId || undefined);
+    exitSelectionMode();
+  };
+
+  const selectedCount = selectedIds.size;
+  const allFilteredSelected = filtered.length > 0 && filtered.every(c => selectedIds.has(c.id));
+
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-5 fade-in">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -72,6 +104,18 @@ export default function Library({ cards, settings, sets, onEdit, onDelete, onStu
           >
             {viewMode === 'grid' ? '☰' : '⊞'}
           </button>
+          {sets.length > 0 && (
+            <button
+              onClick={() => { setSelectionMode(!selectionMode); clearSelection(); }}
+              className={`text-sm font-medium px-3 py-2 rounded-xl border transition-colors ${
+                selectionMode
+                  ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-400'
+                  : 'bg-[#1e2130] border-[#2d3148] text-[#9ca3af] hover:text-white'
+              }`}
+            >
+              ☑ Auswählen
+            </button>
+          )}
           <button
             onClick={() => onNavigate('new-card')}
             className="bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors"
@@ -125,8 +169,8 @@ export default function Library({ cards, settings, sets, onEdit, onDelete, onStu
         )}
       </div>
 
-      {/* Study filtered button */}
-      {filtered.length > 0 && (
+      {/* Action row: study button OR select-all hint */}
+      {filtered.length > 0 && !selectionMode && (
         <div className="flex justify-end">
           <button
             onClick={() => onStudyFiltered(filtered)}
@@ -134,6 +178,19 @@ export default function Library({ cards, settings, sets, onEdit, onDelete, onStu
           >
             ▶ Diese Auswahl lernen ({filtered.length})
           </button>
+        </div>
+      )}
+      {selectionMode && filtered.length > 0 && (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={allFilteredSelected ? clearSelection : selectAll}
+            className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+          >
+            {allFilteredSelected ? 'Alle abwählen' : `Alle ${filtered.length} auswählen`}
+          </button>
+          {selectedCount > 0 && (
+            <span className="text-xs text-[#9ca3af]">{selectedCount} ausgewählt</span>
+          )}
         </div>
       )}
 
@@ -147,14 +204,58 @@ export default function Library({ cards, settings, sets, onEdit, onDelete, onStu
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(card => (
-            <CardGridItem key={card.id} card={card} sets={sets} onEdit={onEdit} onDelete={onDelete} />
+            <CardGridItem
+              key={card.id} card={card} sets={sets}
+              selectionMode={selectionMode}
+              selected={selectedIds.has(card.id)}
+              onToggleSelect={() => toggleSelection(card.id)}
+              onEdit={onEdit} onDelete={onDelete}
+            />
           ))}
         </div>
       ) : (
         <div className="flex flex-col gap-2">
           {filtered.map(card => (
-            <CardListItem key={card.id} card={card} sets={sets} onEdit={onEdit} onDelete={onDelete} />
+            <CardListItem
+              key={card.id} card={card} sets={sets}
+              selectionMode={selectionMode}
+              selected={selectedIds.has(card.id)}
+              onToggleSelect={() => toggleSelection(card.id)}
+              onEdit={onEdit} onDelete={onDelete}
+            />
           ))}
+        </div>
+      )}
+
+      {/* Sticky bulk-action bar */}
+      {selectionMode && (
+        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-30 w-full max-w-xl px-4">
+          <div className="bg-[#1a1d27] border border-[#3d4168] rounded-2xl px-4 py-3 shadow-2xl flex items-center gap-3 flex-wrap">
+            <span className="text-sm font-semibold text-white shrink-0">
+              {selectedCount > 0 ? `${selectedCount} Karte${selectedCount !== 1 ? 'n' : ''}` : 'Karten auswählen'}
+            </span>
+            <select
+              value={bulkSetId}
+              onChange={e => setBulkSetId(e.target.value)}
+              className="flex-1 min-w-[120px] text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
+            >
+              <option value="">Kein Set</option>
+              {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <button
+              onClick={handleBulkAssign}
+              disabled={selectedCount === 0}
+              className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors shrink-0"
+            >
+              Zuweisen
+            </button>
+            <button
+              onClick={exitSelectionMode}
+              className="px-3 py-2 rounded-xl bg-[#252840] hover:bg-[#2d3148] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm transition-colors shrink-0"
+            >
+              Abbrechen
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -190,7 +291,17 @@ function SetDot({ setId, sets }: { setId?: string; sets: CardSet[] }) {
   );
 }
 
-function CardGridItem({ card, sets, onEdit, onDelete }: { card: Flashcard; sets: CardSet[]; onEdit: (c: Flashcard) => void; onDelete: (id: string) => void }) {
+interface CardItemProps {
+  card: Flashcard;
+  sets: CardSet[];
+  selectionMode: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onEdit: (c: Flashcard) => void;
+  onDelete: (id: string) => void;
+}
+
+function CardGridItem({ card, sets, selectionMode, selected, onToggleSelect, onEdit, onDelete }: CardItemProps) {
   const status = getSRSStatus(card);
   const due = isDueToday(card);
 
@@ -198,8 +309,22 @@ function CardGridItem({ card, sets, onEdit, onDelete }: { card: Flashcard; sets:
     ? (card.frontImage.type === 'base64' ? `data:${card.frontImage.mimeType ?? 'image/png'};base64,${card.frontImage.data}` : card.frontImage.data)
     : null;
 
+  const handleClick = () => { if (selectionMode) onToggleSelect(); };
+
   return (
-    <div className={`bg-[#1e2130] border rounded-2xl p-4 flex flex-col gap-3 hover:border-indigo-500/40 transition-all duration-200 group ${due ? 'border-indigo-500/30' : 'border-[#2d3148]'}`}>
+    <div
+      onClick={handleClick}
+      className={`bg-[#1e2130] border rounded-2xl p-4 flex flex-col gap-3 transition-all duration-200 group relative
+        ${selectionMode ? 'cursor-pointer' : ''}
+        ${selected ? 'border-indigo-500 ring-1 ring-indigo-500/50' : due ? 'border-indigo-500/30 hover:border-indigo-500/40' : 'border-[#2d3148] hover:border-indigo-500/40'}`}
+    >
+      {selectionMode && (
+        <div className={`absolute top-3 right-3 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors
+          ${selected ? 'bg-indigo-500 border-indigo-500' : 'bg-[#252840] border-[#3d4168]'}`}
+        >
+          {selected && <span className="text-white text-xs font-bold">✓</span>}
+        </div>
+      )}
       {imgSrc && <img src={imgSrc} alt="" className="w-full h-28 object-cover rounded-xl" />}
       <div className="flex-1">
         <p className="text-sm text-white font-medium line-clamp-3 leading-snug">
@@ -222,29 +347,43 @@ function CardGridItem({ card, sets, onEdit, onDelete }: { card: Flashcard; sets:
           {card.customTags.length > 3 && <span className="text-xs text-[#6b7280]">+{card.customTags.length - 3}</span>}
         </div>
       )}
-      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={() => onEdit(card)}
-          className="flex-1 text-xs py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] hover:border-indigo-500/30 transition-colors"
-        >
-          Bearbeiten
-        </button>
-        <button
-          onClick={() => onDelete(card.id)}
-          className="flex-1 text-xs py-1.5 rounded-lg bg-[#252840] hover:bg-red-500/20 text-[#9ca3af] hover:text-red-400 border border-[#2d3148] hover:border-red-500/30 transition-colors"
-        >
-          Löschen
-        </button>
-      </div>
+      {!selectionMode && (
+        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={e => { e.stopPropagation(); onEdit(card); }}
+            className="flex-1 text-xs py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] hover:border-indigo-500/30 transition-colors"
+          >
+            Bearbeiten
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); onDelete(card.id); }}
+            className="flex-1 text-xs py-1.5 rounded-lg bg-[#252840] hover:bg-red-500/20 text-[#9ca3af] hover:text-red-400 border border-[#2d3148] hover:border-red-500/30 transition-colors"
+          >
+            Löschen
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-function CardListItem({ card, sets, onEdit, onDelete }: { card: Flashcard; sets: CardSet[]; onEdit: (c: Flashcard) => void; onDelete: (id: string) => void }) {
+function CardListItem({ card, sets, selectionMode, selected, onToggleSelect, onEdit, onDelete }: CardItemProps) {
   const status = getSRSStatus(card);
   const due = isDueToday(card);
   return (
-    <div className={`bg-[#1e2130] border rounded-xl px-4 py-3 flex items-center gap-4 hover:border-indigo-500/40 transition-all group ${due ? 'border-indigo-500/30' : 'border-[#2d3148]'}`}>
+    <div
+      onClick={() => { if (selectionMode) onToggleSelect(); }}
+      className={`bg-[#1e2130] border rounded-xl px-4 py-3 flex items-center gap-3 transition-all group
+        ${selectionMode ? 'cursor-pointer' : ''}
+        ${selected ? 'border-indigo-500 ring-1 ring-indigo-500/50' : due ? 'border-indigo-500/30 hover:border-indigo-500/40' : 'border-[#2d3148] hover:border-indigo-500/40'}`}
+    >
+      {selectionMode && (
+        <div className={`shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors
+          ${selected ? 'bg-indigo-500 border-indigo-500' : 'bg-[#252840] border-[#3d4168]'}`}
+        >
+          {selected && <span className="text-white text-xs font-bold">✓</span>}
+        </div>
+      )}
       <div className="flex-1 min-w-0">
         <p className="text-sm text-white font-medium truncate">
           <MarkdownText text={card.front || '(leer)'} />
@@ -258,10 +397,12 @@ function CardListItem({ card, sets, onEdit, onDelete }: { card: Flashcard; sets:
         {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
         <SetDot setId={card.setId} sets={sets} />
       </div>
-      <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-        <button onClick={() => onEdit(card)} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] transition-colors">Bearbeiten</button>
-        <button onClick={() => onDelete(card.id)} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-red-500/20 text-[#9ca3af] hover:text-red-400 border border-[#2d3148] transition-colors">Löschen</button>
-      </div>
+      {!selectionMode && (
+        <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          <button onClick={e => { e.stopPropagation(); onEdit(card); }} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] transition-colors">Bearbeiten</button>
+          <button onClick={e => { e.stopPropagation(); onDelete(card.id); }} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-red-500/20 text-[#9ca3af] hover:text-red-400 border border-[#2d3148] transition-colors">Löschen</button>
+        </div>
+      )}
     </div>
   );
 }

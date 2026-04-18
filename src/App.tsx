@@ -117,6 +117,11 @@ export default function App() {
     rateCard(id, rating, settings.examDate);
   }, [rateCard, settings.examDate]);
 
+  const handleBulkAssignSet = useCallback((cardIds: string[], setId: string | undefined) => {
+    cardIds.forEach(id => updateCard(id, { setId }));
+    showToast(`${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} zugewiesen`, 'success');
+  }, [updateCard, showToast]);
+
   const handleViewSet = useCallback((set: CardSet) => {
     setViewingSet(set);
     setPage('set-detail');
@@ -192,6 +197,7 @@ export default function App() {
             onEdit={handleEditCard}
             onDelete={handleDeleteCard}
             onStudyFiltered={handleStudyFiltered}
+            onBulkAssignSet={handleBulkAssignSet}
             onNavigate={navigate}
           />
         )}

@@ -37,6 +37,11 @@ export interface Flashcard {
   customTags: string[];
   setId?: string;
   flagged?: boolean;
+  // Exam frequency / probability (set via JSON import)
+  timesAsked?: number;
+  askedByExaminers?: string[];
+  askedInCatalogs?: string[];
+  probabilityPercent?: number;
   createdAt: string; // ISO date string
   updatedAt: string; // ISO date string
   // SM-2 SRS fields

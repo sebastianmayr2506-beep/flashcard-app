@@ -4,6 +4,7 @@ import { getSRSStatus, isDueToday } from '../types/card';
 import DifficultyBadge from '../components/DifficultyBadge';
 import SRSBadge from '../components/SRSBadge';
 import MarkdownText from '../components/MarkdownText';
+import ProbabilityBadge from '../components/ProbabilityBadge';
 
 interface Props {
   cards: Flashcard[];
@@ -30,6 +31,8 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
   const [filterSet, setFilterSet] = useState('');
   const [filterDue, setFilterDue] = useState(false);
   const [filterFlagged, setFilterFlagged] = useState(false);
+  const [filterKlassiker, setFilterKlassiker] = useState(false);
+  const [sortBy, setSortBy] = useState<'default' | 'probability'>('default');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
 
   // Selection mode
@@ -45,7 +48,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return cards.filter(c => {
+    const result = cards.filter(c => {
       if (q && !c.front.toLowerCase().includes(q) && !c.back.toLowerCase().includes(q)) return false;
       if (filterSubject && !c.subjects?.includes(filterSubject)) return false;
       if (filterExaminer && !c.examiners?.includes(filterExaminer)) return false;
@@ -55,16 +58,22 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
       if (filterSet && c.setId !== filterSet) return false;
       if (filterDue && !isDueToday(c)) return false;
       if (filterFlagged && !c.flagged) return false;
+      if (filterKlassiker && (c.probabilityPercent ?? 0) <= 60) return false;
       return true;
     });
-  }, [cards, search, filterSubject, filterExaminer, filterDifficulty, filterTag, filterSRS, filterSet, filterDue, filterFlagged]);
+    if (sortBy === 'probability') {
+      result.sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0));
+    }
+    return result;
+  }, [cards, search, filterSubject, filterExaminer, filterDifficulty, filterTag, filterSRS, filterSet, filterDue, filterFlagged, filterKlassiker, sortBy]);
 
-  const hasFilters = search || filterSubject || filterExaminer || filterDifficulty || filterTag || filterSRS || filterSet || filterDue || filterFlagged;
+  const hasFilters = search || filterSubject || filterExaminer || filterDifficulty || filterTag || filterSRS || filterSet || filterDue || filterFlagged || filterKlassiker || sortBy !== 'default';
 
   const clearFilters = () => {
     setSearch(''); setFilterSubject(''); setFilterExaminer('');
     setFilterDifficulty(''); setFilterTag(''); setFilterSRS('');
     setFilterSet(''); setFilterDue(false); setFilterFlagged(false);
+    setFilterKlassiker(false); setSortBy('default');
   };
 
   const toggleSelection = (id: string) => {
@@ -171,6 +180,22 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
               : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
           >
             🚩 Geflaggt
+          </button>
+          <button
+            onClick={() => setFilterKlassiker(!filterKlassiker)}
+            className={`px-3 py-2 rounded-xl text-sm border transition-colors ${filterKlassiker
+              ? 'bg-orange-500/15 border-orange-500/40 text-orange-400'
+              : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
+          >
+            🔥 Nur Klassiker
+          </button>
+          <button
+            onClick={() => setSortBy(sortBy === 'probability' ? 'default' : 'probability')}
+            className={`px-3 py-2 rounded-xl text-sm border transition-colors ${sortBy === 'probability'
+              ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-400'
+              : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
+          >
+            📊 Nach Wahrscheinlichkeit
           </button>
         </div>
         {hasFilters && (
@@ -369,6 +394,9 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
         {linkCount > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">🔗 {linkCount}</span>}
         <SetDot setId={card.setId} sets={sets} />
       </div>
+      {card.probabilityPercent != null && card.probabilityPercent > 0 && (
+        <ProbabilityBadge pct={card.probabilityPercent} size="xs" />
+      )}
       {card.customTags.length > 0 && (
         <div className="flex gap-1 flex-wrap">
           {card.customTags.slice(0,3).map(t => (
@@ -428,6 +456,9 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
         {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
         {card.flagged && <span title={flagTooltip(card.id, flagAttempts, autoUnflagEnabled)} className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 cursor-help">🚩</span>}
         {linkCount > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">🔗 {linkCount}</span>}
+        {card.probabilityPercent != null && card.probabilityPercent > 0 && (
+          <ProbabilityBadge pct={card.probabilityPercent} size="xs" />
+        )}
         <SetDot setId={card.setId} sets={sets} />
       </div>
       {!selectionMode && (

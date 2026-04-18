@@ -31,6 +31,10 @@ function validateCard(raw: unknown): Flashcard {
     repetitions: typeof c.repetitions === 'number' ? c.repetitions : srs.repetitions,
     easeFactor: typeof c.easeFactor === 'number' ? c.easeFactor : srs.easeFactor,
     nextReviewDate: typeof c.nextReviewDate === 'string' ? c.nextReviewDate : srs.nextReviewDate,
+    timesAsked: typeof c.times_asked === 'number' ? c.times_asked : undefined,
+    askedByExaminers: Array.isArray(c.asked_by_examiners) ? c.asked_by_examiners.map(String) : undefined,
+    askedInCatalogs: Array.isArray(c.asked_in_catalogs) ? c.asked_in_catalogs.map(String) : undefined,
+    probabilityPercent: typeof c.probability_percent === 'number' ? c.probability_percent : undefined,
   };
 }
 

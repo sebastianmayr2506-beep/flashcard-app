@@ -182,6 +182,13 @@ export function saveAllLinks(links: CardLink[]): void {
   localStorage.setItem(LINKS_KEY, JSON.stringify(links));
 }
 
+// ─── Exam Frequency Columns (run in Supabase SQL editor) ─────
+//
+// alter table public.cards add column if not exists times_asked integer default 1;
+// alter table public.cards add column if not exists asked_by_examiners text[] default '{}';
+// alter table public.cards add column if not exists asked_in_catalogs text[] default '{}';
+// alter table public.cards add column if not exists probability_percent integer default 0;
+
 // ─── Flag Attempts ───────────────────────────────────────────
 //
 // SUPABASE SQL:

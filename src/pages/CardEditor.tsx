@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { Flashcard, Difficulty, AppSettings, CardImage, CardSet, CardLink } from '../types/card';
 import ImageInput from '../components/ImageInput';
 import LinkedCards from '../components/LinkedCards';
+import ProbabilityBadge from '../components/ProbabilityBadge';
 
 interface Props {
   card?: Flashcard;
@@ -247,6 +248,26 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
               🚩 {flagged ? 'Geflaggt (zum Entfernen klicken)' : 'Karte flaggen'}
             </button>
           </div>
+
+          {card && card.timesAsked != null && card.timesAsked > 0 && (
+            <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-3">
+              <h3 className="font-semibold text-white flex items-center gap-2">📊 Prüfungsstatistik</h3>
+              <div className="space-y-2 text-sm">
+                <p className="text-[#9ca3af]">🔁 <span className="text-white font-medium">{card.timesAsked}×</span> gestellt</p>
+                {card.askedByExaminers && card.askedByExaminers.length > 0 && (
+                  <p className="text-[#9ca3af]">👥 Gefragt von: <span className="text-white">{card.askedByExaminers.join(', ')}</span></p>
+                )}
+                {card.askedInCatalogs && card.askedInCatalogs.length > 0 && (
+                  <p className="text-[#9ca3af]">📅 In Katalogen: <span className="text-white">{card.askedInCatalogs.join(', ')}</span></p>
+                )}
+                {card.probabilityPercent != null && card.probabilityPercent > 0 && (
+                  <div className="pt-1">
+                    <ProbabilityBadge pct={card.probabilityPercent} />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {card && (
             <LinkedCards

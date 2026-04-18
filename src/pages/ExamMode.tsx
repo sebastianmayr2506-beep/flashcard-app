@@ -7,8 +7,8 @@ import { LinkedCardsPanel } from '../components/LinkedCards';
 // ─── Types ────────────────────────────────────────────────────
 
 type Phase = 'setup' | 'session' | 'result';
-type Source = 'all' | 'set' | 'flagged' | 'filter';
-type Order = 'random' | 'difficulty';
+type Source = 'all' | 'set' | 'flagged' | 'filter' | 'klassiker';
+type Order = 'random' | 'difficulty' | 'probability';
 
 interface ExamConfig {
   source: Source;
@@ -163,6 +163,7 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
     let pool = cards;
     if (config.source === 'set' && config.setId)    pool = pool.filter(c => c.setId === config.setId);
     if (config.source === 'flagged')                pool = pool.filter(c => c.flagged);
+    if (config.source === 'klassiker')              pool = pool.filter(c => (c.probabilityPercent ?? 0) > 60);
     if (config.source === 'filter') {
       if (config.filterSubject)   pool = pool.filter(c => c.subjects?.includes(config.filterSubject));
       if (config.filterExaminer)  pool = pool.filter(c => c.examiners?.includes(config.filterExaminer));
@@ -177,6 +178,8 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
     // Order
     if (config.order === 'random') {
       pool = pool.sort(() => Math.random() - 0.5);
+    } else if (config.order === 'probability') {
+      pool = pool.sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0));
     } else {
       const rank = { schwer: 0, mittel: 1, einfach: 2 };
       pool = pool.sort((a, b) => rank[a.difficulty] - rank[b.difficulty]);
@@ -265,10 +268,11 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
               <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Quelle</h3>
               <div className="grid grid-cols-2 gap-2">
                 {([
-                  ['all',     '📚', 'Alle Karten'],
-                  ['set',     '📂', 'Ein Set'],
-                  ['flagged', '🚩', 'Geflaggte Karten'],
-                  ['filter',  '🔍', 'Nach Filter'],
+                  ['all',       '📚', 'Alle Karten'],
+                  ['set',       '📂', 'Ein Set'],
+                  ['flagged',   '🚩', 'Geflaggte Karten'],
+                  ['filter',    '🔍', 'Nach Filter'],
+                  ['klassiker', '🔥', 'Nur Klassiker (>60%)'],
                 ] as [Source, string, string][]).map(([val, icon, label]) => (
                   <button
                     key={val}
@@ -345,18 +349,24 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
             {/* Order */}
             <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-3">
               <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Reihenfolge</h3>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   onClick={() => setConfig(c => ({ ...c, order: 'random' }))}
-                  className={`flex-1 py-2 rounded-xl border text-sm font-medium transition-all ${config.order === 'random' ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300' : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
+                  className={`py-2 rounded-xl border text-sm font-medium transition-all ${config.order === 'random' ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300' : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
                 >
                   🎲 Zufällig
                 </button>
                 <button
                   onClick={() => setConfig(c => ({ ...c, order: 'difficulty' }))}
-                  className={`flex-1 py-2 rounded-xl border text-sm font-medium transition-all ${config.order === 'difficulty' ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300' : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
+                  className={`py-2 rounded-xl border text-sm font-medium transition-all ${config.order === 'difficulty' ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300' : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
                 >
-                  🔥 Schwer zuerst
+                  💪 Schwer zuerst
+                </button>
+                <button
+                  onClick={() => setConfig(c => ({ ...c, order: 'probability' }))}
+                  className={`py-2 rounded-xl border text-sm font-medium transition-all ${config.order === 'probability' ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300' : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
+                >
+                  📊 Nach Wahrscheinlichkeit
                 </button>
               </div>
             </div>

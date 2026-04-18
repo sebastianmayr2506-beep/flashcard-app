@@ -6,6 +6,7 @@ import {
 import type { Flashcard, AppSettings } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
 import { calculateDailyPlan, getCardsRatedToday } from '../utils/dailyGoal';
+import ProbabilityBadge from '../components/ProbabilityBadge';
 
 interface Props {
   cards: Flashcard[];
@@ -13,6 +14,7 @@ interface Props {
   onNavigate: (page: string) => void;
   onStartDailySession: () => void;
   onDismissUnflagNotification: () => void;
+  onEditCard: (card: Flashcard) => void;
 }
 
 const SRS_COLORS: Record<string, string> = {
@@ -22,7 +24,7 @@ const SRS_LABELS: Record<string, string> = {
   neu: 'Neu', lernend: 'Lernend', wiederholen: 'Wiederholen', beherrscht: 'Beherrscht',
 };
 
-export default function Dashboard({ cards, settings, onNavigate, onStartDailySession, onDismissUnflagNotification }: Props) {
+export default function Dashboard({ cards, settings, onNavigate, onStartDailySession, onDismissUnflagNotification, onEditCard }: Props) {
   const plan = useMemo(() => calculateDailyPlan(cards, settings), [cards, settings]);
   const ratedToday = useMemo(() => getCardsRatedToday(cards), [cards]);
 
@@ -55,6 +57,14 @@ export default function Dashboard({ cards, settings, onNavigate, onStartDailySes
     Ausstehend: d.due,
     Neu: d.total - d.mastered - d.due,
   }));
+
+  const topKlassiker = useMemo(() =>
+    cards
+      .filter(c => (c.probabilityPercent ?? 0) > 0)
+      .sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0))
+      .slice(0, 5),
+    [cards]
+  );
 
   const unflagNotif = settings.autoUnflagNotification;
   const showUnflagBanner = unflagNotif &&
@@ -104,6 +114,33 @@ export default function Dashboard({ cards, settings, onNavigate, onStartDailySes
 
       {/* Exam Countdown Widget */}
       <ExamCountdownWidget plan={plan} settings={settings} onNavigate={onNavigate} />
+
+      {/* Top Klassiker Widget */}
+      {topKlassiker.length > 0 && (
+        <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-white flex items-center gap-2">🔥 Top Klassiker</h3>
+            <span className="text-xs text-[#6b7280]">Häufigste Prüfungsfragen</span>
+          </div>
+          <div className="space-y-2">
+            {topKlassiker.map(card => (
+              <button
+                key={card.id}
+                onClick={() => onEditCard(card)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-[#252840] hover:bg-[#2d3148] border border-[#2d3148] hover:border-indigo-500/30 transition-all text-left group"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-white truncate">{card.front || '(leer)'}</p>
+                  {card.subjects?.length > 0 && (
+                    <p className="text-xs text-[#6b7280] mt-0.5">{card.subjects[0]}</p>
+                  )}
+                </div>
+                <ProbabilityBadge pct={card.probabilityPercent!} size="xs" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Daily Goal Card */}
       {settings.examDate && !plan.examPassed && (

@@ -39,6 +39,8 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   const [filterDifficulty, setFilterDifficulty] = useState('');
   const [filterSet, setFilterSet] = useState('');
   const [onlyDue, setOnlyDue] = useState(true);
+  const [filterKlassiker, setFilterKlassiker] = useState(false);
+  const [sortByProbability, setSortByProbability] = useState(false);
   const [sessionCards, setSessionCards] = useState<Flashcard[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
@@ -54,9 +56,11 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
       if (filterDifficulty) result = result.filter(c => c.difficulty === filterDifficulty);
       if (filterSet) result = result.filter(c => c.setId === filterSet);
       if (onlyDue) result = result.filter(isDueToday);
+      if (filterKlassiker) result = result.filter(c => (c.probabilityPercent ?? 0) > 60);
+      if (sortByProbability) result = [...result].sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0));
     }
     return result;
-  }, [cards, preFilteredCards, filterSubject, filterExaminer, filterDifficulty, filterSet, onlyDue]);
+  }, [cards, preFilteredCards, filterSubject, filterExaminer, filterDifficulty, filterSet, onlyDue, filterKlassiker, sortByProbability]);
 
   useEffect(() => {
     if (dailyPlan) {
@@ -73,7 +77,10 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
 
   const startSession = () => {
     if (availableCards.length === 0) return;
-    setSessionCards([...availableCards].sort(() => Math.random() - 0.5));
+    const ordered = sortByProbability
+      ? [...availableCards].sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0))
+      : [...availableCards].sort(() => Math.random() - 0.5);
+    setSessionCards(ordered);
     setCurrentIdx(0);
     setIsFlipped(false);
     setRatings({ nochmal: 0, schwer: 0, gut: 0, einfach: 0 });
@@ -159,6 +166,24 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                 <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${onlyDue ? 'left-5' : 'left-1'}`} />
               </div>
               <span className="text-sm text-white">Nur fällige Karten</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <div
+                onClick={() => setFilterKlassiker(!filterKlassiker)}
+                className={`w-10 h-6 rounded-full transition-colors relative ${filterKlassiker ? 'bg-red-500' : 'bg-[#2d3148]'}`}
+              >
+                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${filterKlassiker ? 'left-5' : 'left-1'}`} />
+              </div>
+              <span className="text-sm text-white">🔥 Nur Klassiker (&gt;60% Wahrscheinlichkeit)</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <div
+                onClick={() => setSortByProbability(!sortByProbability)}
+                className={`w-10 h-6 rounded-full transition-colors relative ${sortByProbability ? 'bg-amber-500' : 'bg-[#2d3148]'}`}
+              >
+                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${sortByProbability ? 'left-5' : 'left-1'}`} />
+              </div>
+              <span className="text-sm text-white">📊 Nach Wahrscheinlichkeit sortieren</span>
             </label>
 
             <div className={`p-3 rounded-xl text-center ${availableCards.length > 0 ? 'bg-indigo-500/10 border border-indigo-500/20' : 'bg-[#252840]'}`}>

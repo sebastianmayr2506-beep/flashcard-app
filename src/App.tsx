@@ -262,6 +262,7 @@ export default function App() {
             onNavigate={navigate}
             onStartDailySession={handleStartDailySession}
             onDismissUnflagNotification={handleDismissUnflagNotification}
+            onEditCard={handleEditCard}
           />
         )}
         {page === 'library' && (

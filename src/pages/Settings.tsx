@@ -112,6 +112,24 @@ export default function Settings({
         placeholder="Neuer Tag…"
       />
 
+      <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-3">
+        <h3 className="font-semibold text-white flex items-center gap-2">🚩 Prüfungsmodus – Flaggen</h3>
+        <label className="flex items-center justify-between gap-4 cursor-pointer">
+          <div>
+            <p className="text-sm text-white">Automatische Flaggen-Entfernung</p>
+            <p className="text-xs text-[#6b7280] mt-0.5">
+              Flagge wird entfernt, sobald du eine Karte im Prüfungsmodus an 2 verschiedenen Tagen richtig beantwortest
+            </p>
+          </div>
+          <div
+            onClick={() => onUpdateSettings({ autoUnflagEnabled: !settings.autoUnflagEnabled })}
+            className={`shrink-0 w-10 h-6 rounded-full transition-colors relative cursor-pointer ${settings.autoUnflagEnabled ? 'bg-indigo-500' : 'bg-[#2d3148]'}`}
+          >
+            <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${settings.autoUnflagEnabled ? 'left-5' : 'left-1'}`} />
+          </div>
+        </label>
+      </div>
+
       <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5">
         <h3 className="font-semibold text-white mb-1 flex items-center gap-2">📊 Lernstatistik</h3>
         <p className="text-sm text-[#9ca3af]">Aktueller Streak: <span className="text-amber-400 font-semibold">{settings.studyStreak} Tag{settings.studyStreak !== 1 ? 'e' : ''} 🔥</span></p>

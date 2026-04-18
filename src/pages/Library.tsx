@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import type { Flashcard, AppSettings, Difficulty, SRSStatus, CardSet, CardLink } from '../types/card';
+import type { Flashcard, AppSettings, Difficulty, SRSStatus, CardSet, CardLink, FlagAttempt } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
 import DifficultyBadge from '../components/DifficultyBadge';
 import SRSBadge from '../components/SRSBadge';
@@ -10,6 +10,7 @@ interface Props {
   settings: AppSettings;
   sets: CardSet[];
   links: CardLink[];
+  flagAttempts: FlagAttempt[];
   onEdit: (card: Flashcard) => void;
   onDelete: (id: string) => void;
   onStudyFiltered: (cards: Flashcard[]) => void;
@@ -19,7 +20,7 @@ interface Props {
 
 type ViewMode = 'grid' | 'list';
 
-export default function Library({ cards, settings, sets, links, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onNavigate }: Props) {
+export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onNavigate }: Props) {
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminer, setFilterExaminer] = useState('');
@@ -217,6 +218,7 @@ export default function Library({ cards, settings, sets, links, onEdit, onDelete
           {filtered.map(card => (
             <CardGridItem
               key={card.id} card={card} sets={sets} links={links}
+              flagAttempts={flagAttempts} autoUnflagEnabled={settings.autoUnflagEnabled}
               selectionMode={selectionMode}
               selected={selectedIds.has(card.id)}
               onToggleSelect={() => toggleSelection(card.id)}
@@ -229,6 +231,7 @@ export default function Library({ cards, settings, sets, links, onEdit, onDelete
           {filtered.map(card => (
             <CardListItem
               key={card.id} card={card} sets={sets} links={links}
+              flagAttempts={flagAttempts} autoUnflagEnabled={settings.autoUnflagEnabled}
               selectionMode={selectionMode}
               selected={selectedIds.has(card.id)}
               onToggleSelect={() => toggleSelection(card.id)}
@@ -306,6 +309,8 @@ interface CardItemProps {
   card: Flashcard;
   sets: CardSet[];
   links: CardLink[];
+  flagAttempts: FlagAttempt[];
+  autoUnflagEnabled: boolean;
   selectionMode: boolean;
   selected: boolean;
   onToggleSelect: () => void;
@@ -313,7 +318,17 @@ interface CardItemProps {
   onDelete: (id: string) => void;
 }
 
-function CardGridItem({ card, sets, links, selectionMode, selected, onToggleSelect, onEdit, onDelete }: CardItemProps) {
+function flagTooltip(cardId: string, flagAttempts: FlagAttempt[], autoUnflagEnabled: boolean): string {
+  if (!autoUnflagEnabled) return '🚩 Manuell geflaggt';
+  const days = new Set(
+    flagAttempts.filter(a => a.cardId === cardId && a.answeredCorrectly).map(a => a.attemptedAt)
+  ).size;
+  if (days === 0) return '🚩 Noch 2 Tage mit richtiger Antwort im Prüfungsmodus nötig';
+  if (days === 1) return '🚩 Noch 1 weiterer Tag mit richtiger Antwort im Prüfungsmodus nötig';
+  return '🚩 Flagge wird bald automatisch entfernt';
+}
+
+function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete }: CardItemProps) {
   const status = getSRSStatus(card);
   const due = isDueToday(card);
   const linkCount = links.filter(l => l.cardId === card.id || l.linkedCardId === card.id).length;
@@ -350,7 +365,7 @@ function CardGridItem({ card, sets, links, selectionMode, selected, onToggleSele
         <DifficultyBadge difficulty={card.difficulty} />
         <SRSBadge status={status} />
         {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
-        {card.flagged && <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400">🚩</span>}
+        {card.flagged && <span title={flagTooltip(card.id, flagAttempts, autoUnflagEnabled)} className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 cursor-help">🚩</span>}
         {linkCount > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">🔗 {linkCount}</span>}
         <SetDot setId={card.setId} sets={sets} />
       </div>
@@ -382,7 +397,7 @@ function CardGridItem({ card, sets, links, selectionMode, selected, onToggleSele
   );
 }
 
-function CardListItem({ card, sets, links, selectionMode, selected, onToggleSelect, onEdit, onDelete }: CardItemProps) {
+function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete }: CardItemProps) {
   const status = getSRSStatus(card);
   const due = isDueToday(card);
   const linkCount = links.filter(l => l.cardId === card.id || l.linkedCardId === card.id).length;
@@ -411,7 +426,7 @@ function CardListItem({ card, sets, links, selectionMode, selected, onToggleSele
         <DifficultyBadge difficulty={card.difficulty} />
         <SRSBadge status={status} />
         {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
-        {card.flagged && <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400">🚩</span>}
+        {card.flagged && <span title={flagTooltip(card.id, flagAttempts, autoUnflagEnabled)} className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 cursor-help">🚩</span>}
         {linkCount > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">🔗 {linkCount}</span>}
         <SetDot setId={card.setId} sets={sets} />
       </div>

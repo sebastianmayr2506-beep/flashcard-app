@@ -60,6 +60,20 @@ export interface AppSettings {
     date: string;       // toDateString() key
     totalCards: number; // size of plan when "Jetzt lernen" was clicked
   };
+  autoUnflagEnabled: boolean;        // remove flag after 2 correct days in Prüfungsmodus
+  autoUnflagNotification?: {
+    date: string;      // toDateString() key
+    count: number;
+    dismissed: boolean;
+  };
+}
+
+export interface FlagAttempt {
+  id: string;
+  cardId: string;
+  answeredCorrectly: boolean;
+  attemptedAt: string; // YYYY-MM-DD calendar date
+  createdAt: string;
 }
 
 export interface CardLink {

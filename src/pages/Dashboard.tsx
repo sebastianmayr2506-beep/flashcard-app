@@ -12,6 +12,7 @@ interface Props {
   settings: AppSettings;
   onNavigate: (page: string) => void;
   onStartDailySession: () => void;
+  onDismissUnflagNotification: () => void;
 }
 
 const SRS_COLORS: Record<string, string> = {
@@ -21,7 +22,7 @@ const SRS_LABELS: Record<string, string> = {
   neu: 'Neu', lernend: 'Lernend', wiederholen: 'Wiederholen', beherrscht: 'Beherrscht',
 };
 
-export default function Dashboard({ cards, settings, onNavigate, onStartDailySession }: Props) {
+export default function Dashboard({ cards, settings, onNavigate, onStartDailySession, onDismissUnflagNotification }: Props) {
   const plan = useMemo(() => calculateDailyPlan(cards, settings), [cards, settings]);
   const ratedToday = useMemo(() => getCardsRatedToday(cards), [cards]);
 
@@ -55,6 +56,11 @@ export default function Dashboard({ cards, settings, onNavigate, onStartDailySes
     Neu: d.total - d.mastered - d.due,
   }));
 
+  const unflagNotif = settings.autoUnflagNotification;
+  const showUnflagBanner = unflagNotif &&
+    unflagNotif.date === new Date().toDateString() &&
+    !unflagNotif.dismissed;
+
   // Progress bar for today's goal
   const snapshotTotal = (settings.dailyPlanSnapshot?.date === new Date().toDateString())
     ? settings.dailyPlanSnapshot.totalCards
@@ -68,6 +74,18 @@ export default function Dashboard({ cards, settings, onNavigate, onStartDailySes
         <h2 className="text-2xl font-bold text-white">Dashboard</h2>
         <p className="text-[#9ca3af] text-sm mt-1">Dein Lernfortschritt auf einen Blick</p>
       </div>
+
+      {showUnflagBanner && (
+        <div className="bg-green-500/10 border border-green-500/30 rounded-2xl px-4 py-3 flex items-center justify-between gap-3">
+          <p className="text-green-400 text-sm font-medium">
+            ✅ {unflagNotif!.count} Flagge{unflagNotif!.count !== 1 ? 'n' : ''} heute automatisch entfernt
+          </p>
+          <button
+            onClick={onDismissUnflagNotification}
+            className="text-green-600 hover:text-green-400 text-lg leading-none transition-colors shrink-0"
+          >✕</button>
+        </div>
+      )}
 
       {/* Top stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

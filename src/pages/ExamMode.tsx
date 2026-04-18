@@ -28,6 +28,7 @@ interface Props {
   sets: CardSet[];
   links: CardLink[];
   onFlagCards: (ids: string[]) => void;
+  onRecordAttempts: (correct: Flashcard[], wrong: Flashcard[]) => Flashcard[];
   onNavigate: (page: string) => void;
 }
 
@@ -124,7 +125,7 @@ function DonutChart({ correct, total }: { correct: number; total: number }) {
 
 // ─── Main Component ───────────────────────────────────────────
 
-export default function ExamMode({ cards, settings, sets, links, onFlagCards, onNavigate }: Props) {
+export default function ExamMode({ cards, settings, sets, links, onFlagCards, onRecordAttempts, onNavigate }: Props) {
   const [phase, setPhase] = useState<Phase>('setup');
   const [config, setConfig] = useState<ExamConfig>({
     source: 'all',
@@ -148,6 +149,7 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
   // Result state
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [flagged, setFlagged] = useState(false);
+  const [autoUnflagged, setAutoUnflagged] = useState<Flashcard[]>([]);
   const resultRef = useRef<HTMLDivElement>(null);
 
   const allTags = useMemo(() => {
@@ -189,6 +191,7 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
     setCorrect([]);
     setWrong([]);
     setFlagged(false);
+    setAutoUnflagged([]);
     setPhase('session');
   };
 
@@ -198,6 +201,7 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
     setCorrect([]);
     setWrong([]);
     setFlagged(false);
+    setAutoUnflagged([]);
     setSessionCards(prev => [...prev].sort(() => Math.random() - 0.5));
     setPhase('session');
   };
@@ -210,16 +214,20 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
     setCorrect([]);
     setWrong([]);
     setFlagged(false);
+    setAutoUnflagged([]);
     setPhase('session');
   };
 
   const handleAnswer = (isCorrect: boolean) => {
     const card = sessionCards[currentIdx];
-    if (isCorrect) setCorrect(prev => [...prev, card]);
-    else           setWrong(prev => [...prev, card]);
+    const newCorrect = isCorrect ? [...correct, card] : correct;
+    const newWrong   = !isCorrect ? [...wrong, card] : wrong;
+    if (isCorrect) setCorrect(newCorrect); else setWrong(newWrong);
     setIsFlipped(false);
 
     if (currentIdx + 1 >= sessionCards.length) {
+      const unflagged = onRecordAttempts(newCorrect, newWrong);
+      setAutoUnflagged(unflagged);
       setPhase('result');
     } else {
       setCurrentIdx(i => i + 1);
@@ -566,6 +574,20 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
             ← Zurück zum Dashboard
           </button>
         </div>
+
+        {/* Auto-unflagged banner */}
+        {autoUnflagged.length > 0 && (
+          <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-4 space-y-2">
+            <p className="text-green-400 font-semibold text-sm">
+              ✅ {autoUnflagged.length} Flagge{autoUnflagged.length !== 1 ? 'n' : ''} automatisch entfernt – diese Frage{autoUnflagged.length !== 1 ? 'n hast du' : ' hast du'} jetzt im Griff!
+            </p>
+            <ul className="space-y-1">
+              {autoUnflagged.map(c => (
+                <li key={c.id} className="text-xs text-green-300/80 line-clamp-1">· {c.front}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Detail list */}
         <div className="space-y-2">

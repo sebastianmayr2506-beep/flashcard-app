@@ -7,10 +7,11 @@ import { useSets } from './hooks/useSets';
 import { useCardLinks } from './hooks/useCardLinks';
 import { useToast } from './hooks/useToast';
 import { useAuth } from './hooks/useAuth';
-import { updateStreak, saveSettings, getSettings, saveAllCards, getCards } from './utils/storage';
+import { updateStreak, saveSettings, getSettings, saveAllCards, getCards, saveFlagAttempt, getDistinctCorrectDays, getFlagAttempts } from './utils/storage';
 import { extractParentLinks } from './utils/import';
 import { calculateDailyPlan } from './utils/dailyGoal';
 import { v4 as uuidv4 } from 'uuid';
+import type { FlagAttempt } from './types/card';
 
 import Sidebar from './components/Sidebar';
 import ToastContainer from './components/ToastContainer';
@@ -36,6 +37,8 @@ export default function App() {
   const { sets, addSet, updateSet, removeSet } = useSets();
   const { links, addLink, removeLink } = useCardLinks();
   const { toasts, showToast, dismissToast } = useToast();
+
+  const [flagAttempts, setFlagAttempts] = useState<FlagAttempt[]>(() => getFlagAttempts());
 
   const [page, setPage] = useState<Page>('dashboard');
   const [editingCard, setEditingCard] = useState<Flashcard | undefined>();
@@ -107,6 +110,39 @@ export default function App() {
     });
     setPage('study');
   }, [cards, settings, updateSettings]);
+
+  const handleRecordAttempts = useCallback((correct: typeof cards, wrong: typeof cards): typeof cards => {
+    const today = new Date().toISOString().split('T')[0];
+    [...correct, ...wrong].forEach(card => {
+      const isCorrect = correct.some(c => c.id === card.id);
+      saveFlagAttempt({ id: uuidv4(), cardId: card.id, answeredCorrectly: isCorrect, attemptedAt: today, createdAt: new Date().toISOString() });
+    });
+    setFlagAttempts(getFlagAttempts());
+
+    if (!settings.autoUnflagEnabled) return [];
+
+    const autoUnflagged: typeof cards = [];
+    correct.filter(c => c.flagged).forEach(card => {
+      if (getDistinctCorrectDays(card.id) >= 2) {
+        updateCard(card.id, { flagged: false });
+        autoUnflagged.push(card);
+      }
+    });
+
+    if (autoUnflagged.length > 0) {
+      const todayStr = new Date().toDateString();
+      const existing = settings.autoUnflagNotification;
+      const prev = existing?.date === todayStr ? existing.count : 0;
+      updateSettings({ autoUnflagNotification: { date: todayStr, count: prev + autoUnflagged.length, dismissed: false } });
+    }
+
+    return autoUnflagged;
+  }, [settings.autoUnflagEnabled, settings.autoUnflagNotification, updateCard, updateSettings]);
+
+  const handleDismissUnflagNotification = useCallback(() => {
+    if (!settings.autoUnflagNotification) return;
+    updateSettings({ autoUnflagNotification: { ...settings.autoUnflagNotification, dismissed: true } });
+  }, [settings.autoUnflagNotification, updateSettings]);
 
   const handleFlagCards = useCallback((cardIds: string[]) => {
     cardIds.forEach(id => updateCard(id, { flagged: true }));
@@ -187,6 +223,7 @@ export default function App() {
           settings={settings}
           links={links}
           onFlagCards={handleFlagCards}
+          onRecordAttempts={handleRecordAttempts}
           onNavigate={navigate}
         />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
@@ -224,6 +261,7 @@ export default function App() {
             settings={settings}
             onNavigate={navigate}
             onStartDailySession={handleStartDailySession}
+            onDismissUnflagNotification={handleDismissUnflagNotification}
           />
         )}
         {page === 'library' && (
@@ -232,6 +270,7 @@ export default function App() {
             settings={settings}
             sets={sets}
             links={links}
+            flagAttempts={flagAttempts}
             onEdit={handleEditCard}
             onDelete={handleDeleteCard}
             onStudyFiltered={handleStudyFiltered}

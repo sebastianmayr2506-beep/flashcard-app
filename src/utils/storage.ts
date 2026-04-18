@@ -45,13 +45,14 @@
 // create policy "delete own shares" on public.shared_sets for delete using (auth.uid() = created_by);
 // ============================================================
 
-import type { Flashcard, AppSettings, CardSet, CardLink } from '../types/card';
+import type { Flashcard, AppSettings, CardSet, CardLink, FlagAttempt } from '../types/card';
 import { DEFAULT_SUBJECTS, DEFAULT_EXAMINERS } from '../types/card';
 
 const CARDS_KEY = 'flashcard_app_cards';
 const SETTINGS_KEY = 'flashcard_app_settings';
 const SETS_KEY = 'flashcard_app_sets';
 const LINKS_KEY = 'flashcard_app_card_links';
+const FLAG_ATTEMPTS_KEY = 'flashcard_app_flag_attempts';
 
 // ─── Cards ───────────────────────────────────────────────────
 
@@ -181,6 +182,46 @@ export function saveAllLinks(links: CardLink[]): void {
   localStorage.setItem(LINKS_KEY, JSON.stringify(links));
 }
 
+// ─── Flag Attempts ───────────────────────────────────────────
+//
+// SUPABASE SQL:
+// create table public.flag_attempts (
+//   id uuid primary key default gen_random_uuid(),
+//   user_id uuid references auth.users not null,
+//   card_id uuid references public.cards(id) on delete cascade not null,
+//   answered_correctly boolean not null,
+//   attempted_at date default current_date not null,
+//   created_at timestamptz default now()
+// );
+// alter table public.flag_attempts enable row level security;
+// create policy "own attempts" on public.flag_attempts using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+export function getFlagAttempts(): FlagAttempt[] {
+  try {
+    const raw = localStorage.getItem(FLAG_ATTEMPTS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as FlagAttempt[];
+  } catch {
+    return [];
+  }
+}
+
+export function saveFlagAttempt(attempt: FlagAttempt): void {
+  const attempts = getFlagAttempts();
+  attempts.push(attempt);
+  localStorage.setItem(FLAG_ATTEMPTS_KEY, JSON.stringify(attempts));
+}
+
+export function getDistinctCorrectDays(cardId: string): number {
+  const attempts = getFlagAttempts();
+  const days = new Set(
+    attempts
+      .filter(a => a.cardId === cardId && a.answeredCorrectly)
+      .map(a => a.attemptedAt)
+  );
+  return days.size;
+}
+
 // ─── Settings ────────────────────────────────────────────────
 
 const defaultSettings: AppSettings = {
@@ -190,6 +231,7 @@ const defaultSettings: AppSettings = {
   studyStreak: 0,
   lastStudiedDate: null,
   dailyNewCardGoal: 10,
+  autoUnflagEnabled: true,
 };
 
 const OLD_PLACEHOLDER_EXAMINERS = new Set(['Prof. Müller', 'Prof. Schmidt', 'Prof. Weber', 'Prof. Fischer']);

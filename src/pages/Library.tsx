@@ -411,7 +411,7 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
     ? (card.frontImage.type === 'base64' ? `data:${card.frontImage.mimeType ?? 'image/png'};base64,${card.frontImage.data}` : card.frontImage.data)
     : null;
 
-  const handleClick = () => { if (selectionMode) onToggleSelect(); };
+  const handleClick = () => { if (selectionMode) onToggleSelect(); else onPreview(card); };
 
   return (
     <div
@@ -494,8 +494,8 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
   const linkCount = links.filter(l => l.cardId === card.id || l.linkedCardId === card.id).length;
   return (
     <div
-      onClick={() => { if (selectionMode) onToggleSelect(); }}
-      className={`bg-[#1e2130] border rounded-xl px-4 py-3 flex items-center gap-3 transition-all group
+      onClick={() => { if (selectionMode) onToggleSelect(); else onPreview(card); }}
+      className={`bg-[#1e2130] border rounded-xl px-4 py-3 flex items-center gap-3 transition-all group cursor-pointer
         ${selectionMode ? 'cursor-pointer' : ''}
         ${selected ? 'border-indigo-500 ring-1 ring-indigo-500/50' : due ? 'border-indigo-500/30 hover:border-indigo-500/40' : 'border-[#2d3148] hover:border-indigo-500/40'}`}
     >

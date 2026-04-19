@@ -52,6 +52,12 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
     return Array.from(s).sort();
   }, [cards]);
 
+  const activeExaminers = useMemo(() => {
+    const s = new Set<string>();
+    cards.forEach(c => c.examiners?.forEach(e => s.add(e)));
+    return Array.from(s).sort();
+  }, [cards]);
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     const result = cards.filter(c => {
@@ -166,7 +172,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
             className="flex-1 min-w-[160px] text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none"
           />
           <Select value={filterSubject} onChange={setFilterSubject} placeholder="Fach" options={settings.subjects} />
-          <Select value={filterExaminer} onChange={setFilterExaminer} placeholder="Prüfer" options={settings.examiners} />
+          <Select value={filterExaminer} onChange={setFilterExaminer} placeholder="Prüfer" options={activeExaminers} />
           <Select value={filterDifficulty} onChange={v => setFilterDifficulty(v as Difficulty | '')} placeholder="Schwierigkeit" options={['einfach','mittel','schwer']} />
           {allTags.length > 0 && <Select value={filterTag} onChange={setFilterTag} placeholder="Tag" options={allTags} />}
           <Select value={filterSRS} onChange={v => setFilterSRS(v as SRSStatus | '')} placeholder="SRS-Status"

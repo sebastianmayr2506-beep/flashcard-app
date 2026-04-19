@@ -174,8 +174,10 @@ export function calculateDailyPlan(cards: Flashcard[], settings: AppSettings): D
   };
 }
 
-// Cards rated today (for progress bar)
+// Cards actually rated today (repetitions > 0 rules out freshly-imported cards)
 export function getCardsRatedToday(cards: Flashcard[]): number {
   const today = new Date().toDateString();
-  return cards.filter(c => new Date(c.updatedAt).toDateString() === today).length;
+  return cards.filter(c =>
+    c.repetitions > 0 && new Date(c.updatedAt).toDateString() === today
+  ).length;
 }

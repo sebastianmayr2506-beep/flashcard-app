@@ -340,8 +340,8 @@ function DailyGoalCard({ plan, ratedToday, progressPct, progressTotal, onStart }
         </div>
       </div>
 
-      {/* SM-2 projection row */}
-      {plan.masteryRateAtExam > 0 && (
+      {/* SM-2 pace row */}
+      {plan.newCardsPerDay > 0 && (
         <div className="grid grid-cols-3 gap-2 text-center">
           <div className="bg-[#252840]/60 rounded-lg px-2 py-2">
             <p className="text-sm font-semibold text-indigo-300">{plan.newCardsPerDay}</p>
@@ -359,7 +359,7 @@ function DailyGoalCard({ plan, ratedToday, progressPct, progressTotal, onStart }
               plan.masteryRateAtExam >= 90 ? 'text-emerald-400' :
               plan.masteryRateAtExam >= 70 ? 'text-amber-400' : 'text-red-400'
             }`}>{plan.masteryRateAtExam}%</p>
-            <p className="text-[10px] text-[#6b7280] mt-0.5">Beherrscht</p>
+            <p className="text-[10px] text-[#6b7280] mt-0.5">Prognose</p>
           </div>
         </div>
       )}

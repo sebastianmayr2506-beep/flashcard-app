@@ -1,8 +1,16 @@
--- Run this in the Supabase SQL Editor (https://supabase.com/dashboard → SQL Editor)
--- Execute each block in order.
+-- Run this in the Supabase SQL Editor
+-- Drops existing tables (no real data yet) and recreates them correctly.
+
+-- Drop in reverse FK order
+drop table if exists public.flag_attempts cascade;
+drop table if exists public.card_links cascade;
+drop table if exists public.cards cascade;
+drop table if exists public.sets cascade;
+drop table if exists public.user_settings cascade;
+drop table if exists public.shared_sets cascade;
 
 -- ─── 1. Sets ──────────────────────────────────────────────────────────────────
-create table if not exists public.sets (
+create table public.sets (
   id uuid primary key,
   user_id uuid references auth.users not null,
   name text not null,
@@ -19,7 +27,7 @@ create policy "own sets" on public.sets
   with check (auth.uid() = user_id);
 
 -- ─── 2. Cards ─────────────────────────────────────────────────────────────────
-create table if not exists public.cards (
+create table public.cards (
   id uuid primary key,
   user_id uuid references auth.users not null,
   front text not null default '',
@@ -49,7 +57,7 @@ create policy "own cards" on public.cards
   with check (auth.uid() = user_id);
 
 -- ─── 3. Card Links ────────────────────────────────────────────────────────────
-create table if not exists public.card_links (
+create table public.card_links (
   id uuid primary key,
   user_id uuid references auth.users not null,
   card_id uuid references public.cards(id) on delete cascade not null,
@@ -64,7 +72,7 @@ create policy "own card_links" on public.card_links
   with check (auth.uid() = user_id);
 
 -- ─── 4. User Settings ─────────────────────────────────────────────────────────
-create table if not exists public.user_settings (
+create table public.user_settings (
   user_id uuid primary key references auth.users not null,
   subjects text[] default '{}',
   examiners text[] default '{}',
@@ -84,7 +92,7 @@ create policy "own user_settings" on public.user_settings
   with check (auth.uid() = user_id);
 
 -- ─── 5. Flag Attempts ─────────────────────────────────────────────────────────
-create table if not exists public.flag_attempts (
+create table public.flag_attempts (
   id uuid primary key,
   user_id uuid references auth.users not null,
   card_id uuid references public.cards(id) on delete cascade not null,
@@ -97,18 +105,15 @@ create policy "own flag_attempts" on public.flag_attempts
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
--- ─── 6. Shared Sets (already exists — just verify) ────────────────────────────
--- This table should already exist from the previous auth setup.
--- If not, create it:
---
--- create table if not exists public.shared_sets (
---   id uuid primary key default gen_random_uuid(),
---   share_code text unique not null,
---   created_by uuid references auth.users not null,
---   set_data jsonb not null,
---   created_at timestamptz default now()
--- );
--- alter table public.shared_sets enable row level security;
--- create policy "read shared sets"  on public.shared_sets for select using (true);
--- create policy "create shares"     on public.shared_sets for insert with check (auth.uid() = created_by);
--- create policy "delete own shares" on public.shared_sets for delete using (auth.uid() = created_by);
+-- ─── 6. Shared Sets ───────────────────────────────────────────────────────────
+create table public.shared_sets (
+  id uuid primary key default gen_random_uuid(),
+  share_code text unique not null,
+  created_by uuid references auth.users not null,
+  set_data jsonb not null,
+  created_at timestamptz default now()
+);
+alter table public.shared_sets enable row level security;
+create policy "read shared sets"  on public.shared_sets for select using (true);
+create policy "create shares"     on public.shared_sets for insert with check (auth.uid() = created_by);
+create policy "delete own shares" on public.shared_sets for delete using (auth.uid() = created_by);

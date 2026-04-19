@@ -57,11 +57,12 @@ create policy "own cards" on public.cards
   with check (auth.uid() = user_id);
 
 -- ─── 3. Card Links ────────────────────────────────────────────────────────────
+-- No FK on card_id/linked_card_id — avoids race condition when importing cards+links together
 create table public.card_links (
   id uuid primary key,
   user_id uuid references auth.users not null,
-  card_id uuid references public.cards(id) on delete cascade not null,
-  linked_card_id uuid references public.cards(id) on delete cascade not null,
+  card_id uuid not null,
+  linked_card_id uuid not null,
   link_type text default 'related',
   created_at timestamptz default now(),
   unique(user_id, card_id, linked_card_id)

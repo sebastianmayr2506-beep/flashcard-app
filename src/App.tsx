@@ -181,7 +181,7 @@ export default function App() {
     setPage('set-detail');
   }, []);
 
-  const handleImportSet = useCallback((
+  const handleImportSet = useCallback(async (
     setData: Omit<CardSet, 'id' | 'createdAt' | 'updatedAt' | 'userId'>,
     newCards: Flashcard[],
     ownerId: string,
@@ -189,7 +189,7 @@ export default function App() {
   ) => {
     const newSet = addSet(setData, ownerId);
     const tagged = newCards.map(c => ({ ...c, id: c.id || uuidv4(), setId: newSet.id }));
-    importCards(tagged, true);
+    await importCards(tagged, true); // wait for cards to be in Supabase before adding links
 
     if (linkHints && linkHints.length > 0) {
       linkHints.forEach(({ cardFront, linkedCardFront, linkType }) => {

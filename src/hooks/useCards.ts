@@ -159,7 +159,7 @@ export function useCards(userId: string | null) {
     });
   }, [userId]);
 
-  const importCards = useCallback((newCards: Flashcard[], merge: boolean) => {
+  const importCards = useCallback(async (newCards: Flashcard[], merge: boolean): Promise<void> => {
     if (!userId) return;
     const base = merge ? cardsRef.current : [];
     const existingIds = new Set(base.map(c => c.id));
@@ -168,18 +168,15 @@ export function useCards(userId: string | null) {
     setCards(next);
 
     if (!merge) {
-      supabase.from('cards').delete().eq('user_id', userId).then(({ error }) => {
-        if (error) { console.error('Failed to clear cards:', error); return; }
-        if (next.length > 0) {
-          supabase.from('cards').insert(next.map(c => toDb(c, userId))).then(({ error: e }) => {
-            if (e) console.error('Failed to import cards:', e);
-          });
-        }
-      });
-    } else if (toAdd.length > 0) {
-      supabase.from('cards').insert(toAdd.map(c => toDb(c, userId))).then(({ error }) => {
+      const { error: delErr } = await supabase.from('cards').delete().eq('user_id', userId);
+      if (delErr) { console.error('Failed to clear cards:', delErr); return; }
+      if (next.length > 0) {
+        const { error } = await supabase.from('cards').insert(next.map(c => toDb(c, userId)));
         if (error) console.error('Failed to import cards:', error);
-      });
+      }
+    } else if (toAdd.length > 0) {
+      const { error } = await supabase.from('cards').insert(toAdd.map(c => toDb(c, userId)));
+      if (error) console.error('Failed to import cards:', error);
     }
   }, [userId]);
 

@@ -8,7 +8,7 @@ interface Props {
   cards: Flashcard[];
   sets: CardSet[];
   userId: string;
-  onImport: (cards: Flashcard[], merge: boolean) => void;
+  onImport: (cards: Flashcard[], merge: boolean) => Promise<void> | void;
   onImportSet: (set: Omit<CardSet, 'id' | 'createdAt' | 'updatedAt' | 'userId'>, cards: Flashcard[], userId: string, links?: Array<{ cardFront: string; linkedCardFront: string; linkType: 'child' | 'related' }>) => void;
   onImportLinks: (jsonText: string, importedCards: Flashcard[]) => void;
   onRepairLinks: (jsonText: string) => number;
@@ -57,9 +57,9 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
           // fall through to regular JSON import
         }
         imported = importFromJSON(text);
-        onImport(imported, mergeMode);
+        await onImport(imported, mergeMode); // wait for Supabase insert before adding links
         showToast(`${imported.length} Karten erfolgreich importiert!`, 'success');
-        // Resolve parent_question links AFTER cards are saved
+        // Resolve parent_question links AFTER cards are committed to Supabase
         const hints = extractParentLinks(text);
         if (hints.length > 0) onImportLinks(text, imported);
         return;

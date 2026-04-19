@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import type { Flashcard, AppSettings, Difficulty, SRSStatus, CardSet, CardLink, FlagAttempt } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
 import DifficultyBadge from '../components/DifficultyBadge';
@@ -292,8 +293,9 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
         </div>
       )}
 
-      {previewCard && (
-        <CardPreviewModal card={previewCard} onClose={() => setPreviewCard(null)} onEdit={onEdit} />
+      {previewCard && createPortal(
+        <CardPreviewModal card={previewCard} onClose={() => setPreviewCard(null)} onEdit={onEdit} />,
+        document.body
       )}
 
       {/* Sticky bulk-action bar */}

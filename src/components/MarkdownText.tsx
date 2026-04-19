@@ -1,60 +1,120 @@
-// Renders Markdown from pasted Notion/ChatGPT text:
-// ## H2, ### H3, **bold**, *italic*, - bullet lists, newlines
+// Renders Markdown: ## headings, **bold**, *italic*, - bullets, | tables |
 
 export default function MarkdownText({ text, className = '' }: { text: string; className?: string }) {
   const lines = text.split('\n');
+  const output: React.ReactNode[] = [];
+  let i = 0;
 
-  return (
-    <span className={`${className} block`}>
-      {lines.map((line, li) => {
-        const trimmed = line.trimStart();
+  while (i < lines.length) {
+    const trimmed = lines[i].trimStart();
 
-        // H1
-        if (trimmed.startsWith('# ') && !trimmed.startsWith('## ')) {
-          return (
-            <span key={li} className="block text-2xl font-bold text-white mt-3 mb-1">
-              {parseInline(trimmed.slice(2))}
-            </span>
-          );
-        }
-        // H2
-        if (trimmed.startsWith('## ') && !trimmed.startsWith('### ')) {
-          return (
-            <span key={li} className="block text-lg font-bold text-white mt-3 mb-1">
-              {parseInline(trimmed.slice(3))}
-            </span>
-          );
-        }
-        // H3
-        if (trimmed.startsWith('### ')) {
-          return (
-            <span key={li} className="block text-base font-semibold text-indigo-300 mt-2 mb-0.5">
-              {parseInline(trimmed.slice(4))}
-            </span>
-          );
-        }
-        // Bullet list (- item or * item)
-        if (trimmed.match(/^[-*] /)) {
-          return (
-            <span key={li} className="block pl-4 relative mt-0.5">
-              <span className="absolute left-1 top-0 text-indigo-400">•</span>
-              {parseInline(trimmed.slice(2))}
-            </span>
-          );
-        }
-        // Empty line → spacer
-        if (trimmed === '') {
-          return <span key={li} className="block h-2" />;
-        }
-        // Normal paragraph line
-        return (
-          <span key={li} className="block">
-            {parseInline(trimmed)}
-          </span>
-        );
-      })}
-    </span>
-  );
+    // Detect table: current line has pipes and next line is separator |---|
+    if (trimmed.startsWith('|') && i + 1 < lines.length && lines[i + 1].trim().match(/^\|[-| :]+\|$/)) {
+      const headerCells = parseTableRow(trimmed);
+      i += 2; // skip header + separator
+
+      const bodyRows: string[][] = [];
+      while (i < lines.length && lines[i].trimStart().startsWith('|')) {
+        bodyRows.push(parseTableRow(lines[i].trimStart()));
+        i++;
+      }
+
+      output.push(
+        <span key={i} className="block overflow-x-auto my-2">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr>
+                {headerCells.map((cell, ci) => (
+                  <th key={ci} className="px-3 py-2 text-left font-semibold text-white bg-[#252840] border border-[#3d4168]">
+                    {parseInline(cell)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {bodyRows.map((row, ri) => (
+                <tr key={ri} className={ri % 2 === 0 ? 'bg-[#1a1d27]' : 'bg-[#1e2130]'}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} className="px-3 py-2 text-[#d1d5db] border border-[#2d3148]">
+                      {parseInline(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </span>
+      );
+      continue;
+    }
+
+    // H1
+    if (trimmed.startsWith('# ') && !trimmed.startsWith('## ')) {
+      output.push(
+        <span key={i} className="block text-2xl font-bold text-white mt-3 mb-1">
+          {parseInline(trimmed.slice(2))}
+        </span>
+      );
+    }
+    // H2
+    else if (trimmed.startsWith('## ') && !trimmed.startsWith('### ')) {
+      output.push(
+        <span key={i} className="block text-lg font-bold text-white mt-3 mb-1">
+          {parseInline(trimmed.slice(3))}
+        </span>
+      );
+    }
+    // H3
+    else if (trimmed.startsWith('### ')) {
+      output.push(
+        <span key={i} className="block text-base font-semibold text-indigo-300 mt-2 mb-0.5">
+          {parseInline(trimmed.slice(4))}
+        </span>
+      );
+    }
+    // Numbered list (1. item)
+    else if (trimmed.match(/^\d+\. /)) {
+      const num = trimmed.match(/^(\d+)\. /)?.[1] ?? '';
+      const content = trimmed.replace(/^\d+\. /, '');
+      output.push(
+        <span key={i} className="block pl-6 relative mt-0.5">
+          <span className="absolute left-1 top-0 text-indigo-400 text-xs font-semibold">{num}.</span>
+          {parseInline(content)}
+        </span>
+      );
+    }
+    // Bullet list
+    else if (trimmed.match(/^[-*] /)) {
+      output.push(
+        <span key={i} className="block pl-4 relative mt-0.5">
+          <span className="absolute left-1 top-0 text-indigo-400">•</span>
+          {parseInline(trimmed.slice(2))}
+        </span>
+      );
+    }
+    // Empty line → spacer
+    else if (trimmed === '') {
+      output.push(<span key={i} className="block h-2" />);
+    }
+    // Normal paragraph line
+    else {
+      output.push(
+        <span key={i} className="block">
+          {parseInline(trimmed)}
+        </span>
+      );
+    }
+    i++;
+  }
+
+  return <span className={`${className} block`}>{output}</span>;
+}
+
+function parseTableRow(line: string): string[] {
+  return line
+    .split('|')
+    .slice(1, -1) // remove leading/trailing empty strings from outer pipes
+    .map(cell => cell.trim());
 }
 
 function parseInline(text: string): React.ReactNode[] {

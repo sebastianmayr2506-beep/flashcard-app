@@ -2,6 +2,21 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Flashcard, Difficulty } from '../types/card';
 import { createInitialSRS } from './srs';
 
+function mergeCatalogs(asked: unknown, year: unknown): string[] | undefined {
+  const out: string[] = [];
+  if (Array.isArray(asked)) {
+    for (const v of asked) {
+      const s = String(v).trim();
+      if (s && !out.includes(s)) out.push(s);
+    }
+  }
+  if (typeof year === 'string' || typeof year === 'number') {
+    const s = String(year).trim();
+    if (s && !out.includes(s)) out.push(s);
+  }
+  return out.length > 0 ? out : undefined;
+}
+
 export function importFromJSON(jsonText: string): Flashcard[] {
   const data = JSON.parse(jsonText);
   if (!Array.isArray(data)) throw new Error('Ungültiges JSON-Format: Array erwartet');
@@ -33,7 +48,7 @@ function validateCard(raw: unknown): Flashcard {
     nextReviewDate: typeof c.nextReviewDate === 'string' ? c.nextReviewDate : srs.nextReviewDate,
     timesAsked: typeof c.times_asked === 'number' ? c.times_asked : undefined,
     askedByExaminers: Array.isArray(c.asked_by_examiners) ? c.asked_by_examiners.map(String) : undefined,
-    askedInCatalogs: Array.isArray(c.asked_in_catalogs) ? c.asked_in_catalogs.map(String) : undefined,
+    askedInCatalogs: mergeCatalogs(c.asked_in_catalogs, c.catalog_year),
     probabilityPercent: typeof c.probability_percent === 'number' ? c.probability_percent : undefined,
   };
 }

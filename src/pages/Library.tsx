@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { Flashcard, AppSettings, Difficulty, SRSStatus, CardSet, CardLink, FlagAttempt } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
 import DifficultyBadge from '../components/DifficultyBadge';
@@ -41,6 +41,9 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkSetId, setBulkSetId] = useState('');
+
+  // Preview
+  const [previewCard, setPreviewCard] = useState<Flashcard | null>(null);
 
   const allTags = useMemo(() => {
     const s = new Set<string>();
@@ -269,6 +272,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
               selected={selectedIds.has(card.id)}
               onToggleSelect={() => toggleSelection(card.id)}
               onEdit={onEdit} onDelete={onDelete}
+              onPreview={setPreviewCard}
             />
           ))}
         </div>
@@ -282,9 +286,14 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
               selected={selectedIds.has(card.id)}
               onToggleSelect={() => toggleSelection(card.id)}
               onEdit={onEdit} onDelete={onDelete}
+              onPreview={setPreviewCard}
             />
           ))}
         </div>
+      )}
+
+      {previewCard && (
+        <CardPreviewModal card={previewCard} onClose={() => setPreviewCard(null)} onEdit={onEdit} />
       )}
 
       {/* Sticky bulk-action bar */}
@@ -380,6 +389,7 @@ interface CardItemProps {
   onToggleSelect: () => void;
   onEdit: (c: Flashcard) => void;
   onDelete: (id: string) => void;
+  onPreview: (c: Flashcard) => void;
 }
 
 function flagTooltip(cardId: string, flagAttempts: FlagAttempt[], autoUnflagEnabled: boolean): string {
@@ -392,7 +402,7 @@ function flagTooltip(cardId: string, flagAttempts: FlagAttempt[], autoUnflagEnab
   return '🚩 Flagge wird bald automatisch entfernt';
 }
 
-function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete }: CardItemProps) {
+function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete, onPreview }: CardItemProps) {
   const status = getSRSStatus(card);
   const due = isDueToday(card);
   const linkCount = links.filter(l => l.cardId === card.id || l.linkedCardId === card.id).length;
@@ -447,6 +457,13 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
       {!selectionMode && (
         <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
+            onClick={e => { e.stopPropagation(); onPreview(card); }}
+            className="text-xs py-1.5 px-2 rounded-lg bg-[#252840] hover:bg-purple-500/20 text-[#9ca3af] hover:text-purple-400 border border-[#2d3148] hover:border-purple-500/30 transition-colors"
+            title="Vorschau"
+          >
+            👁
+          </button>
+          <button
             onClick={e => { e.stopPropagation(); onEdit(card); }}
             className="flex-1 text-xs py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] hover:border-indigo-500/30 transition-colors"
           >
@@ -455,6 +472,7 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
           <button
             onClick={e => { e.stopPropagation(); exportJSON([card], `karte_${card.id.slice(0,8)}.json`); }}
             className="text-xs py-1.5 px-2 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] hover:border-indigo-500/30 transition-colors"
+            title="JSON exportieren"
           >
             📦
           </button>
@@ -470,7 +488,7 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
   );
 }
 
-function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete }: CardItemProps) {
+function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete, onPreview }: CardItemProps) {
   const status = getSRSStatus(card);
   const due = isDueToday(card);
   const linkCount = links.filter(l => l.cardId === card.id || l.linkedCardId === card.id).length;
@@ -508,11 +526,109 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
       </div>
       {!selectionMode && (
         <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          <button onClick={e => { e.stopPropagation(); onPreview(card); }} className="text-xs px-2 py-1.5 rounded-lg bg-[#252840] hover:bg-purple-500/20 text-[#9ca3af] hover:text-purple-400 border border-[#2d3148] transition-colors" title="Vorschau">👁</button>
           <button onClick={e => { e.stopPropagation(); onEdit(card); }} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] transition-colors">Bearbeiten</button>
-          <button onClick={e => { e.stopPropagation(); exportJSON([card], `karte_${card.id.slice(0,8)}.json`); }} className="text-xs px-2 py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] transition-colors">📦</button>
+          <button onClick={e => { e.stopPropagation(); exportJSON([card], `karte_${card.id.slice(0,8)}.json`); }} className="text-xs px-2 py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] transition-colors" title="JSON exportieren">📦</button>
           <button onClick={e => { e.stopPropagation(); onDelete(card.id); }} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-red-500/20 text-[#9ca3af] hover:text-red-400 border border-[#2d3148] transition-colors">Löschen</button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Card Preview Modal ───────────────────────────────────────
+
+function CardPreviewModal({ card, onClose, onEdit }: { card: Flashcard; onClose: () => void; onEdit: (c: Flashcard) => void }) {
+  const [isFlipped, setIsFlipped] = useState(false);
+
+  useEffect(() => {
+    setIsFlipped(false);
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === ' ' || e.key === 'Enter') setIsFlipped(f => !f);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [card, onClose]);
+
+  const imgSrc = (img: Flashcard['frontImage']) =>
+    img ? (img.type === 'base64' ? `data:${img.mimeType ?? 'image/png'};base64,${img.data}` : img.data) : null;
+  const frontImg = imgSrc(card.frontImage);
+  const backImg  = imgSrc(card.backImage);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-xl flex flex-col gap-4"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-[#9ca3af] uppercase tracking-widest">Vorschau</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { onClose(); onEdit(card); }}
+              className="text-sm px-3 py-1.5 rounded-xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/30 transition-colors"
+            >
+              Bearbeiten
+            </button>
+            <button onClick={onClose} className="text-[#9ca3af] hover:text-white text-2xl leading-none transition-colors">✕</button>
+          </div>
+        </div>
+
+        {/* Card */}
+        <div className="perspective" style={{ height: '320px' }}>
+          <div
+            className="card-inner cursor-pointer"
+            style={{ transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)' }}
+            onClick={() => setIsFlipped(f => !f)}
+          >
+            {/* Front */}
+            <div className="card-face bg-[#1e2130] border border-[#2d3148] rounded-3xl flex flex-col select-none">
+              <div className="shrink-0 pt-5 pb-2 text-center">
+                <span className="text-xs font-semibold text-indigo-400 uppercase tracking-widest">Frage</span>
+              </div>
+              <div className="flex-1 overflow-y-auto px-8 pb-4 flex flex-col items-start gap-3">
+                {frontImg && <img src={frontImg} alt="" className="max-h-32 max-w-full object-contain rounded-xl" />}
+                <p className="text-lg font-medium text-white leading-relaxed w-full">
+                  <MarkdownText text={card.front || '(leer)'} />
+                </p>
+              </div>
+              {!isFlipped && (
+                <div className="shrink-0 pb-4 text-center">
+                  <p className="text-xs text-[#6b7280] animate-pulse">Klicken oder Leertaste zum Umdrehen</p>
+                </div>
+              )}
+            </div>
+            {/* Back */}
+            <div
+              className="card-face card-back-face bg-[#1e2130] border border-indigo-500/40 rounded-3xl flex flex-col select-none"
+              style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}
+            >
+              <div className="shrink-0 pt-5 pb-2 text-center">
+                <span className="text-xs font-semibold text-purple-400 uppercase tracking-widest">Antwort</span>
+              </div>
+              <div className="flex-1 overflow-y-auto px-8 pb-6 flex flex-col items-start gap-3">
+                {backImg && <img src={backImg} alt="" className="max-h-32 max-w-full object-contain rounded-xl" />}
+                <p className="text-base text-[#e8eaf0] leading-relaxed w-full">
+                  <MarkdownText text={card.back || '(leer)'} />
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Meta */}
+        <div className="flex flex-wrap gap-1.5 justify-center">
+          {card.subjects?.map(s => <span key={s} className="text-xs px-2 py-0.5 rounded-full bg-[#1e2130] border border-[#2d3148] text-[#9ca3af]">{s}</span>)}
+          {card.examiners?.map(e => <span key={e} className="text-xs px-2 py-0.5 rounded-full bg-[#1e2130] border border-[#2d3148] text-[#9ca3af]">👤 {e}</span>)}
+          <DifficultyBadge difficulty={card.difficulty} />
+          {card.customTags.map(t => <span key={t} className="text-xs text-[#6b7280]">#{t}</span>)}
+        </div>
+      </div>
     </div>
   );
 }

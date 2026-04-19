@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import type { AppSettings } from '../types/card';
+import type { AppSettings, Flashcard } from '../types/card';
+import { calculatePaceMetrics } from '../utils/dailyGoal';
 
 interface Props {
   settings: AppSettings;
-  unseenCount: number;
+  cards: Flashcard[];
   onUpdateSettings: (updates: Partial<AppSettings>) => void;
   onAddSubject: (s: string) => void;
   onRemoveSubject: (s: string) => void;
@@ -15,19 +16,22 @@ interface Props {
 }
 
 export default function Settings({
-  settings, unseenCount, onUpdateSettings, onAddSubject, onRemoveSubject,
+  settings, cards, onUpdateSettings, onAddSubject, onRemoveSubject,
   onAddExaminer, onRemoveExaminer, onAddTag, onRemoveTag, showToast,
 }: Props) {
   const [dailyGoalInput, setDailyGoalInput] = useState(String(settings.dailyNewCardGoal ?? 10));
 
-  // Auto-calculated required pace based on exam date
   const daysUntilExam = settings.examDate
     ? Math.ceil((new Date(settings.examDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
     : null;
-  const requiredPace = (daysUntilExam !== null && daysUntilExam > 0)
-    ? Math.ceil(unseenCount / daysUntilExam)
-    : daysUntilExam === 0 ? unseenCount : null;
   const hasExamDate = !!settings.examDate && daysUntilExam !== null && daysUntilExam >= 0;
+
+  // SM-2-aware pace metrics (only compute when exam date is set and there are cards)
+  const pace = (daysUntilExam !== null && daysUntilExam > 0 && cards.length > 0)
+    ? calculatePaceMetrics(cards, daysUntilExam)
+    : null;
+
+  const unseenCount = cards.filter(c => c.repetitions === 0).length;
 
   const handleExamDateChange = (val: string) => {
     onUpdateSettings({ examDate: val || undefined });
@@ -95,41 +99,72 @@ export default function Settings({
           </div>
         </div>
 
-        {/* Auto-calculated pace banner */}
-        {hasExamDate && requiredPace !== null && (
-          <div className={`rounded-xl px-4 py-3 flex items-start gap-3 ${
-            requiredPace <= settings.dailyNewCardGoal
-              ? 'bg-emerald-500/10 border border-emerald-500/30'
-              : 'bg-amber-500/10 border border-amber-500/30'
-          }`}>
-            <span className="text-xl shrink-0 mt-0.5">
-              {requiredPace <= settings.dailyNewCardGoal ? '✅' : '⚠️'}
-            </span>
-            <div>
-              <p className={`text-sm font-semibold ${
-                requiredPace <= settings.dailyNewCardGoal ? 'text-emerald-400' : 'text-amber-400'
-              }`}>
-                Benötigtes Lerntempo: <span className="text-white">{requiredPace} Karten / Tag</span>
-              </p>
-              <p className="text-xs text-[#9ca3af] mt-0.5">
-                {unseenCount} ungesehene Karten ÷ {daysUntilExam} Tage
-                {requiredPace <= settings.dailyNewCardGoal
-                  ? ' — du liegst im Plan 🎉'
-                  : ` — erhöhe dein Tagesmaximum auf mindestens ${requiredPace}`}
-              </p>
+        {/* SM-2-aware pace panel */}
+        {hasExamDate && pace && (
+          <div className="space-y-3">
+            {/* Main recommendation */}
+            <div className={`rounded-xl px-4 py-3 flex items-start gap-3 ${
+              pace.requiredNewPerDay <= settings.dailyNewCardGoal
+                ? 'bg-emerald-500/10 border border-emerald-500/30'
+                : 'bg-amber-500/10 border border-amber-500/30'
+            }`}>
+              <span className="text-xl shrink-0 mt-0.5">
+                {pace.requiredNewPerDay <= settings.dailyNewCardGoal ? '✅' : '⚠️'}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-semibold ${
+                  pace.requiredNewPerDay <= settings.dailyNewCardGoal ? 'text-emerald-400' : 'text-amber-400'
+                }`}>
+                  Empfohlenes Lerntempo: <span className="text-white">{pace.requiredNewPerDay} neue Karten / Tag</span>
+                </p>
+                <p className="text-xs text-[#9ca3af] mt-0.5">
+                  {unseenCount} ungesehene Karten ÷ {pace.effectiveDays} verfügbare Tage
+                  {' '}(SM-2 braucht ~15 Tage für 3 Wiederholungen je Karte)
+                </p>
+                {pace.requiredNewPerDay <= settings.dailyNewCardGoal
+                  ? <p className="text-xs text-emerald-400 mt-1">Du liegst im Plan 🎉</p>
+                  : <p className="text-xs text-amber-400 mt-1">Tagesmaximum zu niedrig — erhöhe auf mindestens {pace.requiredNewPerDay}</p>
+                }
+              </div>
+              {pace.requiredNewPerDay > settings.dailyNewCardGoal && (
+                <button
+                  onClick={() => {
+                    setDailyGoalInput(String(pace.requiredNewPerDay));
+                    onUpdateSettings({ dailyNewCardGoal: pace.requiredNewPerDay });
+                    showToast(`Tagesmaximum auf ${pace.requiredNewPerDay} gesetzt`, 'success');
+                  }}
+                  className="ml-auto shrink-0 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-400 text-xs font-semibold transition-colors"
+                >
+                  Übernehmen
+                </button>
+              )}
             </div>
-            {requiredPace > settings.dailyNewCardGoal && (
-              <button
-                onClick={() => {
-                  setDailyGoalInput(String(requiredPace));
-                  onUpdateSettings({ dailyNewCardGoal: requiredPace });
-                  showToast(`Tagesmaximum auf ${requiredPace} gesetzt`, 'success');
-                }}
-                className="ml-auto shrink-0 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-400 text-xs font-semibold transition-colors"
-              >
-                Übernehmen
-              </button>
-            )}
+
+            {/* Stats row */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-[#252840] rounded-xl px-3 py-2.5 text-center">
+                <p className="text-lg font-bold text-white">{pace.requiredNewPerDay}</p>
+                <p className="text-[10px] text-[#9ca3af] mt-0.5 uppercase tracking-wide">Neue / Tag</p>
+              </div>
+              <div className="bg-[#252840] rounded-xl px-3 py-2.5 text-center">
+                <p className="text-lg font-bold text-indigo-300">~{pace.estimatedDailyReviews}</p>
+                <p className="text-[10px] text-[#9ca3af] mt-0.5 uppercase tracking-wide">Wdh. / Tag</p>
+              </div>
+              <div className={`rounded-xl px-3 py-2.5 text-center ${
+                pace.masteryRateAtExam >= 90 ? 'bg-emerald-500/10' :
+                pace.masteryRateAtExam >= 70 ? 'bg-amber-500/10' : 'bg-red-500/10'
+              }`}>
+                <p className={`text-lg font-bold ${
+                  pace.masteryRateAtExam >= 90 ? 'text-emerald-400' :
+                  pace.masteryRateAtExam >= 70 ? 'text-amber-400' : 'text-red-400'
+                }`}>{pace.masteryRateAtExam}%</p>
+                <p className="text-[10px] text-[#9ca3af] mt-0.5 uppercase tracking-wide">Beherrscht</p>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-[#6b7280]">
+              Wdh. / Tag = Simulation deiner Karten durch den Anki-Algorithmus (SM-2) · Beherrscht = ≥3 Wiederholungen bis Prüfungstag
+            </p>
           </div>
         )}
       </div>

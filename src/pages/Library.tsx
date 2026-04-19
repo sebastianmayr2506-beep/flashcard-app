@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { Flashcard, AppSettings, Difficulty, SRSStatus, CardSet, CardLink, FlagAttempt } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
@@ -28,7 +28,20 @@ type ViewMode = 'grid' | 'list';
 export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onNavigate }: Props) {
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
-  const [filterExaminer, setFilterExaminer] = useState('');
+  const [filterExaminers, setFilterExaminers] = useState<Set<string>>(new Set());
+  const [examinerDropdownOpen, setExaminerDropdownOpen] = useState(false);
+  const examinerDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close examiner dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (examinerDropdownRef.current && !examinerDropdownRef.current.contains(e.target as Node)) {
+        setExaminerDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
   const [filterDifficulty, setFilterDifficulty] = useState<Difficulty | ''>('');
   const [filterTag, setFilterTag] = useState('');
   const [filterSRS, setFilterSRS] = useState<SRSStatus | ''>('');
@@ -76,7 +89,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
     const result = cards.filter(c => {
       if (q && !c.front.toLowerCase().includes(q) && !c.back.toLowerCase().includes(q)) return false;
       if (filterSubject && !c.subjects?.includes(filterSubject)) return false;
-      if (filterExaminer && !c.examiners?.includes(filterExaminer)) return false;
+      if (filterExaminers.size > 0 && !c.examiners?.some(e => filterExaminers.has(e))) return false;
       if (filterDifficulty && c.difficulty !== filterDifficulty) return false;
       if (filterTag && !c.customTags.includes(filterTag)) return false;
       if (filterSRS && getSRSStatus(c) !== filterSRS) return false;
@@ -91,12 +104,12 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
       result.sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0));
     }
     return result;
-  }, [cards, search, filterSubject, filterExaminer, filterDifficulty, filterTag, filterSRS, filterSet, filterCatalog, filterDue, filterFlagged, filterKlassiker, sortBy]);
+  }, [cards, search, filterSubject, filterExaminers, filterDifficulty, filterTag, filterSRS, filterSet, filterCatalog, filterDue, filterFlagged, filterKlassiker, sortBy]);
 
-  const hasFilters = search || filterSubject || filterExaminer || filterDifficulty || filterTag || filterSRS || filterSet || filterCatalog || filterDue || filterFlagged || filterKlassiker || sortBy !== 'default';
+  const hasFilters = search || filterSubject || filterExaminers.size > 0 || filterDifficulty || filterTag || filterSRS || filterSet || filterCatalog || filterDue || filterFlagged || filterKlassiker || sortBy !== 'default';
 
   const clearFilters = () => {
-    setSearch(''); setFilterSubject(''); setFilterExaminer('');
+    setSearch(''); setFilterSubject(''); setFilterExaminers(new Set());
     setFilterDifficulty(''); setFilterTag(''); setFilterSRS('');
     setFilterSet(''); setFilterCatalog(''); setFilterDue(false); setFilterFlagged(false);
     setFilterKlassiker(false); setSortBy('default');
@@ -282,7 +295,57 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
             className="flex-1 min-w-[160px] text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none"
           />
           <Select value={filterSubject} onChange={setFilterSubject} placeholder="Fach" options={settings.subjects} />
-          <Select value={filterExaminer} onChange={setFilterExaminer} placeholder="Prüfer" options={activeExaminers} />
+          {/* Multi-select examiner dropdown */}
+          {activeExaminers.length > 0 && (
+            <div ref={examinerDropdownRef} className="relative">
+              <button
+                onClick={() => setExaminerDropdownOpen(o => !o)}
+                className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-xl border transition-colors whitespace-nowrap ${
+                  filterExaminers.size > 0
+                    ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-400'
+                    : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'
+                }`}
+              >
+                Prüfer{filterExaminers.size > 0 ? ` (${filterExaminers.size})` : ''}
+                <span className="text-xs opacity-60">{examinerDropdownOpen ? '▲' : '▼'}</span>
+              </button>
+              {examinerDropdownOpen && (
+                <div className="absolute top-full left-0 mt-1 z-40 bg-[#1e2130] border border-[#2d3148] rounded-xl shadow-2xl min-w-[200px] max-h-64 overflow-y-auto py-1">
+                  {activeExaminers.map(ex => {
+                    const checked = filterExaminers.has(ex);
+                    return (
+                      <label
+                        key={ex}
+                        onClick={() => setFilterExaminers(prev => {
+                          const next = new Set(prev);
+                          if (next.has(ex)) next.delete(ex); else next.add(ex);
+                          return next;
+                        })}
+                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-[#252840] transition-colors"
+                      >
+                        <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                          checked ? 'bg-indigo-500 border-indigo-500' : 'bg-transparent border-[#3d4168]'
+                        }`}>
+                          {checked && <span className="text-white text-[10px] leading-none">✓</span>}
+                        </span>
+                        <span className="text-sm text-white truncate">{ex}</span>
+                      </label>
+                    );
+                  })}
+                  {filterExaminers.size > 0 && (
+                    <div className="border-t border-[#2d3148] mt-1 pt-1 px-3 pb-1">
+                      <button
+                        onClick={() => setFilterExaminers(new Set())}
+                        className="text-xs text-indigo-400 hover:text-indigo-300"
+                      >
+                        Auswahl löschen
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <Select value={filterDifficulty} onChange={v => setFilterDifficulty(v as Difficulty | '')} placeholder="Schwierigkeit" options={['einfach','mittel','schwer']} />
           {allTags.length > 0 && <Select value={filterTag} onChange={setFilterTag} placeholder="Tag" options={allTags} />}
           <Select value={filterSRS} onChange={v => setFilterSRS(v as SRSStatus | '')} placeholder="SRS-Status"

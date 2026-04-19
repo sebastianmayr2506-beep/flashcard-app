@@ -35,18 +35,19 @@ export function calculateDailyPlan(cards: Flashcard[], settings: AppSettings): D
   }
 
   // How many new cards for today
-  // Formula: min(userDailyGoal, ceil(unseenCards / daysUntilExam))
-  // As exam approaches, ceil(unseen/days) rises → catches up to userDailyGoal
+  // With exam date: auto-calculate required pace = ceil(unseen / days), capped at user's daily max
+  // Without exam date: use the fixed dailyNewCardGoal
   let newCardsPerDay = settings.dailyNewCardGoal;
   let isAheadOfSchedule = false;
 
   if (daysUntilExam !== null && !examPassed && daysUntilExam > 0 && unseenCards.length > 0) {
-    const catchup = Math.ceil(unseenCards.length / daysUntilExam);
-    newCardsPerDay = Math.min(settings.dailyNewCardGoal, catchup);
-    if (catchup < settings.dailyNewCardGoal) isAheadOfSchedule = true;
+    const requiredPace = Math.ceil(unseenCards.length / daysUntilExam);
+    // Use required pace, capped at user's daily maximum
+    newCardsPerDay = Math.min(settings.dailyNewCardGoal, requiredPace);
+    if (requiredPace < settings.dailyNewCardGoal) isAheadOfSchedule = true;
   } else if (examPassed || daysUntilExam === 0) {
-    // Exam is today or past — learn everything remaining
-    newCardsPerDay = unseenCards.length;
+    // Exam is today or past — learn everything remaining, still respect daily max
+    newCardsPerDay = Math.min(settings.dailyNewCardGoal, unseenCards.length);
   }
 
   const newCards = unseenCards.slice(0, Math.max(0, newCardsPerDay));

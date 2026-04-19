@@ -3,6 +3,7 @@ import type { AppSettings } from '../types/card';
 
 interface Props {
   settings: AppSettings;
+  unseenCount: number;
   onUpdateSettings: (updates: Partial<AppSettings>) => void;
   onAddSubject: (s: string) => void;
   onRemoveSubject: (s: string) => void;
@@ -14,10 +15,19 @@ interface Props {
 }
 
 export default function Settings({
-  settings, onUpdateSettings, onAddSubject, onRemoveSubject,
+  settings, unseenCount, onUpdateSettings, onAddSubject, onRemoveSubject,
   onAddExaminer, onRemoveExaminer, onAddTag, onRemoveTag, showToast,
 }: Props) {
   const [dailyGoalInput, setDailyGoalInput] = useState(String(settings.dailyNewCardGoal ?? 10));
+
+  // Auto-calculated required pace based on exam date
+  const daysUntilExam = settings.examDate
+    ? Math.ceil((new Date(settings.examDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+    : null;
+  const requiredPace = (daysUntilExam !== null && daysUntilExam > 0)
+    ? Math.ceil(unseenCount / daysUntilExam)
+    : daysUntilExam === 0 ? unseenCount : null;
+  const hasExamDate = !!settings.examDate && daysUntilExam !== null && daysUntilExam >= 0;
 
   const handleExamDateChange = (val: string) => {
     onUpdateSettings({ examDate: val || undefined });
@@ -25,10 +35,10 @@ export default function Settings({
   };
 
   const handleDailyGoalBlur = () => {
-    const n = Math.max(1, Math.min(100, parseInt(dailyGoalInput) || 10));
+    const n = Math.max(1, Math.min(500, parseInt(dailyGoalInput) || 10));
     setDailyGoalInput(String(n));
     onUpdateSettings({ dailyNewCardGoal: n });
-    showToast(`Tagesziel: ${n} neue Karten pro Tag`);
+    showToast(`Tagesmaximum: ${n} neue Karten pro Tag`);
   };
 
   return (
@@ -62,13 +72,13 @@ export default function Settings({
 
           <div>
             <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">
-              Neue Karten pro Tag
+              {hasExamDate ? 'Tagesmaximum (optional)' : 'Neue Karten pro Tag'}
             </label>
             <div className="flex items-center gap-2">
               <input
                 type="number"
                 min={1}
-                max={100}
+                max={500}
                 value={dailyGoalInput}
                 onChange={e => setDailyGoalInput(e.target.value)}
                 onBlur={handleDailyGoalBlur}
@@ -77,9 +87,51 @@ export default function Settings({
               />
               <span className="text-[#6b7280] text-sm shrink-0">/ Tag</span>
             </div>
-            <p className="text-xs text-[#6b7280] mt-1.5">Standard: 10 · Max: 100</p>
+            <p className="text-xs text-[#6b7280] mt-1.5">
+              {hasExamDate
+                ? 'Begrenzt die tägliche Anzahl nach oben'
+                : 'Wird ohne Prüfungsdatum als fixes Ziel verwendet'}
+            </p>
           </div>
         </div>
+
+        {/* Auto-calculated pace banner */}
+        {hasExamDate && requiredPace !== null && (
+          <div className={`rounded-xl px-4 py-3 flex items-start gap-3 ${
+            requiredPace <= settings.dailyNewCardGoal
+              ? 'bg-emerald-500/10 border border-emerald-500/30'
+              : 'bg-amber-500/10 border border-amber-500/30'
+          }`}>
+            <span className="text-xl shrink-0 mt-0.5">
+              {requiredPace <= settings.dailyNewCardGoal ? '✅' : '⚠️'}
+            </span>
+            <div>
+              <p className={`text-sm font-semibold ${
+                requiredPace <= settings.dailyNewCardGoal ? 'text-emerald-400' : 'text-amber-400'
+              }`}>
+                Benötigtes Lerntempo: <span className="text-white">{requiredPace} Karten / Tag</span>
+              </p>
+              <p className="text-xs text-[#9ca3af] mt-0.5">
+                {unseenCount} ungesehene Karten ÷ {daysUntilExam} Tage
+                {requiredPace <= settings.dailyNewCardGoal
+                  ? ' — du liegst im Plan 🎉'
+                  : ` — erhöhe dein Tagesmaximum auf mindestens ${requiredPace}`}
+              </p>
+            </div>
+            {requiredPace > settings.dailyNewCardGoal && (
+              <button
+                onClick={() => {
+                  setDailyGoalInput(String(requiredPace));
+                  onUpdateSettings({ dailyNewCardGoal: requiredPace });
+                  showToast(`Tagesmaximum auf ${requiredPace} gesetzt`, 'success');
+                }}
+                className="ml-auto shrink-0 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-400 text-xs font-semibold transition-colors"
+              >
+                Übernehmen
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <TagManager

@@ -370,6 +370,7 @@ export default function App() {
         {page === 'settings' && (
           <Settings
             settings={settings}
+            unseenCount={cards.filter(c => c.repetitions === 0).length}
             onUpdateSettings={updateSettings}
             onAddSubject={addSubject}
             onRemoveSubject={removeSubject}

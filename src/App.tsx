@@ -176,6 +176,13 @@ export default function App() {
     showToast(`${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} gelöscht`, 'info');
   }, [removeCard, showToast]);
 
+  const handleBulkCreateAndAssignSet = useCallback((cardIds: string[], setName: string) => {
+    if (!userId) return;
+    const newSet = addSet({ name: setName, color: '#6366f1' }, userId);
+    cardIds.forEach(id => updateCard(id, { setId: newSet.id }));
+    showToast(`Set "${setName}" erstellt und ${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} zugewiesen`, 'success');
+  }, [userId, addSet, updateCard, showToast]);
+
   const handleViewSet = useCallback((set: CardSet) => {
     setViewingSet(set);
     setPage('set-detail');
@@ -304,6 +311,7 @@ export default function App() {
             onDelete={handleDeleteCard}
             onStudyFiltered={handleStudyFiltered}
             onBulkAssignSet={handleBulkAssignSet}
+            onBulkCreateAndAssignSet={handleBulkCreateAndAssignSet}
             onBulkDelete={handleBulkDelete}
             onNavigate={navigate}
           />

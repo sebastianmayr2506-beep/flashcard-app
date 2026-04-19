@@ -18,13 +18,14 @@ interface Props {
   onDelete: (id: string) => void;
   onStudyFiltered: (cards: Flashcard[]) => void;
   onBulkAssignSet: (cardIds: string[], setId: string | undefined) => void;
+  onBulkCreateAndAssignSet: (cardIds: string[], setName: string) => void;
   onBulkDelete: (cardIds: string[]) => void;
   onNavigate: (page: string) => void;
 }
 
 type ViewMode = 'grid' | 'list';
 
-export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkDelete, onNavigate }: Props) {
+export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onNavigate }: Props) {
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminer, setFilterExaminer] = useState('');
@@ -42,6 +43,8 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkSetId, setBulkSetId] = useState('');
+  const [showNewSetInput, setShowNewSetInput] = useState(false);
+  const [newSetName, setNewSetName] = useState('');
 
   // Preview
   const [previewCard, setPreviewCard] = useState<Flashcard | null>(null);
@@ -103,6 +106,15 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
     setSelectionMode(false);
     setSelectedIds(new Set());
     setBulkSetId('');
+    setShowNewSetInput(false);
+    setNewSetName('');
+  };
+
+  const handleCreateAndAssign = () => {
+    const name = newSetName.trim();
+    if (!name || selectedIds.size === 0) return;
+    onBulkCreateAndAssignSet(Array.from(selectedIds), name);
+    exitSelectionMode();
   };
 
   const handleBulkAssign = () => {
@@ -311,22 +323,58 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
             <span className="text-sm font-semibold text-white shrink-0">
               {selectedCount > 0 ? `${selectedCount} Karte${selectedCount !== 1 ? 'n' : ''}` : 'Karten auswählen'}
             </span>
-            {sets.length > 0 && (
+            {showNewSetInput ? (
               <>
-                <select
-                  value={bulkSetId}
-                  onChange={e => setBulkSetId(e.target.value)}
-                  className="flex-1 min-w-[120px] text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
-                >
-                  <option value="">Kein Set</option>
-                  {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+                <input
+                  autoFocus
+                  type="text"
+                  value={newSetName}
+                  onChange={e => setNewSetName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleCreateAndAssign(); if (e.key === 'Escape') setShowNewSetInput(false); }}
+                  placeholder="Set-Name…"
+                  className="flex-1 min-w-[120px] text-sm bg-[#252840] border border-indigo-500 rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:outline-none"
+                />
                 <button
-                  onClick={handleBulkAssign}
-                  disabled={selectedCount === 0}
+                  onClick={handleCreateAndAssign}
+                  disabled={!newSetName.trim() || selectedCount === 0}
                   className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors shrink-0"
                 >
-                  Zuweisen
+                  Erstellen & Zuweisen
+                </button>
+                <button
+                  onClick={() => setShowNewSetInput(false)}
+                  className="px-3 py-2 rounded-xl bg-[#252840] hover:bg-[#2d3148] border border-[#2d3148] text-[#9ca3af] text-sm transition-colors shrink-0"
+                >
+                  ✕
+                </button>
+              </>
+            ) : (
+              <>
+                {sets.length > 0 && (
+                  <>
+                    <select
+                      value={bulkSetId}
+                      onChange={e => setBulkSetId(e.target.value)}
+                      className="flex-1 min-w-[120px] text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
+                    >
+                      <option value="">Kein Set</option>
+                      {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                    <button
+                      onClick={handleBulkAssign}
+                      disabled={selectedCount === 0}
+                      className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors shrink-0"
+                    >
+                      Zuweisen
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => setShowNewSetInput(true)}
+                  disabled={selectedCount === 0}
+                  className="px-4 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-400 text-sm font-semibold transition-colors shrink-0"
+                >
+                  + Neues Set
                 </button>
               </>
             )}

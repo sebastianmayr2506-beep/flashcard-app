@@ -39,17 +39,22 @@ export function useCardLinks(userId: string | null) {
     }
     let cancelled = false;
 
+    const migrationKey = `supa_migrated_links_${userId}`;
+
     const load = async () => {
       try {
-        const { data: existing } = await supabase
-          .from('card_links').select('id').eq('user_id', userId).limit(1);
+        const alreadyMigrated = localStorage.getItem(migrationKey) === '1';
+        if (!alreadyMigrated) {
+          const { data: existing } = await supabase
+            .from('card_links').select('id').eq('user_id', userId).limit(1);
 
-        if ((existing ?? []).length === 0) {
-          const localLinks = getLocalLinks();
-          if (localLinks.length > 0) {
-            // Ignore FK errors — cards may not be migrated yet
-            await supabase.from('card_links').insert(localLinks.map(l => toDb(l, userId)));
+          if ((existing ?? []).length === 0) {
+            const localLinks = getLocalLinks();
+            if (localLinks.length > 0) {
+              await supabase.from('card_links').insert(localLinks.map(l => toDb(l, userId)));
+            }
           }
+          localStorage.setItem(migrationKey, '1');
         }
 
         const { data } = await supabase.from('card_links').select('*').eq('user_id', userId);

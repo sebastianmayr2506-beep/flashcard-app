@@ -74,21 +74,27 @@ export function useCards(userId: string | null) {
     }
     let cancelled = false;
 
+    const migrationKey = `supa_migrated_cards_${userId}`;
+
     const load = async () => {
       setLoading(true);
       try {
-        const { data: existing } = await supabase
-          .from('cards').select('id').eq('user_id', userId).limit(1);
+        const alreadyMigrated = localStorage.getItem(migrationKey) === '1';
+        if (!alreadyMigrated) {
+          const { data: existing } = await supabase
+            .from('cards').select('id').eq('user_id', userId).limit(1);
 
-        if ((existing ?? []).length === 0) {
-          const localCards = getLocalCards();
-          if (localCards.length > 0) {
-            for (let i = 0; i < localCards.length; i += 100) {
-              await supabase.from('cards').insert(
-                localCards.slice(i, i + 100).map(c => toDb(c, userId))
-              );
+          if ((existing ?? []).length === 0) {
+            const localCards = getLocalCards();
+            if (localCards.length > 0) {
+              for (let i = 0; i < localCards.length; i += 100) {
+                await supabase.from('cards').insert(
+                  localCards.slice(i, i + 100).map(c => toDb(c, userId))
+                );
+              }
             }
           }
+          localStorage.setItem(migrationKey, '1');
         }
 
         const { data, error } = await supabase

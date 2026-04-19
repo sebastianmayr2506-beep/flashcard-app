@@ -46,16 +46,22 @@ export function useSets(userId: string | null) {
     }
     let cancelled = false;
 
+    const migrationKey = `supa_migrated_sets_${userId}`;
+
     const load = async () => {
       try {
-        const { data: existing } = await supabase
-          .from('sets').select('id').eq('user_id', userId).limit(1);
+        const alreadyMigrated = localStorage.getItem(migrationKey) === '1';
+        if (!alreadyMigrated) {
+          const { data: existing } = await supabase
+            .from('sets').select('id').eq('user_id', userId).limit(1);
 
-        if ((existing ?? []).length === 0) {
-          const localSets = getLocalSets();
-          if (localSets.length > 0) {
-            await supabase.from('sets').insert(localSets.map(toDb));
+          if ((existing ?? []).length === 0) {
+            const localSets = getLocalSets();
+            if (localSets.length > 0) {
+              await supabase.from('sets').insert(localSets.map(toDb));
+            }
           }
+          localStorage.setItem(migrationKey, '1');
         }
 
         const { data } = await supabase.from('sets').select('*').eq('user_id', userId);

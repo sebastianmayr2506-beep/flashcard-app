@@ -77,16 +77,15 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
   };
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) processFile(file);
+    const files = Array.from(e.target.files ?? []);
+    files.forEach(f => processFile(f));
     e.target.value = '';
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) processFile(file);
+    Array.from(e.dataTransfer.files).forEach(f => processFile(f));
   };
 
   const handleShareImport = async () => {
@@ -239,8 +238,8 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
         </button>
       </div>
 
-      <input ref={jsonRef} type="file" accept=".json" className="hidden" onChange={handleFile} />
-      <input ref={csvRef} type="file" accept=".csv" className="hidden" onChange={handleFile} />
+      <input ref={jsonRef} type="file" accept=".json" multiple className="hidden" onChange={handleFile} />
+      <input ref={csvRef} type="file" accept=".csv" multiple className="hidden" onChange={handleFile} />
       <input ref={repairRef} type="file" accept=".json" className="hidden" onChange={async e => {
         const file = e.target.files?.[0];
         if (!file) return;

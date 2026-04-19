@@ -103,14 +103,16 @@ export function calculatePaceMetrics(cards: Flashcard[], daysUntilExam: number):
 }
 
 export interface DailyPlan {
-  reviewCards: Flashcard[];   // due cards (repetitions > 0, due today)
-  newCards: Flashcard[];      // unseen cards to learn today
+  reviewCards: Flashcard[];      // due cards (repetitions > 0, due today)
+  newCards: Flashcard[];         // unseen cards to learn today
   totalToday: number;
   daysUntilExam: number | null;
   examPassed: boolean;
   allLearned: boolean;
   isAheadOfSchedule: boolean;
-  newCardsPerDay: number;     // calculated target
+  newCardsPerDay: number;        // SM-2 aware: new cards to introduce today
+  estimatedDailyReviews: number; // projected review load (from simulation)
+  masteryRateAtExam: number;     // % of cards mastered by exam day
 }
 
 export function calculateDailyPlan(cards: Flashcard[], settings: AppSettings): DailyPlan {
@@ -135,19 +137,19 @@ export function calculateDailyPlan(cards: Flashcard[], settings: AppSettings): D
     if (diffDays < 0) examPassed = true;
   }
 
-  // How many new cards for today
-  // With exam date: auto-calculate required pace = ceil(unseen / days), capped at user's daily max
-  // Without exam date: use the fixed dailyNewCardGoal
+  // Use SM-2-aware pace when exam date is set, otherwise fixed goal
   let newCardsPerDay = settings.dailyNewCardGoal;
   let isAheadOfSchedule = false;
+  let estimatedDailyReviews = 0;
+  let masteryRateAtExam = 0;
 
-  if (daysUntilExam !== null && !examPassed && daysUntilExam > 0 && unseenCards.length > 0) {
-    const requiredPace = Math.ceil(unseenCards.length / daysUntilExam);
-    // Use required pace, capped at user's daily maximum
-    newCardsPerDay = Math.min(settings.dailyNewCardGoal, requiredPace);
-    if (requiredPace < settings.dailyNewCardGoal) isAheadOfSchedule = true;
+  if (daysUntilExam !== null && !examPassed && daysUntilExam > 0) {
+    const pace = calculatePaceMetrics(cards, daysUntilExam);
+    newCardsPerDay = Math.min(settings.dailyNewCardGoal, pace.requiredNewPerDay);
+    if (pace.requiredNewPerDay <= settings.dailyNewCardGoal) isAheadOfSchedule = true;
+    estimatedDailyReviews = pace.estimatedDailyReviews;
+    masteryRateAtExam = pace.masteryRateAtExam;
   } else if (examPassed || daysUntilExam === 0) {
-    // Exam is today or past — learn everything remaining, still respect daily max
     newCardsPerDay = Math.min(settings.dailyNewCardGoal, unseenCards.length);
   }
 
@@ -167,6 +169,8 @@ export function calculateDailyPlan(cards: Flashcard[], settings: AppSettings): D
     allLearned,
     isAheadOfSchedule,
     newCardsPerDay,
+    estimatedDailyReviews,
+    masteryRateAtExam,
   };
 }
 

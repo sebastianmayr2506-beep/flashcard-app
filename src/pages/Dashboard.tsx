@@ -315,6 +315,7 @@ function DailyGoalCard({ plan, ratedToday, progressPct, progressTotal, onStart }
   onStart: () => void;
 }) {
   const goalDone = ratedToday >= progressTotal && progressTotal > 0;
+  const totalToday = plan.reviewCards.length + plan.newCards.length;
 
   return (
     <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-4">
@@ -327,6 +328,7 @@ function DailyGoalCard({ plan, ratedToday, progressPct, progressTotal, onStart }
         )}
       </div>
 
+      {/* Main counters */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-[#252840] rounded-xl p-3">
           <p className="text-2xl font-bold text-amber-400">{plan.reviewCards.length}</p>
@@ -334,9 +336,33 @@ function DailyGoalCard({ plan, ratedToday, progressPct, progressTotal, onStart }
         </div>
         <div className="bg-[#252840] rounded-xl p-3">
           <p className="text-2xl font-bold text-indigo-400">{plan.newCards.length}</p>
-          <p className="text-xs text-[#9ca3af] mt-0.5">🆕 Neu zu lernen</p>
+          <p className="text-xs text-[#9ca3af] mt-0.5">🆕 Neu heute</p>
         </div>
       </div>
+
+      {/* SM-2 projection row */}
+      {plan.masteryRateAtExam > 0 && (
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="bg-[#252840]/60 rounded-lg px-2 py-2">
+            <p className="text-sm font-semibold text-indigo-300">{plan.newCardsPerDay}</p>
+            <p className="text-[10px] text-[#6b7280] mt-0.5">Neu / Tag</p>
+          </div>
+          <div className="bg-[#252840]/60 rounded-lg px-2 py-2">
+            <p className="text-sm font-semibold text-indigo-300">~{plan.estimatedDailyReviews}</p>
+            <p className="text-[10px] text-[#6b7280] mt-0.5">Wdh. / Tag</p>
+          </div>
+          <div className={`rounded-lg px-2 py-2 ${
+            plan.masteryRateAtExam >= 90 ? 'bg-emerald-500/10' :
+            plan.masteryRateAtExam >= 70 ? 'bg-amber-500/10' : 'bg-red-500/10'
+          }`}>
+            <p className={`text-sm font-semibold ${
+              plan.masteryRateAtExam >= 90 ? 'text-emerald-400' :
+              plan.masteryRateAtExam >= 70 ? 'text-amber-400' : 'text-red-400'
+            }`}>{plan.masteryRateAtExam}%</p>
+            <p className="text-[10px] text-[#6b7280] mt-0.5">Beherrscht</p>
+          </div>
+        </div>
+      )}
 
       {/* Progress bar */}
       {progressTotal > 0 && (
@@ -361,12 +387,12 @@ function DailyGoalCard({ plan, ratedToday, progressPct, progressTotal, onStart }
 
       <button
         onClick={onStart}
-        disabled={plan.totalToday === 0}
+        disabled={totalToday === 0}
         className="w-full py-3 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors flex items-center justify-center gap-2"
       >
         ▶ Jetzt lernen
-        {plan.totalToday > 0 && (
-          <span className="bg-white/20 text-xs px-2 py-0.5 rounded-full">{plan.totalToday} Karten</span>
+        {totalToday > 0 && (
+          <span className="bg-white/20 text-xs px-2 py-0.5 rounded-full">{totalToday} Karten</span>
         )}
       </button>
     </div>

@@ -140,7 +140,94 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
   const allFilteredSelected = filtered.length > 0 && filtered.every(c => selectedIds.has(c.id));
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 space-y-5 fade-in">
+    <div className="fade-in">
+      {/* Sticky bulk-action bar — always visible at top when selection mode is active */}
+      {selectionMode && (
+        <div className="sticky top-0 z-30 bg-[#1a1d27] border-b border-[#3d4168] px-4 md:px-6 lg:px-8 py-3 shadow-lg">
+          <div className="flex items-center gap-3 flex-wrap max-w-screen-xl">
+            <span className="text-sm font-semibold text-white shrink-0">
+              {selectedCount > 0 ? `${selectedCount} Karte${selectedCount !== 1 ? 'n' : ''} ausgewählt` : 'Karten auswählen'}
+            </span>
+            {showNewSetInput ? (
+              <>
+                <input
+                  autoFocus
+                  type="text"
+                  value={newSetName}
+                  onChange={e => setNewSetName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleCreateAndAssign(); if (e.key === 'Escape') setShowNewSetInput(false); }}
+                  placeholder="Set-Name…"
+                  className="flex-1 min-w-[120px] text-sm bg-[#252840] border border-indigo-500 rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:outline-none"
+                />
+                <button
+                  onClick={handleCreateAndAssign}
+                  disabled={!newSetName.trim() || selectedCount === 0}
+                  className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors shrink-0"
+                >
+                  Erstellen & Zuweisen
+                </button>
+                <button
+                  onClick={() => setShowNewSetInput(false)}
+                  className="px-3 py-2 rounded-xl bg-[#252840] hover:bg-[#2d3148] border border-[#2d3148] text-[#9ca3af] text-sm transition-colors shrink-0"
+                >
+                  ✕
+                </button>
+              </>
+            ) : (
+              <>
+                {sets.length > 0 && (
+                  <>
+                    <select
+                      value={bulkSetId}
+                      onChange={e => setBulkSetId(e.target.value)}
+                      className="flex-1 min-w-[120px] text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
+                    >
+                      <option value="">Kein Set</option>
+                      {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                    <button
+                      onClick={handleBulkAssign}
+                      disabled={selectedCount === 0}
+                      className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors shrink-0"
+                    >
+                      Zuweisen
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => setShowNewSetInput(true)}
+                  disabled={selectedCount === 0}
+                  className="px-4 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-400 text-sm font-semibold transition-colors shrink-0"
+                >
+                  + Neues Set
+                </button>
+              </>
+            )}
+            <button
+              onClick={handleBulkExport}
+              disabled={selectedCount === 0}
+              className="px-4 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-400 text-sm font-semibold transition-colors shrink-0"
+            >
+              📦 Exportieren
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              disabled={selectedCount === 0}
+              className="px-4 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 disabled:opacity-40 disabled:cursor-not-allowed text-red-400 text-sm font-semibold transition-colors shrink-0"
+            >
+              🗑 Löschen
+            </button>
+            <button
+              onClick={exitSelectionMode}
+              className="ml-auto px-3 py-2 rounded-xl bg-[#252840] hover:bg-[#2d3148] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm transition-colors shrink-0"
+            >
+              Abbrechen
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="p-4 md:p-6 lg:p-8 space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-white">Kartei-Bibliothek</h2>
@@ -315,92 +402,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
         <CardPreviewModal card={previewCard} onClose={() => setPreviewCard(null)} onEdit={onEdit} />,
         document.body
       )}
-
-      {/* Sticky bulk-action bar */}
-      {selectionMode && (
-        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-30 w-full max-w-xl px-4">
-          <div className="bg-[#1a1d27] border border-[#3d4168] rounded-2xl px-4 py-3 shadow-2xl flex items-center gap-3 flex-wrap">
-            <span className="text-sm font-semibold text-white shrink-0">
-              {selectedCount > 0 ? `${selectedCount} Karte${selectedCount !== 1 ? 'n' : ''}` : 'Karten auswählen'}
-            </span>
-            {showNewSetInput ? (
-              <>
-                <input
-                  autoFocus
-                  type="text"
-                  value={newSetName}
-                  onChange={e => setNewSetName(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleCreateAndAssign(); if (e.key === 'Escape') setShowNewSetInput(false); }}
-                  placeholder="Set-Name…"
-                  className="flex-1 min-w-[120px] text-sm bg-[#252840] border border-indigo-500 rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:outline-none"
-                />
-                <button
-                  onClick={handleCreateAndAssign}
-                  disabled={!newSetName.trim() || selectedCount === 0}
-                  className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors shrink-0"
-                >
-                  Erstellen & Zuweisen
-                </button>
-                <button
-                  onClick={() => setShowNewSetInput(false)}
-                  className="px-3 py-2 rounded-xl bg-[#252840] hover:bg-[#2d3148] border border-[#2d3148] text-[#9ca3af] text-sm transition-colors shrink-0"
-                >
-                  ✕
-                </button>
-              </>
-            ) : (
-              <>
-                {sets.length > 0 && (
-                  <>
-                    <select
-                      value={bulkSetId}
-                      onChange={e => setBulkSetId(e.target.value)}
-                      className="flex-1 min-w-[120px] text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
-                    >
-                      <option value="">Kein Set</option>
-                      {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                    <button
-                      onClick={handleBulkAssign}
-                      disabled={selectedCount === 0}
-                      className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors shrink-0"
-                    >
-                      Zuweisen
-                    </button>
-                  </>
-                )}
-                <button
-                  onClick={() => setShowNewSetInput(true)}
-                  disabled={selectedCount === 0}
-                  className="px-4 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-400 text-sm font-semibold transition-colors shrink-0"
-                >
-                  + Neues Set
-                </button>
-              </>
-            )}
-            <button
-              onClick={handleBulkExport}
-              disabled={selectedCount === 0}
-              className="px-4 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-400 text-sm font-semibold transition-colors shrink-0"
-            >
-              📦 Exportieren
-            </button>
-            <button
-              onClick={handleBulkDelete}
-              disabled={selectedCount === 0}
-              className="px-4 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 disabled:opacity-40 disabled:cursor-not-allowed text-red-400 text-sm font-semibold transition-colors shrink-0"
-            >
-              🗑 Löschen
-            </button>
-            <button
-              onClick={exitSelectionMode}
-              className="px-3 py-2 rounded-xl bg-[#252840] hover:bg-[#2d3148] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm transition-colors shrink-0"
-            >
-              Abbrechen
-            </button>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

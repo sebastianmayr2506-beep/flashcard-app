@@ -1,8 +1,8 @@
 import type { Flashcard, CardSet } from '../types/card';
 
-export function exportJSON(cards: Flashcard[]): void {
+export function exportJSON(cards: Flashcard[], filename = 'karteikarten_export.json'): void {
   const json = JSON.stringify(cards, null, 2);
-  downloadFile(json, 'karteikarten_export.json', 'application/json');
+  downloadFile(json, filename, 'application/json');
 }
 
 export function exportCSV(cards: Flashcard[]): void {

@@ -5,6 +5,7 @@ import DifficultyBadge from '../components/DifficultyBadge';
 import SRSBadge from '../components/SRSBadge';
 import MarkdownText from '../components/MarkdownText';
 import ProbabilityBadge from '../components/ProbabilityBadge';
+import { exportJSON } from '../utils/export';
 
 interface Props {
   cards: Flashcard[];
@@ -105,6 +106,12 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
     if (!window.confirm(`${selectedIds.size} Karte${selectedIds.size !== 1 ? 'n' : ''} wirklich löschen?`)) return;
     onBulkDelete(Array.from(selectedIds));
     exitSelectionMode();
+  };
+
+  const handleBulkExport = () => {
+    if (selectedIds.size === 0) return;
+    const toExport = cards.filter(c => selectedIds.has(c.id));
+    exportJSON(toExport, `karten_auswahl_${selectedIds.size}.json`);
   };
 
   const selectedCount = selectedIds.size;
@@ -307,6 +314,13 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
               </>
             )}
             <button
+              onClick={handleBulkExport}
+              disabled={selectedCount === 0}
+              className="px-4 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-400 text-sm font-semibold transition-colors shrink-0"
+            >
+              📦 Exportieren
+            </button>
+            <button
               onClick={handleBulkDelete}
               disabled={selectedCount === 0}
               className="px-4 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 disabled:opacity-40 disabled:cursor-not-allowed text-red-400 text-sm font-semibold transition-colors shrink-0"
@@ -439,6 +453,12 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
             Bearbeiten
           </button>
           <button
+            onClick={e => { e.stopPropagation(); exportJSON([card], `karte_${card.id.slice(0,8)}.json`); }}
+            className="text-xs py-1.5 px-2 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] hover:border-indigo-500/30 transition-colors"
+          >
+            📦
+          </button>
+          <button
             onClick={e => { e.stopPropagation(); onDelete(card.id); }}
             className="flex-1 text-xs py-1.5 rounded-lg bg-[#252840] hover:bg-red-500/20 text-[#9ca3af] hover:text-red-400 border border-[#2d3148] hover:border-red-500/30 transition-colors"
           >
@@ -489,6 +509,7 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
       {!selectionMode && (
         <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
           <button onClick={e => { e.stopPropagation(); onEdit(card); }} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] transition-colors">Bearbeiten</button>
+          <button onClick={e => { e.stopPropagation(); exportJSON([card], `karte_${card.id.slice(0,8)}.json`); }} className="text-xs px-2 py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] transition-colors">📦</button>
           <button onClick={e => { e.stopPropagation(); onDelete(card.id); }} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-red-500/20 text-[#9ca3af] hover:text-red-400 border border-[#2d3148] transition-colors">Löschen</button>
         </div>
       )}

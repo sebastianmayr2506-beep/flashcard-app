@@ -76,16 +76,16 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
     }
   };
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
-    files.forEach(f => processFile(f));
+    for (const f of files) await processFile(f); // sequential — each waits for Supabase insert
     e.target.value = '';
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    Array.from(e.dataTransfer.files).forEach(f => processFile(f));
+    for (const f of Array.from(e.dataTransfer.files)) await processFile(f);
   };
 
   const handleShareImport = async () => {

@@ -166,6 +166,7 @@ export function useCards(userId: string | null) {
     const toAdd = newCards.filter(c => !existingIds.has(c.id));
     const next = [...base, ...toAdd];
     setCards(next);
+    cardsRef.current = next; // update immediately so sequential imports see correct state
 
     if (!merge) {
       const { error: delErr } = await supabase.from('cards').delete().eq('user_id', userId);

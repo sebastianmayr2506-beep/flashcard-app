@@ -33,6 +33,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
   const [filterTag, setFilterTag] = useState('');
   const [filterSRS, setFilterSRS] = useState<SRSStatus | ''>('');
   const [filterSet, setFilterSet] = useState('');
+  const [filterCatalog, setFilterCatalog] = useState('');
   const [filterDue, setFilterDue] = useState(false);
   const [filterFlagged, setFilterFlagged] = useState(false);
   const [filterKlassiker, setFilterKlassiker] = useState(false);
@@ -61,6 +62,12 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
     return Array.from(s).sort();
   }, [cards]);
 
+  const activeCatalogs = useMemo(() => {
+    const s = new Set<string>();
+    cards.forEach(c => c.askedInCatalogs?.forEach(y => s.add(y)));
+    return Array.from(s).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+  }, [cards]);
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     const result = cards.filter(c => {
@@ -71,6 +78,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
       if (filterTag && !c.customTags.includes(filterTag)) return false;
       if (filterSRS && getSRSStatus(c) !== filterSRS) return false;
       if (filterSet && c.setId !== filterSet) return false;
+      if (filterCatalog && !c.askedInCatalogs?.includes(filterCatalog)) return false;
       if (filterDue && !isDueToday(c)) return false;
       if (filterFlagged && !c.flagged) return false;
       if (filterKlassiker && (c.probabilityPercent ?? 0) <= 60) return false;
@@ -80,14 +88,14 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
       result.sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0));
     }
     return result;
-  }, [cards, search, filterSubject, filterExaminer, filterDifficulty, filterTag, filterSRS, filterSet, filterDue, filterFlagged, filterKlassiker, sortBy]);
+  }, [cards, search, filterSubject, filterExaminer, filterDifficulty, filterTag, filterSRS, filterSet, filterCatalog, filterDue, filterFlagged, filterKlassiker, sortBy]);
 
-  const hasFilters = search || filterSubject || filterExaminer || filterDifficulty || filterTag || filterSRS || filterSet || filterDue || filterFlagged || filterKlassiker || sortBy !== 'default';
+  const hasFilters = search || filterSubject || filterExaminer || filterDifficulty || filterTag || filterSRS || filterSet || filterCatalog || filterDue || filterFlagged || filterKlassiker || sortBy !== 'default';
 
   const clearFilters = () => {
     setSearch(''); setFilterSubject(''); setFilterExaminer('');
     setFilterDifficulty(''); setFilterTag(''); setFilterSRS('');
-    setFilterSet(''); setFilterDue(false); setFilterFlagged(false);
+    setFilterSet(''); setFilterCatalog(''); setFilterDue(false); setFilterFlagged(false);
     setFilterKlassiker(false); setSortBy('default');
   };
 
@@ -286,6 +294,9 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
               <option value="">Set</option>
               {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
+          )}
+          {activeCatalogs.length > 0 && (
+            <Select value={filterCatalog} onChange={setFilterCatalog} placeholder="Katalogjahr" options={activeCatalogs} />
           )}
           <button
             onClick={() => setFilterDue(!filterDue)}

@@ -32,7 +32,7 @@ export default function App() {
   const { user, loading: authLoading, signOut } = useAuth();
   const userId = user?.id ?? null;
 
-  const { cards, loading: cardsLoading, addCard, updateCard, removeCard, rateCard, importCards, refresh: refreshCards } = useCards(userId);
+  const { cards, loading: cardsLoading, addCard, updateCard, removeCard, rateCard, importCards } = useCards(userId);
   const { settings, updateSettings, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag } = useSettings(userId);
   const { sets, addSet, updateSet, removeSet } = useSets(userId);
   const { links, addLink, removeLink } = useCardLinks(userId);

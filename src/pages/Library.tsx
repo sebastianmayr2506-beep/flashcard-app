@@ -64,7 +64,10 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
 
   const activeCatalogs = useMemo(() => {
     const s = new Set<string>();
-    cards.forEach(c => c.askedInCatalogs?.forEach(y => s.add(y)));
+    cards.forEach(c => c.askedInCatalogs?.forEach(v => {
+      const m = v.match(/\b(\d{4})\b/);
+      if (m) s.add(m[1]);
+    }));
     return Array.from(s).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
   }, [cards]);
 
@@ -78,7 +81,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
       if (filterTag && !c.customTags.includes(filterTag)) return false;
       if (filterSRS && getSRSStatus(c) !== filterSRS) return false;
       if (filterSet && c.setId !== filterSet) return false;
-      if (filterCatalog && !c.askedInCatalogs?.includes(filterCatalog)) return false;
+      if (filterCatalog && !c.askedInCatalogs?.some(v => v.includes(filterCatalog))) return false;
       if (filterDue && !isDueToday(c)) return false;
       if (filterFlagged && !c.flagged) return false;
       if (filterKlassiker && (c.probabilityPercent ?? 0) <= 60) return false;

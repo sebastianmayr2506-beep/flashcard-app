@@ -1,17 +1,16 @@
 import { useState, useCallback } from 'react';
-import type { Flashcard, RatingValue, CardSet } from './types/card';
+import { v4 as uuidv4 } from 'uuid';
+import type { Flashcard, RatingValue, CardSet, FlagAttempt } from './types/card';
 import { isDueToday } from './types/card';
 import { useCards } from './hooks/useCards';
 import { useSettings } from './hooks/useSettings';
 import { useSets } from './hooks/useSets';
 import { useCardLinks } from './hooks/useCardLinks';
+import { useFlagAttempts } from './hooks/useFlagAttempts';
 import { useToast } from './hooks/useToast';
 import { useAuth } from './hooks/useAuth';
-import { updateStreak, saveSettings, getSettings, saveAllCards, getCards, getLinks, saveFlagAttempt, getDistinctCorrectDays, getFlagAttempts } from './utils/storage';
 import { extractParentLinks } from './utils/import';
 import { calculateDailyPlan } from './utils/dailyGoal';
-import { v4 as uuidv4 } from 'uuid';
-import type { FlagAttempt } from './types/card';
 
 import Sidebar from './components/Sidebar';
 import ToastContainer from './components/ToastContainer';
@@ -30,15 +29,15 @@ import ExamMode from './pages/ExamMode';
 type Page = 'dashboard' | 'library' | 'new-card' | 'edit-card' | 'study' | 'import-export' | 'settings' | 'sets' | 'set-detail' | 'exam';
 
 export default function App() {
-  // All hooks must be called unconditionally before any early returns
   const { user, loading: authLoading, signOut } = useAuth();
-  const { cards, addCard, updateCard, removeCard, rateCard, importCards, refresh: refreshCards } = useCards();
-  const { settings, updateSettings, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag } = useSettings();
-  const { sets, addSet, updateSet, removeSet } = useSets();
-  const { links, addLink, removeLink } = useCardLinks();
-  const { toasts, showToast, dismissToast } = useToast();
+  const userId = user?.id ?? null;
 
-  const [flagAttempts, setFlagAttempts] = useState<FlagAttempt[]>(() => getFlagAttempts());
+  const { cards, loading: cardsLoading, addCard, updateCard, removeCard, rateCard, importCards, refresh: refreshCards } = useCards(userId);
+  const { settings, updateSettings, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag } = useSettings(userId);
+  const { sets, addSet, updateSet, removeSet } = useSets(userId);
+  const { links, addLink, removeLink } = useCardLinks(userId);
+  const { flagAttempts, addAttempt, getDistinctCorrectDays } = useFlagAttempts(userId);
+  const { toasts, showToast, dismissToast } = useToast();
 
   const [page, setPage] = useState<Page>('dashboard');
   const [editingCard, setEditingCard] = useState<Flashcard | undefined>();
@@ -87,20 +86,8 @@ export default function App() {
     const plan = calculateDailyPlan(cards, settings);
     if (plan.totalToday === 0) return;
 
-    const s = getSettings();
-    saveSettings({
-      ...s,
-      dailyPlanSnapshot: {
-        date: new Date().toDateString(),
-        totalCards: plan.totalToday,
-      },
-    });
-    updateSettings({
-      dailyPlanSnapshot: {
-        date: new Date().toDateString(),
-        totalCards: plan.totalToday,
-      },
-    });
+    const snapshot = { date: new Date().toDateString(), totalCards: plan.totalToday };
+    updateSettings({ dailyPlanSnapshot: snapshot });
 
     setStudyFilteredCards(null);
     setActiveDailyPlan({
@@ -113,17 +100,24 @@ export default function App() {
 
   const handleRecordAttempts = useCallback((correct: typeof cards, wrong: typeof cards): typeof cards => {
     const today = new Date().toISOString().split('T')[0];
-    [...correct, ...wrong].forEach(card => {
-      const isCorrect = correct.some(c => c.id === card.id);
-      saveFlagAttempt({ id: uuidv4(), cardId: card.id, answeredCorrectly: isCorrect, attemptedAt: today, createdAt: new Date().toISOString() });
-    });
-    setFlagAttempts(getFlagAttempts());
+
+    // Build new attempts first so we can include today's session in the correct-days count
+    const newAttempts: FlagAttempt[] = [...correct, ...wrong].map(card => ({
+      id: uuidv4(),
+      cardId: card.id,
+      answeredCorrectly: correct.some(c => c.id === card.id),
+      attemptedAt: today,
+      createdAt: new Date().toISOString(),
+    }));
+
+    newAttempts.forEach(a => addAttempt(a.cardId, a.answeredCorrectly));
 
     if (!settings.autoUnflagEnabled) return [];
 
     const autoUnflagged: typeof cards = [];
     correct.filter(c => c.flagged).forEach(card => {
-      if (getDistinctCorrectDays(card.id) >= 2) {
+      const cardNewAttempts = newAttempts.filter(a => a.cardId === card.id);
+      if (getDistinctCorrectDays(card.id, cardNewAttempts) >= 2) {
         updateCard(card.id, { flagged: false });
         autoUnflagged.push(card);
       }
@@ -137,7 +131,7 @@ export default function App() {
     }
 
     return autoUnflagged;
-  }, [settings.autoUnflagEnabled, settings.autoUnflagNotification, updateCard, updateSettings]);
+  }, [settings.autoUnflagEnabled, settings.autoUnflagNotification, addAttempt, getDistinctCorrectDays, updateCard, updateSettings]);
 
   const handleDismissUnflagNotification = useCallback(() => {
     if (!settings.autoUnflagNotification) return;
@@ -150,13 +144,23 @@ export default function App() {
   }, [updateCard, showToast]);
 
   const handleSessionComplete = useCallback(() => {
-    const updated = updateStreak();
-    if (updated.studyStreak > 1) {
-      showToast(`🔥 ${updated.studyStreak} Tage in Folge! Weiter so!`, 'success');
+    const today = new Date().toDateString();
+    const lastStudied = settings.lastStudiedDate;
+    let newStreak = settings.studyStreak;
+
+    if (lastStudied !== today) {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      newStreak = lastStudied === yesterday.toDateString() ? settings.studyStreak + 1 : 1;
+      updateSettings({ studyStreak: newStreak, lastStudiedDate: today });
+    }
+
+    if (newStreak > 1) {
+      showToast(`🔥 ${newStreak} Tage in Folge! Weiter so!`, 'success');
     } else {
       showToast('✅ Session abgeschlossen!', 'success');
     }
-  }, [showToast]);
+  }, [settings, updateSettings, showToast]);
 
   const handleRate = useCallback((id: string, rating: RatingValue) => {
     rateCard(id, rating, settings.examDate);
@@ -177,37 +181,34 @@ export default function App() {
     setPage('set-detail');
   }, []);
 
-  // Import a full set + its cards (from share code or set-JSON file)
   const handleImportSet = useCallback((
     setData: Omit<CardSet, 'id' | 'createdAt' | 'updatedAt' | 'userId'>,
     newCards: Flashcard[],
-    userId: string
+    ownerId: string,
+    linkHints?: Array<{ cardFront: string; linkedCardFront: string; linkType: 'child' | 'related' }>
   ) => {
-    const newSet = addSet(setData, userId);
-    // Assign the fresh setId to all imported cards, then add them
-    const tagged = newCards.map(c => ({
-      ...c,
-      id: c.id || uuidv4(),
-      setId: newSet.id,
-    }));
-    const existing = getCards();
-    const existingIds = new Set(existing.map(c => c.id));
-    const toAdd = tagged.filter(c => !existingIds.has(c.id));
-    saveAllCards([...existing, ...toAdd]);
-    refreshCards();
-  }, [addSet, refreshCards]);
+    const newSet = addSet(setData, ownerId);
+    const tagged = newCards.map(c => ({ ...c, id: c.id || uuidv4(), setId: newSet.id }));
+    importCards(tagged, true);
+
+    if (linkHints && linkHints.length > 0) {
+      linkHints.forEach(({ cardFront, linkedCardFront, linkType }) => {
+        const card = tagged.find(c => c.front === cardFront);
+        const linked = tagged.find(c => c.front === linkedCardFront);
+        if (card && linked && card.id !== linked.id) addLink(card.id, linked.id, linkType);
+      });
+    }
+  }, [addSet, importCards, addLink]);
 
   const handleRepairLinks = useCallback((jsonText: string): number => {
     const hints = extractParentLinks(jsonText);
     if (hints.length === 0) return 0;
-    const allKnownCards = getCards();
     let created = 0;
     hints.forEach(({ childFront, parentFront }) => {
-      const child = allKnownCards.find(c => c.front === childFront);
-      const parent = allKnownCards.find(c => c.front === parentFront);
+      const child = cards.find(c => c.front === childFront);
+      const parent = cards.find(c => c.front === parentFront);
       if (child && parent && child.id !== parent.id) {
-        const existingLinks = getLinks();
-        const already = existingLinks.some(l =>
+        const already = links.some(l =>
           (l.cardId === child.id && l.linkedCardId === parent.id) ||
           (l.cardId === parent.id && l.linkedCardId === child.id)
         );
@@ -215,22 +216,23 @@ export default function App() {
       }
     });
     return created;
-  }, [addLink]);
+  }, [cards, links, addLink]);
 
   const handleImportLinks = useCallback((jsonText: string, importedCards: typeof cards) => {
     const hints = extractParentLinks(jsonText);
     if (hints.length === 0) return;
-    // getCards() reads from localStorage — called after onImport so new cards are already saved
-    const allKnownCards = [...getCards()];
+    // importedCards are the newly imported cards (passed from ImportExport before state update)
+    // cards is the pre-import state; together they cover all known cards
+    const allKnownCards = [...cards, ...importedCards];
     hints.forEach(({ childFront, parentFront }) => {
       const child = importedCards.find(c => c.front === childFront) ?? allKnownCards.find(c => c.front === childFront);
       const parent = importedCards.find(c => c.front === parentFront) ?? allKnownCards.find(c => c.front === parentFront);
       if (child && parent && child.id !== parent.id) addLink(child.id, parent.id, 'child');
     });
-  }, [addLink]);
+  }, [cards, addLink]);
 
-  // Early returns after all hooks
-  if (authLoading) {
+  // Show loading screen while auth or initial card data is loading
+  if (authLoading || (userId !== null && cardsLoading)) {
     return (
       <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
         <div className="text-[#9ca3af] text-sm">Laden…</div>
@@ -336,6 +338,7 @@ export default function App() {
           <SetDetail
             set={viewingSet}
             cards={cards}
+            links={links}
             userId={user.id}
             onBack={() => navigate('sets')}
             onEdit={handleEditCard}

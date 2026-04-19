@@ -9,7 +9,7 @@ interface Props {
   sets: CardSet[];
   userId: string;
   onImport: (cards: Flashcard[], merge: boolean) => void;
-  onImportSet: (set: Omit<CardSet, 'id' | 'createdAt' | 'updatedAt' | 'userId'>, cards: Flashcard[], userId: string) => void;
+  onImportSet: (set: Omit<CardSet, 'id' | 'createdAt' | 'updatedAt' | 'userId'>, cards: Flashcard[], userId: string, links?: Array<{ cardFront: string; linkedCardFront: string; linkType: 'child' | 'related' }>) => void;
   onImportLinks: (jsonText: string, importedCards: Flashcard[]) => void;
   onRepairLinks: (jsonText: string) => number;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
@@ -104,7 +104,7 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
         easeFactor: 2.5,
         nextReviewDate: new Date().toISOString(),
       }));
-      onImportSet(payload.set, freshCards, userId);
+      onImportSet(payload.set, freshCards, userId, payload.links);
       showToast(`Set "${payload.set.name}" mit ${freshCards.length} Karten importiert!`, 'success');
       setShareCodeInput('');
     } catch (err) {

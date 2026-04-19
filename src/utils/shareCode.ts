@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import type { CardSet, Flashcard } from '../types/card';
+import type { CardSet, Flashcard, CardLink } from '../types/card';
 
 export interface SharedSetPayload {
   set: {
@@ -18,25 +18,43 @@ export interface SharedSetPayload {
     examiners: string[];
     difficulty: Flashcard['difficulty'];
     customTags: string[];
+    timesAsked?: number;
+    askedByExaminers?: string[];
+    askedInCatalogs?: string[];
+    probabilityPercent?: number;
+  }>;
+  // Links stored by front text — survives ID reassignment on import
+  links?: Array<{
+    cardFront: string;
+    linkedCardFront: string;
+    linkType: 'child' | 'related';
   }>;
 }
 
 function generateCode(): string {
-  // Unambiguous characters (no O/0, I/1/l)
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
-  for (let i = 0; i < 8; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
-  }
+  for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
   return code;
 }
 
 export async function createShareCode(
   set: CardSet,
   cards: Flashcard[],
+  links: CardLink[],
   userId: string
 ): Promise<string> {
   const setCards = cards.filter(c => c.setId === set.id);
+  const setCardIds = new Set(setCards.map(c => c.id));
+
+  const setLinks = links
+    .filter(l => setCardIds.has(l.cardId) && setCardIds.has(l.linkedCardId))
+    .map(l => {
+      const cardA = setCards.find(c => c.id === l.cardId)!;
+      const cardB = setCards.find(c => c.id === l.linkedCardId)!;
+      return { cardFront: cardA.front, linkedCardFront: cardB.front, linkType: l.linkType };
+    });
+
   const payload: SharedSetPayload = {
     set: {
       name: set.name,
@@ -54,7 +72,12 @@ export async function createShareCode(
       examiners: c.examiners,
       difficulty: c.difficulty,
       customTags: c.customTags,
+      timesAsked: c.timesAsked,
+      askedByExaminers: c.askedByExaminers,
+      askedInCatalogs: c.askedInCatalogs,
+      probabilityPercent: c.probabilityPercent,
     })),
+    links: setLinks.length > 0 ? setLinks : undefined,
   };
 
   const code = generateCode();

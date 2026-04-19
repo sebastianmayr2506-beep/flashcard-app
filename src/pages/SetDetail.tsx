@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { CardSet, Flashcard } from '../types/card';
+import type { CardSet, Flashcard, CardLink } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
 import { exportSetJSON, exportSetCSV } from '../utils/export';
 import { createShareCode } from '../utils/shareCode';
@@ -10,6 +10,7 @@ import MarkdownText from '../components/MarkdownText';
 interface Props {
   set: CardSet;
   cards: Flashcard[];
+  links: CardLink[];
   userId: string;
   onBack: () => void;
   onEdit: (card: Flashcard) => void;
@@ -18,7 +19,7 @@ interface Props {
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-export default function SetDetail({ set, cards, userId, onBack, onEdit, onDelete, onStudy, showToast }: Props) {
+export default function SetDetail({ set, cards, links, userId, onBack, onEdit, onDelete, onStudy, showToast }: Props) {
   const [shareCode, setShareCode] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [copyLabel, setCopyLabel] = useState('Kopieren');
@@ -43,7 +44,7 @@ export default function SetDetail({ set, cards, userId, onBack, onEdit, onDelete
     }
     setSharing(true);
     try {
-      const code = await createShareCode(set, cards, userId);
+      const code = await createShareCode(set, cards, links, userId);
       setShareCode(code);
     } catch (err) {
       showToast(`Teilen fehlgeschlagen: ${(err as Error).message}`, 'error');

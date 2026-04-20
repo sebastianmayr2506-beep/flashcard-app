@@ -35,7 +35,7 @@ export default function App() {
   const { cards, loading: cardsLoading, addCard, updateCard, removeCard, rateCard, importCards } = useCards(userId);
   const { settings, updateSettings, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag } = useSettings(userId);
   const { sets, addSet, updateSet, removeSet } = useSets(userId);
-  const { links, addLink, removeLink } = useCardLinks(userId);
+  const { links, addLink, removeLink, importLinks } = useCardLinks(userId);
   const { flagAttempts, addAttempt, getDistinctCorrectDays } = useFlagAttempts(userId);
   const { toasts, showToast, dismissToast } = useToast();
 
@@ -225,6 +225,21 @@ export default function App() {
     return created;
   }, [cards, links, addLink]);
 
+  // Wrapper around importCards: on non-merge (replace), save & restore links
+  const handleImport = useCallback(async (newCards: Flashcard[], merge: boolean) => {
+    if (!merge && links.length > 0) {
+      // Save links whose both card IDs survive into the new card set
+      const newIds = new Set(newCards.map(c => c.id));
+      const survivingLinks = links.filter(l => newIds.has(l.cardId) && newIds.has(l.linkedCardId));
+      await importCards(newCards, false);
+      if (survivingLinks.length > 0) {
+        importLinks(survivingLinks);
+      }
+    } else {
+      await importCards(newCards, merge);
+    }
+  }, [importCards, importLinks, links]);
+
   const handleImportLinks = useCallback((jsonText: string, importedCards: typeof cards) => {
     const hints = extractParentLinks(jsonText);
     if (hints.length === 0) return;
@@ -360,7 +375,7 @@ export default function App() {
             cards={cards}
             sets={sets}
             userId={user.id}
-            onImport={importCards}
+            onImport={handleImport}
             onImportSet={handleImportSet}
             onImportLinks={handleImportLinks}
             onRepairLinks={handleRepairLinks}

@@ -69,20 +69,26 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
     return Array.from(s).sort();
   }, [cards]);
 
+  // Examiners available given current catalog filter (or all if no catalog selected)
   const activeExaminers = useMemo(() => {
     const s = new Set<string>();
-    cards.forEach(c => c.examiners?.forEach(e => s.add(e)));
+    cards
+      .filter(c => !filterCatalog || c.askedInCatalogs?.some(v => v.includes(filterCatalog)))
+      .forEach(c => c.examiners?.forEach(e => s.add(e)));
     return Array.from(s).sort();
-  }, [cards]);
+  }, [cards, filterCatalog]);
 
+  // Catalogs available given current examiner filter (or all if no examiners selected)
   const activeCatalogs = useMemo(() => {
     const s = new Set<string>();
-    cards.forEach(c => c.askedInCatalogs?.forEach(v => {
-      const m = v.match(/\b(\d{4})\b/);
-      if (m) s.add(m[1]);
-    }));
+    cards
+      .filter(c => filterExaminers.size === 0 || c.examiners?.some(e => filterExaminers.has(e)))
+      .forEach(c => c.askedInCatalogs?.forEach(v => {
+        const m = v.match(/\b(\d{4})\b/);
+        if (m) s.add(m[1]);
+      }));
     return Array.from(s).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-  }, [cards]);
+  }, [cards, filterExaminers]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -316,11 +322,22 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
                     return (
                       <label
                         key={ex}
-                        onClick={() => setFilterExaminers(prev => {
-                          const next = new Set(prev);
-                          if (next.has(ex)) next.delete(ex); else next.add(ex);
-                          return next;
-                        })}
+                        onClick={() => {
+                          setFilterExaminers(prev => {
+                            const next = new Set(prev);
+                            if (next.has(ex)) next.delete(ex); else next.add(ex);
+                            return next;
+                          });
+                          // If a catalog year is active but the toggled examiner didn't
+                          // examine in that year, clear the catalog filter
+                          if (filterCatalog) {
+                            const examinerInCatalog = cards.some(c =>
+                              c.examiners?.includes(ex) &&
+                              c.askedInCatalogs?.some(v => v.includes(filterCatalog))
+                            );
+                            if (!examinerInCatalog) setFilterCatalog('');
+                          }
+                        }}
                         className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-[#252840] transition-colors"
                       >
                         <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
@@ -362,7 +379,26 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
             </select>
           )}
           {activeCatalogs.length > 0 && (
-            <Select value={filterCatalog} onChange={setFilterCatalog} placeholder="Katalogjahr" options={activeCatalogs} />
+            <Select
+              value={filterCatalog}
+              onChange={year => {
+                setFilterCatalog(year);
+                // Remove examiners that didn't examine in the newly selected year
+                if (year && filterExaminers.size > 0) {
+                  const validExaminers = new Set(
+                    cards
+                      .filter(c => c.askedInCatalogs?.some(v => v.includes(year)))
+                      .flatMap(c => c.examiners ?? [])
+                  );
+                  setFilterExaminers(prev => {
+                    const next = new Set([...prev].filter(e => validExaminers.has(e)));
+                    return next.size !== prev.size ? next : prev;
+                  });
+                }
+              }}
+              placeholder="Katalogjahr"
+              options={activeCatalogs}
+            />
           )}
           <button
             onClick={() => setFilterDue(!filterDue)}

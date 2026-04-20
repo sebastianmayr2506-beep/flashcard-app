@@ -34,43 +34,70 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
     showToast(`${cards.length} Karten als CSV exportiert`);
   };
 
-  const processFile = async (file: File) => {
-    try {
-      const text = await file.text();
-      let imported: Flashcard[];
-      if (file.name.endsWith('.json')) {
-        // Check if it's a set export (has { set, cards } shape)
-        try {
-          const parsed = JSON.parse(text);
-          if (parsed && typeof parsed === 'object' && 'set' in parsed && 'cards' in parsed) {
-            const setData = parsed.set as CardSet;
-            const setCards = parsed.cards as Flashcard[];
-            onImportSet(
-              { name: setData.name, description: setData.description, subject: setData.subject, examiner: setData.examiner, color: setData.color ?? '#6366f1' },
-              setCards,
-              userId
-            );
-            showToast(`Set "${setData.name}" mit ${setCards.length} Karten importiert!`, 'success');
-            return;
-          }
-        } catch {
-          // fall through to regular JSON import
+  // Process a single file in isolation (handles set-export JSON up front).
+  // Returns `null` if the file was a set export (already handled) or unsupported,
+  // otherwise returns the parsed cards + raw text for link extraction.
+  const parseFile = async (file: File): Promise<{ cards: Flashcard[]; text: string } | null> => {
+    const text = await file.text();
+    if (file.name.endsWith('.json')) {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object' && 'set' in parsed && 'cards' in parsed) {
+          const setData = parsed.set as CardSet;
+          const setCards = parsed.cards as Flashcard[];
+          onImportSet(
+            { name: setData.name, description: setData.description, subject: setData.subject, examiner: setData.examiner, color: setData.color ?? '#6366f1' },
+            setCards,
+            userId
+          );
+          showToast(`Set "${setData.name}" mit ${setCards.length} Karten importiert!`, 'success');
+          return null;
         }
-        imported = importFromJSON(text);
-        await onImport(imported, mergeMode); // wait for Supabase insert before adding links
-        showToast(`${imported.length} Karten erfolgreich importiert!`, 'success');
-        // Resolve parent_question links AFTER cards are committed to Supabase
-        const hints = extractParentLinks(text);
-        if (hints.length > 0) onImportLinks(text, imported);
-        return;
-      } else if (file.name.endsWith('.csv')) {
-        imported = importFromCSV(text);
-      } else {
-        showToast('Nicht unterstütztes Dateiformat. Bitte JSON oder CSV.', 'error');
-        return;
+      } catch {
+        // fall through
       }
-      onImport(imported, mergeMode);
-      showToast(`${imported.length} Karten erfolgreich importiert!`, 'success');
+      return { cards: importFromJSON(text), text };
+    }
+    if (file.name.endsWith('.csv')) {
+      return { cards: importFromCSV(text), text: '' };
+    }
+    showToast(`Nicht unterstütztes Dateiformat: ${file.name}`, 'error');
+    return null;
+  };
+
+  // Combine multiple files into a single import so "Ersetzen" replaces ONCE,
+  // not once per file (which would wipe earlier files).
+  const processFiles = async (files: File[]) => {
+    try {
+      const parsed = await Promise.all(files.map(parseFile));
+      const results = parsed.filter((r): r is { cards: Flashcard[]; text: string } => r !== null);
+      if (results.length === 0) return;
+
+      // Dedupe by id across all files
+      const seen = new Set<string>();
+      const allCards: Flashcard[] = [];
+      for (const { cards: c } of results) {
+        for (const card of c) {
+          if (!seen.has(card.id)) {
+            seen.add(card.id);
+            allCards.push(card);
+          }
+        }
+      }
+
+      await onImport(allCards, mergeMode);
+      showToast(
+        `${allCards.length} Karten aus ${results.length} Datei${results.length !== 1 ? 'en' : ''} importiert!`,
+        'success'
+      );
+
+      // Parent-question link extraction across all JSON files
+      for (const { cards: c, text } of results) {
+        if (text) {
+          const hints = extractParentLinks(text);
+          if (hints.length > 0) onImportLinks(text, c);
+        }
+      }
     } catch (err) {
       showToast(`Import fehlgeschlagen: ${(err as Error).message}`, 'error');
     }
@@ -78,14 +105,15 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
-    for (const f of files) await processFile(f); // sequential — each waits for Supabase insert
+    if (files.length > 0) await processFiles(files);
     e.target.value = '';
   };
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    for (const f of Array.from(e.dataTransfer.files)) await processFile(f);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) await processFiles(files);
   };
 
   const handleShareImport = async () => {

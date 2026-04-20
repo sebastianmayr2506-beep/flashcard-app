@@ -35,7 +35,7 @@ export default function App() {
   const { cards, loading: cardsLoading, addCard, updateCard, removeCard, rateCard, importCards } = useCards(userId);
   const { settings, updateSettings, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag } = useSettings(userId);
   const { sets, addSet, updateSet, removeSet } = useSets(userId);
-  const { links, addLink, removeLink, importLinks } = useCardLinks(userId);
+  const { links, addLink, removeLink, replaceLinks } = useCardLinks(userId);
   const { flagAttempts, addAttempt, getDistinctCorrectDays } = useFlagAttempts(userId);
   const { toasts, showToast, dismissToast } = useToast();
 
@@ -227,23 +227,31 @@ export default function App() {
 
   // Wrapper around importCards: on non-merge (replace), save & restore links + verify count
   const handleImport = useCallback(async (newCards: Flashcard[], merge: boolean) => {
-    const survivingLinks = (() => {
-      if (merge || links.length === 0) return [];
-      const newIds = new Set(newCards.map(c => c.id));
-      return links.filter(l => newIds.has(l.cardId) && newIds.has(l.linkedCardId));
-    })();
+    // Snapshot surviving links BEFORE the import (cascade-delete happens inside importCards)
+    const survivingLinks = merge
+      ? []
+      : (() => {
+          const newIds = new Set(newCards.map(c => c.id));
+          return links.filter(l => newIds.has(l.cardId) && newIds.has(l.linkedCardId));
+        })();
 
     const result = await importCards(newCards, merge);
 
-    if (survivingLinks.length > 0) importLinks(survivingLinks);
+    // After non-merge import, Supabase cascade-deleted all card_links —
+    // restore them via replaceLinks (force-overwrite state + Supabase).
+    if (!merge) {
+      await replaceLinks(survivingLinks);
+    }
 
     if (result && !result.ok) {
       showToast(
-        `⚠️ Import unvollständig: ${result.saved} von ${result.expected} Karten gespeichert. Bitte nochmal importieren.`,
+        `⚠️ Import unvollständig: ${result.saved} von ${result.expected} Karten gespeichert. Konsole prüfen.`,
         'error'
       );
+    } else if (!merge && survivingLinks.length > 0) {
+      showToast(`✅ ${survivingLinks.length} Verknüpfungen wiederhergestellt`, 'success');
     }
-  }, [importCards, importLinks, links, showToast]);
+  }, [importCards, replaceLinks, links, showToast]);
 
   const handleImportLinks = useCallback((jsonText: string, importedCards: typeof cards) => {
     const hints = extractParentLinks(jsonText);

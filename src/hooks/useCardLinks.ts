@@ -119,5 +119,22 @@ export function useCardLinks(userId: string | null) {
     });
   }, [userId]);
 
-  return { links, refresh, addLink, removeLink, importLinks };
+  // Force-replace ALL links in both state and Supabase.
+  // Used after a non-merge card import — Supabase cascade-deletes links,
+  // but React state still has them, so a plain `importLinks` would be a no-op.
+  const replaceLinks = useCallback(async (newLinks: CardLink[]) => {
+    if (!userId) return;
+    await supabase.from('card_links').delete().eq('user_id', userId);
+    setLinks(newLinks);
+    linksRef.current = newLinks;
+    if (newLinks.length === 0) return;
+    const CHUNK = 100;
+    for (let i = 0; i < newLinks.length; i += CHUNK) {
+      const { error } = await supabase
+        .from('card_links').insert(newLinks.slice(i, i + CHUNK).map(l => toDb(l, userId)));
+      if (error) console.error('Failed to replace links chunk:', error);
+    }
+  }, [userId]);
+
+  return { links, refresh, addLink, removeLink, importLinks, replaceLinks };
 }

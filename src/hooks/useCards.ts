@@ -204,17 +204,38 @@ export function useCards(userId: string | null) {
     const CHUNK = 100;
     let failedChunk = false;
 
+    // Insert a chunk with up to `retries` attempts. If a chunk of N fails,
+    // fall back to splitting it in half (one bad card shouldn't kill the whole import).
+    const insertChunkWithRetry = async (slice: Flashcard[], depth = 0): Promise<boolean> => {
+      const MAX_ATTEMPTS = 3;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        const { error } = await supabase.from('cards').insert(slice.map(c => toDb(c, userId)));
+        if (!error) return true;
+        console.warn(`[importCards] chunk failed (size ${slice.length}, attempt ${attempt}):`, error.message);
+        if (attempt < MAX_ATTEMPTS) await new Promise(r => setTimeout(r, 300 * attempt));
+      }
+      // All retries failed — try splitting (unless already at single card)
+      if (slice.length > 1 && depth < 4) {
+        const mid = Math.floor(slice.length / 2);
+        const leftOk = await insertChunkWithRetry(slice.slice(0, mid), depth + 1);
+        const rightOk = await insertChunkWithRetry(slice.slice(mid), depth + 1);
+        return leftOk && rightOk;
+      }
+      console.error('[importCards] giving up on chunk:', slice.map(c => c.id));
+      return false;
+    };
+
     if (!merge) {
       const { error: delErr } = await supabase.from('cards').delete().eq('user_id', userId);
       if (delErr) { console.error('Failed to clear cards:', delErr); return { ok: false, saved: 0, expected: next.length }; }
       for (let i = 0; i < next.length; i += CHUNK) {
-        const { error } = await supabase.from('cards').insert(next.slice(i, i + CHUNK).map(c => toDb(c, userId)));
-        if (error) { console.error('Failed to import cards chunk:', i, error); failedChunk = true; break; }
+        const ok = await insertChunkWithRetry(next.slice(i, i + CHUNK));
+        if (!ok) failedChunk = true;
       }
     } else if (toAdd.length > 0) {
       for (let i = 0; i < toAdd.length; i += CHUNK) {
-        const { error } = await supabase.from('cards').insert(toAdd.slice(i, i + CHUNK).map(c => toDb(c, userId)));
-        if (error) { console.error('Failed to import cards chunk:', i, error); failedChunk = true; break; }
+        const ok = await insertChunkWithRetry(toAdd.slice(i, i + CHUNK));
+        if (!ok) failedChunk = true;
       }
     }
 

@@ -97,12 +97,22 @@ export function useCards(userId: string | null) {
           localStorage.setItem(migrationKey, '1');
         }
 
-        const { data, error } = await supabase
-          .from('cards').select('*').eq('user_id', userId);
+        // Fetch all cards in pages of 1000 (Supabase default max-rows is 1000)
+        let allRows: Record<string, unknown>[] = [];
+        let from = 0;
+        const PAGE = 1000;
+        while (true) {
+          const { data, error } = await supabase
+            .from('cards').select('*').eq('user_id', userId)
+            .range(from, from + PAGE - 1);
+          if (error) { console.error('Failed to load cards:', error); break; }
+          allRows = allRows.concat(data ?? []);
+          if ((data ?? []).length < PAGE) break; // last page
+          from += PAGE;
+        }
 
         if (!cancelled) {
-          if (error) console.error('Failed to load cards:', error);
-          else setCards((data ?? []).map(fromDb));
+          setCards(allRows.map(r => fromDb(r as Record<string, unknown>)));
           setLoading(false);
         }
       } catch (err) {
@@ -115,11 +125,20 @@ export function useCards(userId: string | null) {
     return () => { cancelled = true; };
   }, [userId]);
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     if (!userId) return;
-    supabase.from('cards').select('*').eq('user_id', userId).then(({ data }) => {
-      if (data) setCards(data.map(fromDb));
-    });
+    let allRows: Record<string, unknown>[] = [];
+    let from = 0;
+    const PAGE = 1000;
+    while (true) {
+      const { data } = await supabase
+        .from('cards').select('*').eq('user_id', userId)
+        .range(from, from + PAGE - 1);
+      allRows = allRows.concat(data ?? []);
+      if ((data ?? []).length < PAGE) break;
+      from += PAGE;
+    }
+    setCards(allRows.map(r => fromDb(r as Record<string, unknown>)));
   }, [userId]);
 
   const addCard = useCallback((
@@ -174,16 +193,20 @@ export function useCards(userId: string | null) {
     setCards(next);
     cardsRef.current = next; // update immediately so sequential imports see correct state
 
+    const CHUNK = 100;
+
     if (!merge) {
       const { error: delErr } = await supabase.from('cards').delete().eq('user_id', userId);
       if (delErr) { console.error('Failed to clear cards:', delErr); return; }
-      if (next.length > 0) {
-        const { error } = await supabase.from('cards').insert(next.map(c => toDb(c, userId)));
-        if (error) console.error('Failed to import cards:', error);
+      for (let i = 0; i < next.length; i += CHUNK) {
+        const { error } = await supabase.from('cards').insert(next.slice(i, i + CHUNK).map(c => toDb(c, userId)));
+        if (error) { console.error('Failed to import cards chunk:', error); return; }
       }
     } else if (toAdd.length > 0) {
-      const { error } = await supabase.from('cards').insert(toAdd.map(c => toDb(c, userId)));
-      if (error) console.error('Failed to import cards:', error);
+      for (let i = 0; i < toAdd.length; i += CHUNK) {
+        const { error } = await supabase.from('cards').insert(toAdd.slice(i, i + CHUNK).map(c => toDb(c, userId)));
+        if (error) { console.error('Failed to import cards chunk:', error); return; }
+      }
     }
   }, [userId]);
 

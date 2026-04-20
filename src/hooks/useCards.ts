@@ -192,8 +192,8 @@ export function useCards(userId: string | null) {
     });
   }, [userId]);
 
-  const importCards = useCallback(async (newCards: Flashcard[], merge: boolean): Promise<void> => {
-    if (!userId) return;
+  const importCards = useCallback(async (newCards: Flashcard[], merge: boolean): Promise<{ ok: boolean; saved: number; expected: number }> => {
+    if (!userId) return { ok: false, saved: 0, expected: 0 };
     const base = merge ? cardsRef.current : [];
     const existingIds = new Set(base.map(c => c.id));
     const toAdd = newCards.filter(c => !existingIds.has(c.id));
@@ -202,20 +202,33 @@ export function useCards(userId: string | null) {
     cardsRef.current = next; // update immediately so sequential imports see correct state
 
     const CHUNK = 100;
+    let failedChunk = false;
 
     if (!merge) {
       const { error: delErr } = await supabase.from('cards').delete().eq('user_id', userId);
-      if (delErr) { console.error('Failed to clear cards:', delErr); return; }
+      if (delErr) { console.error('Failed to clear cards:', delErr); return { ok: false, saved: 0, expected: next.length }; }
       for (let i = 0; i < next.length; i += CHUNK) {
         const { error } = await supabase.from('cards').insert(next.slice(i, i + CHUNK).map(c => toDb(c, userId)));
-        if (error) { console.error('Failed to import cards chunk:', error); return; }
+        if (error) { console.error('Failed to import cards chunk:', i, error); failedChunk = true; break; }
       }
     } else if (toAdd.length > 0) {
       for (let i = 0; i < toAdd.length; i += CHUNK) {
         const { error } = await supabase.from('cards').insert(toAdd.slice(i, i + CHUNK).map(c => toDb(c, userId)));
-        if (error) { console.error('Failed to import cards chunk:', error); return; }
+        if (error) { console.error('Failed to import cards chunk:', i, error); failedChunk = true; break; }
       }
     }
+
+    // Verify actual count in Supabase matches what we tried to save
+    const { count } = await supabase
+      .from('cards').select('*', { count: 'exact', head: true }).eq('user_id', userId);
+    const saved = count ?? 0;
+    const expected = next.length;
+
+    if (failedChunk || saved < expected) {
+      console.error(`[importCards] Mismatch: saved ${saved} / expected ${expected}`);
+    }
+
+    return { ok: !failedChunk && saved >= expected, saved, expected };
   }, [userId]);
 
   return { cards, loading, refresh, addCard, updateCard, removeCard, rateCard, importCards };

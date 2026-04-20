@@ -225,20 +225,25 @@ export default function App() {
     return created;
   }, [cards, links, addLink]);
 
-  // Wrapper around importCards: on non-merge (replace), save & restore links
+  // Wrapper around importCards: on non-merge (replace), save & restore links + verify count
   const handleImport = useCallback(async (newCards: Flashcard[], merge: boolean) => {
-    if (!merge && links.length > 0) {
-      // Save links whose both card IDs survive into the new card set
+    const survivingLinks = (() => {
+      if (merge || links.length === 0) return [];
       const newIds = new Set(newCards.map(c => c.id));
-      const survivingLinks = links.filter(l => newIds.has(l.cardId) && newIds.has(l.linkedCardId));
-      await importCards(newCards, false);
-      if (survivingLinks.length > 0) {
-        importLinks(survivingLinks);
-      }
-    } else {
-      await importCards(newCards, merge);
+      return links.filter(l => newIds.has(l.cardId) && newIds.has(l.linkedCardId));
+    })();
+
+    const result = await importCards(newCards, merge);
+
+    if (survivingLinks.length > 0) importLinks(survivingLinks);
+
+    if (result && !result.ok) {
+      showToast(
+        `⚠️ Import unvollständig: ${result.saved} von ${result.expected} Karten gespeichert. Bitte nochmal importieren.`,
+        'error'
+      );
     }
-  }, [importCards, importLinks, links]);
+  }, [importCards, importLinks, links, showToast]);
 
   const handleImportLinks = useCallback((jsonText: string, importedCards: typeof cards) => {
     const hints = extractParentLinks(jsonText);

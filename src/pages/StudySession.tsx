@@ -84,8 +84,13 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     setCurrentIdx(0);
     setIsFlipped(false);
     setRatings({ nochmal: 0, schwer: 0, gut: 0, einfach: 0 });
+    setNochmalIds(new Set());
     setSessionState('studying');
   };
+
+  // Track which cards have been marked "Nochmal" at least once this session.
+  // When every remaining unrated card has been through Nochmal once, end the session.
+  const [nochmalIds, setNochmalIds] = useState<Set<string>>(new Set());
 
   const handleRate = (rating: RatingValue) => {
     const card = sessionCards[currentIdx];
@@ -95,16 +100,31 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     setIsFlipped(false);
 
     if (rating === 0) {
-      // Re-queue at end: remove from current position, append to end
-      setSessionCards(prev => {
-        const rest = prev.filter((_, i) => i !== currentIdx);
-        return [...rest, card];
-      });
-      // currentIdx stays the same — next card slides into this position
-    } else if (currentIdx + 1 >= sessionCards.length) {
-      setSessionState('summary');
+      // Add to nochmal tracking
+      const updatedNochmalIds = new Set(nochmalIds).add(card.id);
+      setNochmalIds(updatedNochmalIds);
+
+      // Re-queue at end: remove from current position, append
+      const newCards = [...sessionCards.filter((_, i) => i !== currentIdx), card];
+      setSessionCards(newCards);
+
+      // Check if ALL remaining cards (from currentIdx onward in the new queue)
+      // have been Nochmal'd at least once — if so, end the session.
+      const remaining = newCards.slice(currentIdx);
+      if (remaining.every(c => updatedNochmalIds.has(c.id))) {
+        setSessionState('summary');
+      }
+      // else: currentIdx stays the same — next card slides into this position
     } else {
-      setCurrentIdx(idx => idx + 1);
+      // Successfully rated — remove from nochmal tracking
+      if (nochmalIds.has(card.id)) {
+        setNochmalIds(prev => { const n = new Set(prev); n.delete(card.id); return n; });
+      }
+      if (currentIdx + 1 >= sessionCards.length) {
+        setSessionState('summary');
+      } else {
+        setCurrentIdx(idx => idx + 1);
+      }
     }
   };
 

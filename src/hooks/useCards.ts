@@ -64,7 +64,15 @@ export function useCards(userId: string | null) {
   const [loading, setLoading] = useState(true);
   const cardsRef = useRef<Flashcard[]>([]);
 
-  useEffect(() => { cardsRef.current = cards; }, [cards]);
+  // DEV: warn whenever card count drops unexpectedly
+  useEffect(() => {
+    const prev = cardsRef.current.length;
+    const next = cards.length;
+    if (prev > 0 && next < prev) {
+      console.warn(`[useCards] ⚠️ Card count dropped: ${prev} → ${next} (−${prev - next})`, new Error().stack);
+    }
+    cardsRef.current = cards;
+  }, [cards]);
 
   useEffect(() => {
     if (!userId) {

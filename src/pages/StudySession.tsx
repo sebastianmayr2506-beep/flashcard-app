@@ -369,6 +369,7 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
             allCards={cards}
             links={links}
             title="🔗 Tiefer gehen?"
+            onRate={onRate}
           />
         )}
         {!isFlipped ? (

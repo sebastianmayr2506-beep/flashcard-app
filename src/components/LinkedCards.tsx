@@ -1,6 +1,13 @@
 import { useState, useMemo } from 'react';
-import type { Flashcard, CardLink } from '../types/card';
+import type { Flashcard, CardLink, RatingValue } from '../types/card';
 import MarkdownText from './MarkdownText';
+
+const RATINGS: { value: RatingValue; label: string; color: string; bg: string }[] = [
+  { value: 0, label: 'Nochmal', color: '#f87171', bg: 'bg-red-500/10 hover:bg-red-500/20 border-red-500/30' },
+  { value: 1, label: 'Schwer',  color: '#fbbf24', bg: 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30' },
+  { value: 2, label: 'Gut',     color: '#4ade80', bg: 'bg-green-500/10 hover:bg-green-500/20 border-green-500/30' },
+  { value: 3, label: 'Einfach', color: '#60a5fa', bg: 'bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/30' },
+];
 
 // ─── Editor section ───────────────────────────────────────────
 
@@ -201,12 +208,15 @@ interface LinkedCardsPanelProps {
   allCards: Flashcard[];
   links: CardLink[];
   title?: string;
-  onAnswer?: (cardId: string, isCorrect: boolean) => void;
+  onRate?: (cardId: string, rating: RatingValue) => void;
 }
 
-export function LinkedCardsPanel({ cardId, allCards, links, title, onAnswer }: LinkedCardsPanelProps) {
+export function LinkedCardsPanel({ cardId, allCards, links, title, onRate }: LinkedCardsPanelProps) {
   const [open, setOpen] = useState(false);
-  const [viewingCard, setViewingCard] = useState<Flashcard | null>(null);
+  // per-card flip state
+  const [flipped, setFlipped] = useState<Set<string>>(new Set());
+  // per-card rating state
+  const [rated, setRated] = useState<Map<string, RatingValue>>(new Map());
 
   const cardLinks = useMemo(() =>
     links.filter(l => l.cardId === cardId || l.linkedCardId === cardId),
@@ -223,39 +233,119 @@ export function LinkedCardsPanel({ cardId, allCards, links, title, onAnswer }: L
 
   if (linkedCards.length === 0) return null;
 
+  const ratedCount = rated.size;
+  const allRated = linkedCards.length > 0 && ratedCount === linkedCards.length;
+
+  const handleFlip = (id: string) => {
+    setFlipped(prev => { const s = new Set(prev); s.add(id); return s; });
+  };
+
+  const handleRate = (card: Flashcard, rating: RatingValue) => {
+    setRated(prev => new Map(prev).set(card.id, rating));
+    onRate?.(card.id, rating);
+  };
+
+  const imgSrc = (img: Flashcard['frontImage']) =>
+    img ? (img.type === 'base64' ? `data:${img.mimeType ?? 'image/png'};base64,${img.data}` : img.data) : null;
+
   return (
     <div className="rounded-xl border border-[#2d3148] overflow-hidden">
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between px-4 py-3 bg-[#1e2130] hover:bg-[#252840] transition-colors text-left"
       >
-        <span className="text-sm font-medium text-[#9ca3af]">
+        <span className="text-sm font-medium text-[#9ca3af] flex items-center gap-2">
           {title ?? '🔗 Verwandte Fragen'} ({linkedCards.length})
+          {allRated && <span className="text-green-400 text-xs">✓ alle bewertet</span>}
+          {!allRated && ratedCount > 0 && (
+            <span className="text-xs text-indigo-400">{ratedCount}/{linkedCards.length} bewertet</span>
+          )}
         </span>
-        <span className={`text-xs text-[#6b7280] transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+        <span className={`text-xs text-[#6b7280] transition-transform duration-200 ${open ? 'rotate-180' : ''}`}>▼</span>
       </button>
 
       {open && (
         <div className="bg-[#1a1d27] divide-y divide-[#2d3148]">
-          {linkedCards.map(c => (
-            <button
-              key={c.id}
-              onClick={() => setViewingCard(c)}
-              className="w-full text-left px-4 py-3 hover:bg-[#252840] transition-colors"
-            >
-              <p className="text-sm text-white line-clamp-2">{c.front || '(leer)'}</p>
-              <p className="text-xs text-[#6b7280] mt-0.5">{c.subjects?.join(', ')}</p>
-            </button>
-          ))}
-        </div>
-      )}
+          {linkedCards.map(c => {
+            const isFlipped = flipped.has(c.id);
+            const cardRating = rated.get(c.id);
+            const isRated = cardRating !== undefined;
+            const frontImg = imgSrc(c.frontImage);
+            const backImg = imgSrc(c.backImage);
 
-      {viewingCard && (
-        <LinkedCardModal
-          card={viewingCard}
-          onClose={() => setViewingCard(null)}
-          onAnswer={onAnswer ? (isCorrect) => { onAnswer(viewingCard.id, isCorrect); setViewingCard(null); } : undefined}
-        />
+            return (
+              <div key={c.id} className="px-4 py-3 space-y-3">
+                {/* Question */}
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-white leading-relaxed">
+                      <MarkdownText text={c.front || '(leer)'} />
+                    </p>
+                    {frontImg && (
+                      <img src={frontImg} alt="" className="mt-2 max-h-24 object-contain rounded-lg" />
+                    )}
+                    {c.subjects && c.subjects.length > 0 && (
+                      <p className="text-xs text-[#6b7280] mt-1">{c.subjects.join(', ')}</p>
+                    )}
+                  </div>
+                  {isRated && (
+                    <span
+                      className="shrink-0 text-sm font-semibold px-2 py-0.5 rounded-lg"
+                      style={{ color: RATINGS.find(r => r.value === cardRating)?.color }}
+                    >
+                      {RATINGS.find(r => r.value === cardRating)?.label}
+                    </span>
+                  )}
+                </div>
+
+                {/* Flip / Answer */}
+                {!isFlipped && !isRated && (
+                  <button
+                    onClick={() => handleFlip(c.id)}
+                    className="w-full py-2 rounded-xl bg-[#252840] hover:bg-[#2d3148] border border-[#2d3148] text-sm text-[#9ca3af] hover:text-white transition-colors"
+                  >
+                    Antwort zeigen
+                  </button>
+                )}
+
+                {(isFlipped || isRated) && (
+                  <div className="space-y-2 border-l-2 border-indigo-500/20 pl-3">
+                    <p className="text-xs text-indigo-400 uppercase tracking-wider">Antwort</p>
+                    {backImg && (
+                      <img src={backImg} alt="" className="max-h-24 object-contain rounded-lg" />
+                    )}
+                    <p className="text-sm text-[#e8eaf0] leading-relaxed">
+                      <MarkdownText text={c.back} />
+                    </p>
+
+                    {!isRated && onRate && (
+                      <div className="grid grid-cols-4 gap-1.5 pt-1">
+                        {RATINGS.map(r => (
+                          <button
+                            key={r.value}
+                            onClick={() => handleRate(c, r.value)}
+                            className={`py-1.5 rounded-lg border text-xs font-semibold transition-all ${r.bg}`}
+                            style={{ color: r.color }}
+                          >
+                            {r.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {isRated && (
+                      <p className="text-xs text-[#6b7280]">
+                        ✅ Bewertet als <span style={{ color: RATINGS.find(r => r.value === cardRating)?.color }}>
+                          {RATINGS.find(r => r.value === cardRating)?.label}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

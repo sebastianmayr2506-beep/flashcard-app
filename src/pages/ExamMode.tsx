@@ -474,10 +474,10 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
               allCards={cards}
               links={links}
               title="🔗 Verwandte Fragen"
-              onAnswer={(linkedCardId, isCorrect) => {
+              onRate={(linkedCardId, rating) => {
                 const linkedCard = cards.find(c => c.id === linkedCardId);
                 if (!linkedCard) return;
-                if (isCorrect) setCorrect(prev => [...prev, linkedCard]);
+                if (rating > 0) setCorrect(prev => [...prev, linkedCard]);
                 else setWrong(prev => [...prev, linkedCard]);
               }}
             />

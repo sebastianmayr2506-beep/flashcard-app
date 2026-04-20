@@ -93,7 +93,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     const result = cards.filter(c => {
-      if (q && !c.front.toLowerCase().includes(q) && !c.back.toLowerCase().includes(q)) return false;
+      if (q && !c.front.toLowerCase().includes(q)) return false;
       if (filterSubject && !c.subjects?.includes(filterSubject)) return false;
       if (filterExaminers.size > 0 && !c.examiners?.some(e => filterExaminers.has(e))) return false;
       if (filterDifficulty && c.difficulty !== filterDifficulty) return false;

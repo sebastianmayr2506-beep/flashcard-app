@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import type { Flashcard, AppSettings } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
-import { calculateDailyPlan } from '../utils/dailyGoal';
+import { calculateDailyPlan, getCardsRatedToday } from '../utils/dailyGoal';
 import ProbabilityBadge from '../components/ProbabilityBadge';
 
 interface Props {
@@ -26,10 +26,13 @@ const SRS_LABELS: Record<string, string> = {
 
 export default function Dashboard({ cards, settings, onNavigate, onStartDailySession, onDismissUnflagNotification, onEditCard }: Props) {
   const plan = useMemo(() => calculateDailyPlan(cards, settings), [cards, settings]);
-  // Use snapshot totalDone for accurate progress (avoids SM-2 repetitions-reset edge cases)
   const today = new Date().toDateString();
   const snap = settings.dailyPlanSnapshot;
-  const ratedToday = snap?.date === today ? (snap.totalDone ?? 0) : 0;
+  // Use snapshot totalDone when available (accurate: only counts rating >= 1, incl. Schwer).
+  // Fall back to card-state computation for existing snapshots that predate this field.
+  const ratedToday = snap?.date === today
+    ? (snap.totalDone ?? getCardsRatedToday(cards))
+    : 0;
 
   const stats = useMemo(() => {
     const due = cards.filter(isDueToday);

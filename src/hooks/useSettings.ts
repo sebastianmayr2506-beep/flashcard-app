@@ -27,7 +27,8 @@ function fromDb(row: Record<string, any>): AppSettings {
     dailyPlanSnapshot: row.daily_plan_snapshot ?? undefined,
     autoUnflagEnabled: row.auto_unflag_enabled ?? true,
     autoUnflagNotification: row.auto_unflag_notification ?? undefined,
-    anthropicApiKey: row.anthropic_api_key ?? undefined,
+    // API key is stored in localStorage only (no DB column needed)
+    anthropicApiKey: localStorage.getItem('anthropic_api_key') ?? undefined,
   };
 }
 
@@ -44,7 +45,7 @@ function toDb(settings: AppSettings, userId: string) {
     daily_plan_snapshot: settings.dailyPlanSnapshot ?? null,
     auto_unflag_enabled: settings.autoUnflagEnabled,
     auto_unflag_notification: settings.autoUnflagNotification ?? null,
-    anthropic_api_key: settings.anthropicApiKey ?? null,
+    // anthropicApiKey lives in localStorage only — not sent to Supabase
     updated_at: new Date().toISOString(),
   };
 }
@@ -86,6 +87,12 @@ export function useSettings(userId: string | null) {
 
   const updateSettings = useCallback((updates: Partial<AppSettings>) => {
     if (!userId) return;
+    // Persist API key to localStorage only (no Supabase column)
+    if ('anthropicApiKey' in updates) {
+      const key = updates.anthropicApiKey;
+      if (key) localStorage.setItem('anthropic_api_key', key);
+      else localStorage.removeItem('anthropic_api_key');
+    }
     const updated = { ...settingsRef.current, ...updates };
     settingsRef.current = updated;
     setSettings(updated);

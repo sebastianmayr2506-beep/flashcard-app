@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import type { Flashcard } from '../types/card';
+import type { Flashcard, CardImage } from '../types/card';
+import ImageInput from './ImageInput';
 
 interface Props {
   card: Flashcard;
@@ -14,18 +15,30 @@ interface Props {
 export default function QuickEditModal({ card, onSave, onClose }: Props) {
   const [front, setFront] = useState(card.front);
   const [back, setBack] = useState(card.back);
+  const [frontImage, setFrontImage] = useState<CardImage | undefined>(card.frontImage);
+  const [backImage, setBackImage] = useState<CardImage | undefined>(card.backImage);
+  const [showFrontImage, setShowFrontImage] = useState(!!card.frontImage);
+  const [showBackImage, setShowBackImage] = useState(!!card.backImage);
 
   // Keep fields in sync if the card prop changes (e.g. after a rating)
   useEffect(() => {
     setFront(card.front);
     setBack(card.back);
+    setFrontImage(card.frontImage);
+    setBackImage(card.backImage);
+    setShowFrontImage(!!card.frontImage);
+    setShowBackImage(!!card.backImage);
   }, [card.id]);
 
-  const hasChanges = front !== card.front || back !== card.back;
+  const hasChanges =
+    front !== card.front ||
+    back !== card.back ||
+    frontImage !== card.frontImage ||
+    backImage !== card.backImage;
 
   const handleSave = () => {
     if (!hasChanges) { onClose(); return; }
-    onSave(card.id, { front, back });
+    onSave(card.id, { front, back, frontImage, backImage });
     onClose();
   };
 
@@ -52,6 +65,19 @@ export default function QuickEditModal({ card, onSave, onClose }: Props) {
               rows={3}
               className="w-full bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none resize-y"
             />
+            {showFrontImage ? (
+              <div className="mt-2">
+                <ImageInput value={frontImage} onChange={setFrontImage} label="Bild Vorderseite" />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowFrontImage(true)}
+                className="mt-2 text-xs text-[#6b7280] hover:text-indigo-400 transition-colors flex items-center gap-1"
+              >
+                🖼️ Bild hinzufügen
+              </button>
+            )}
           </div>
           <div>
             <label className="text-xs font-medium text-purple-400 uppercase tracking-wider block mb-1.5">Antwort</label>
@@ -62,6 +88,19 @@ export default function QuickEditModal({ card, onSave, onClose }: Props) {
               className="w-full bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none resize-y font-mono"
             />
             <p className="text-xs text-[#6b7280] mt-1">Markdown unterstützt (**fett**, *kursiv*, | Tabellen |, ```Code-Blöcke```)</p>
+            {showBackImage ? (
+              <div className="mt-2">
+                <ImageInput value={backImage} onChange={setBackImage} label="Bild Rückseite" />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowBackImage(true)}
+                className="mt-2 text-xs text-[#6b7280] hover:text-purple-400 transition-colors flex items-center gap-1"
+              >
+                🖼️ Bild hinzufügen
+              </button>
+            )}
           </div>
         </div>
 

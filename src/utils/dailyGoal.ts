@@ -123,8 +123,15 @@ export function calculateDailyPlan(
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Due reviews: already seen at least once, review is overdue
-  const reviewCards = cards.filter(c => c.repetitions > 0 && isDueToday(c));
+  // Due reviews: already seen at least once, review is overdue.
+  // Also include cards that were rated "Nochmal" (repetitions reset to 0, interval=1)
+  // — these land in neither reviewCards nor unseenCards without this, causing them to
+  // disappear entirely if the user aborts and restarts a session.
+  const nochmalDue = cards.filter(c => c.repetitions === 0 && c.interval > 0 && isDueToday(c));
+  const reviewCards = [
+    ...cards.filter(c => c.repetitions > 0 && isDueToday(c)),
+    ...nochmalDue,
+  ];
 
   // Truly unseen cards: interval === 0 means SM-2 has never touched this card.
   // Cards rated Nochmal get interval=1 so they're excluded here and treated as

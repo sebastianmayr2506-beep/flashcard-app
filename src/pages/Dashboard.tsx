@@ -21,9 +21,19 @@ interface Props {
 
 
 export default function Dashboard({ cards, settings, onNavigate, onNavigateToLibraryWithSrs, onStartDailySession, onDismissUnflagNotification, onEditCard }: Props) {
-  const plan = useMemo(() => calculateDailyPlan(cards, settings), [cards, settings]);
   const today = new Date().toDateString();
   const snap = settings.dailyPlanSnapshot;
+
+  // How many new cards were already introduced today (drives the remaining-quota calc)
+  const newDoneToday = snap?.date === today ? (snap.newCardsDone ?? 0) : 0;
+
+  // Pass newDoneToday so the plan reflects remaining work, not the original full quota
+  const plan = useMemo(
+    () => calculateDailyPlan(cards, settings, newDoneToday),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cards, settings, newDoneToday],
+  );
+
   // Use snapshot totalDone when available (accurate: only counts rating >= 1, incl. Schwer).
   // Fall back to card-state computation for existing snapshots that predate this field.
   const ratedToday = snap?.date === today

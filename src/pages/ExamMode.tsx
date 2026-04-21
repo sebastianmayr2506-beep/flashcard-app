@@ -429,7 +429,7 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
             <div
               className="card-inner cursor-pointer"
               style={{ transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)' }}
-              onClick={() => !isFlipped && setIsFlipped(true)}
+              onClick={() => setIsFlipped(f => !f)}
             >
               {/* Front */}
               <div className="card-face bg-[#1e2130] border border-[#2d3148] rounded-3xl flex flex-col select-none">

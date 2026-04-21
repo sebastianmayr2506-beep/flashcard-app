@@ -115,15 +115,21 @@ export interface DailyPlan {
   masteryRateAtExam: number;     // % of cards mastered by exam day
 }
 
-export function calculateDailyPlan(cards: Flashcard[], settings: AppSettings): DailyPlan {
+export function calculateDailyPlan(
+  cards: Flashcard[],
+  settings: AppSettings,
+  newCardsDoneToday = 0,
+): DailyPlan {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   // Due reviews: already seen at least once, review is overdue
   const reviewCards = cards.filter(c => c.repetitions > 0 && isDueToday(c));
 
-  // Unseen cards: never reviewed yet
-  const unseenCards = cards.filter(c => c.repetitions === 0);
+  // Truly unseen cards: interval === 0 means SM-2 has never touched this card.
+  // Cards rated Nochmal get interval=1 so they're excluded here and treated as
+  // tomorrow's reviews — preventing them from refilling today's new-card quota.
+  const unseenCards = cards.filter(c => c.repetitions === 0 && c.interval === 0);
 
   // Days until exam
   let daysUntilExam: number | null = null;
@@ -153,7 +159,10 @@ export function calculateDailyPlan(cards: Flashcard[], settings: AppSettings): D
     newCardsPerDay = Math.min(settings.dailyNewCardGoal, unseenCards.length);
   }
 
-  const newCards = unseenCards.slice(0, Math.max(0, newCardsPerDay));
+  // Subtract already-done new cards from today's quota so resuming a session
+  // doesn't re-fill the slot with fresh unseen cards.
+  const remainingNewToday = Math.max(0, newCardsPerDay - newCardsDoneToday);
+  const newCards = unseenCards.slice(0, remainingNewToday);
 
   const allLearned =
     cards.length > 0 &&
@@ -174,10 +183,15 @@ export function calculateDailyPlan(cards: Flashcard[], settings: AppSettings): D
   };
 }
 
-// Cards actually rated today (repetitions > 0 rules out freshly-imported cards)
+// Cards actually rated today — includes both successfully-rated (repetitions > 0)
+// and Nochmal-failed new cards (repetitions=0, interval=1, updatedAt today).
 export function getCardsRatedToday(cards: Flashcard[]): number {
   const today = new Date().toDateString();
-  return cards.filter(c =>
-    c.repetitions > 0 && new Date(c.updatedAt).toDateString() === today
-  ).length;
+  return cards.filter(c => {
+    if (new Date(c.updatedAt).toDateString() !== today) return false;
+    if (c.repetitions > 0) return true;
+    // Nochmal on a previously-unseen card: interval bumped from 0 → 1
+    if (c.interval === 1 && c.updatedAt !== c.createdAt) return true;
+    return false;
+  }).length;
 }

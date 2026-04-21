@@ -62,8 +62,9 @@ export interface AppSettings {
   dailyNewCardGoal: number; // default: 10
   // Daily progress snapshot (resets each day)
   dailyPlanSnapshot?: {
-    date: string;       // toDateString() key
-    totalCards: number; // size of plan when "Jetzt lernen" was clicked
+    date: string;           // toDateString() key
+    totalCards: number;     // size of plan when session was first started today
+    newCardsDone: number;   // new cards already introduced today (persists across session breaks)
   };
   autoUnflagEnabled: boolean;        // remove flag after 2 correct days in Prüfungsmodus
   autoUnflagNotification?: {

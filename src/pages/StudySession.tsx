@@ -43,6 +43,7 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   const [onlyDue, setOnlyDue] = useState(true);
   const [filterKlassiker, setFilterKlassiker] = useState(false);
   const [sortByProbability, setSortByProbability] = useState(false);
+  const [endlessMode, setEndlessMode] = useState(false);
   const [sessionCards, setSessionCards] = useState<Flashcard[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
@@ -58,12 +59,12 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
       if (filterExaminer) result = result.filter(c => c.examiners?.includes(filterExaminer));
       if (filterDifficulty) result = result.filter(c => c.difficulty === filterDifficulty);
       if (filterSet) result = result.filter(c => c.setId === filterSet);
-      if (onlyDue) result = result.filter(isDueToday);
+      if (!endlessMode && onlyDue) result = result.filter(isDueToday);
       if (filterKlassiker) result = result.filter(c => (c.probabilityPercent ?? 0) > 60);
       if (sortByProbability) result = [...result].sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0));
     }
     return result;
-  }, [cards, preFilteredCards, filterSubject, filterExaminer, filterDifficulty, filterSet, onlyDue, filterKlassiker, sortByProbability]);
+  }, [cards, preFilteredCards, filterSubject, filterExaminer, filterDifficulty, filterSet, onlyDue, endlessMode, filterKlassiker, sortByProbability]);
 
   useEffect(() => {
     if (dailyPlan) {
@@ -188,6 +189,21 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
               </div>
               <span className="text-sm text-white">📊 Nach Wahrscheinlichkeit sortieren</span>
             </label>
+
+            <div className="border-t border-[#2d3148] pt-3">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <div
+                  onClick={() => setEndlessMode(!endlessMode)}
+                  className={`w-10 h-6 rounded-full transition-colors relative ${endlessMode ? 'bg-violet-500' : 'bg-[#2d3148]'}`}
+                >
+                  <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${endlessMode ? 'left-5' : 'left-1'}`} />
+                </div>
+                <div>
+                  <span className="text-sm text-white">♾️ Endlos-Modus</span>
+                  <p className="text-xs text-[#6b7280] mt-0.5">Alle Karten ohne Tageslimit — fällige UND nicht-fällige</p>
+                </div>
+              </label>
+            </div>
 
             <div className={`p-3 rounded-xl text-center ${availableCards.length > 0 ? 'bg-indigo-500/10 border border-indigo-500/20' : 'bg-[#252840]'}`}>
               <p className={`text-2xl font-bold ${availableCards.length > 0 ? 'text-indigo-400' : 'text-[#6b7280]'}`}>

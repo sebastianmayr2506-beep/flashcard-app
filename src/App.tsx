@@ -91,11 +91,22 @@ export default function App() {
   }, []);
 
   const handleStartDailySession = useCallback(() => {
-    const plan = calculateDailyPlan(cards, settings);
+    const today = new Date().toDateString();
+    const snap = settings.dailyPlanSnapshot;
+    const newDoneToday = snap?.date === today ? (snap.newCardsDone ?? 0) : 0;
+
+    const plan = calculateDailyPlan(cards, settings, newDoneToday);
     if (plan.totalToday === 0) return;
 
-    const snapshot = { date: new Date().toDateString(), totalCards: plan.totalToday };
-    updateSettings({ dailyPlanSnapshot: snapshot });
+    // Preserve newCardsDone from earlier today; only reset if it's a new day
+    const newSnapshot = {
+      date: today,
+      totalCards: snap?.date === today
+        ? Math.max(snap.totalCards, newDoneToday + plan.totalToday) // keep original total
+        : plan.totalToday,
+      newCardsDone: newDoneToday,
+    };
+    updateSettings({ dailyPlanSnapshot: newSnapshot });
 
     setStudyFilteredCards(null);
     setActiveDailyPlan({
@@ -172,7 +183,24 @@ export default function App() {
 
   const handleRate = useCallback((id: string, rating: RatingValue) => {
     rateCard(id, rating, settings.examDate);
-  }, [rateCard, settings.examDate]);
+
+    // Increment newCardsDone counter when a new card from the daily plan is rated
+    if (activeDailyPlan) {
+      const isNewCard = activeDailyPlan.newCards.some(c => c.id === id);
+      if (isNewCard) {
+        const today = new Date().toDateString();
+        const snap = settings.dailyPlanSnapshot;
+        const doneSoFar = snap?.date === today ? (snap.newCardsDone ?? 0) : 0;
+        updateSettings({
+          dailyPlanSnapshot: {
+            date: today,
+            totalCards: snap?.date === today ? snap.totalCards : (activeDailyPlan.totalPlanned),
+            newCardsDone: doneSoFar + 1,
+          },
+        });
+      }
+    }
+  }, [rateCard, settings.examDate, activeDailyPlan, settings.dailyPlanSnapshot, updateSettings]);
 
   const handleBulkAssignSet = useCallback((cardIds: string[], setId: string | undefined) => {
     cardIds.forEach(id => updateCard(id, { setId }));

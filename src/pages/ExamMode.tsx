@@ -3,6 +3,7 @@ import type { Flashcard, AppSettings, CardSet, CardLink } from '../types/card';
 import MarkdownText from '../components/MarkdownText';
 import DifficultyBadge from '../components/DifficultyBadge';
 import { LinkedCardsPanel } from '../components/LinkedCards';
+import QuickEditModal from '../components/QuickEditModal';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -28,6 +29,7 @@ interface Props {
   sets: CardSet[];
   links: CardLink[];
   onFlagCards: (ids: string[]) => void;
+  onUpdateCard: (id: string, data: Partial<Flashcard>) => void;
   onRecordAttempts: (correct: Flashcard[], wrong: Flashcard[]) => Flashcard[];
   onNavigate: (page: string) => void;
 }
@@ -125,7 +127,7 @@ function DonutChart({ correct, total }: { correct: number; total: number }) {
 
 // ─── Main Component ───────────────────────────────────────────
 
-export default function ExamMode({ cards, settings, sets, links, onFlagCards, onRecordAttempts, onNavigate }: Props) {
+export default function ExamMode({ cards, settings, sets, links, onFlagCards, onUpdateCard, onRecordAttempts, onNavigate }: Props) {
   const [phase, setPhase] = useState<Phase>('setup');
   const [config, setConfig] = useState<ExamConfig>({
     source: 'all',
@@ -143,6 +145,7 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
   const [sessionCards, setSessionCards] = useState<Flashcard[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
+  const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
   const [correct, setCorrect] = useState<Flashcard[]>([]);
   const [wrong, setWrong] = useState<Flashcard[]>([]);
 
@@ -446,7 +449,14 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
                 )}
               </div>
               {/* Back */}
-              <div className="card-face card-back-face bg-[#1e2130] border border-indigo-500/40 rounded-3xl flex flex-col select-none" style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
+              <div className="card-face card-back-face bg-[#1e2130] border border-indigo-500/40 rounded-3xl flex flex-col select-none relative" style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
+                <button
+                  onClick={e => { e.stopPropagation(); setEditingCard(card); }}
+                  className="absolute right-3 top-3 text-[#6b7280] hover:text-indigo-400 text-base transition-colors px-2 py-1 rounded-lg hover:bg-[#252840] z-10"
+                  title="Karte bearbeiten"
+                >
+                  ✏️
+                </button>
                 <div className="shrink-0 pt-5 pb-2 text-center">
                   <span className="text-xs font-semibold text-purple-400 uppercase tracking-widest">Antwort</span>
                 </div>
@@ -506,6 +516,14 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
             </div>
           )}
         </div>
+
+        {editingCard && (
+          <QuickEditModal
+            card={editingCard}
+            onSave={onUpdateCard}
+            onClose={() => setEditingCard(null)}
+          />
+        )}
       </div>
     );
   }

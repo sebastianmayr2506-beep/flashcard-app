@@ -286,6 +286,7 @@ export default function App() {
           settings={settings}
           links={links}
           onFlagCards={handleFlagCards}
+          onUpdateCard={updateCard}
           onRecordAttempts={handleRecordAttempts}
           onNavigate={navigate}
         />
@@ -305,6 +306,7 @@ export default function App() {
           preFilteredCards={studyFilteredCards}
           dailyPlan={activeDailyPlan}
           onRate={handleRate}
+          onUpdateCard={updateCard}
           onSessionComplete={handleSessionComplete}
           onNavigate={navigate}
         />

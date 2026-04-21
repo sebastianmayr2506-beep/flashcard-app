@@ -4,6 +4,7 @@ import { isDueToday, STUDY_RATINGS } from '../types/card';
 import DifficultyBadge from '../components/DifficultyBadge';
 import MarkdownText from '../components/MarkdownText';
 import { LinkedCardsPanel } from '../components/LinkedCards';
+import QuickEditModal from '../components/QuickEditModal';
 
 export interface DailyPlanSession {
   reviewCards: Flashcard[];
@@ -19,6 +20,7 @@ interface Props {
   preFilteredCards?: Flashcard[] | null;
   dailyPlan?: DailyPlanSession | null;
   onRate: (id: string, rating: RatingValue) => void;
+  onUpdateCard: (id: string, data: Partial<Flashcard>) => void;
   onSessionComplete: () => void;
   onNavigate: (page: string) => void;
 }
@@ -29,7 +31,7 @@ interface RatingCount {
   nochmal: number; schwer: number; gut: number; einfach: number;
 }
 
-export default function StudySession({ cards, settings, sets, links, preFilteredCards, dailyPlan, onRate, onSessionComplete, onNavigate }: Props) {
+export default function StudySession({ cards, settings, sets, links, preFilteredCards, dailyPlan, onRate, onUpdateCard, onSessionComplete, onNavigate }: Props) {
   const isDailyMode = !!dailyPlan;
   const [sessionState, setSessionState] = useState<SessionState>(
     (preFilteredCards || dailyPlan) ? 'studying' : 'setup'
@@ -46,6 +48,7 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   const [isFlipped, setIsFlipped] = useState(false);
   const [ratings, setRatings] = useState<RatingCount>({ nochmal: 0, schwer: 0, gut: 0, einfach: 0 });
   const [zoomedImg, setZoomedImg] = useState<string | null>(null);
+  const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
 
   // Cards available for setup
   const availableCards = useMemo(() => {
@@ -337,7 +340,14 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
               )}
             </div>
             {/* Back */}
-            <div className="card-face card-back-face bg-[#1e2130] border border-indigo-500/40 rounded-3xl flex flex-col select-none" style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
+            <div className="card-face card-back-face bg-[#1e2130] border border-indigo-500/40 rounded-3xl flex flex-col select-none relative" style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
+              <button
+                onClick={e => { e.stopPropagation(); setEditingCard(currentCard); }}
+                className="absolute right-3 top-3 text-[#6b7280] hover:text-indigo-400 text-base transition-colors px-2 py-1 rounded-lg hover:bg-[#252840] z-10"
+                title="Karte bearbeiten"
+              >
+                ✏️
+              </button>
               <div className="shrink-0 pt-5 pb-2 text-center">
                 <span className="text-xs font-semibold text-purple-400 uppercase tracking-widest">Antwort</span>
               </div>
@@ -394,6 +404,14 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
           </div>
         )}
       </div>
+
+      {editingCard && (
+        <QuickEditModal
+          card={editingCard}
+          onSave={onUpdateCard}
+          onClose={() => setEditingCard(null)}
+        />
+      )}
     </div>
   );
 }

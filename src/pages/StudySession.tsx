@@ -434,7 +434,10 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
       {editingCard && (
         <QuickEditModal
           card={editingCard}
-          onSave={onUpdateCard}
+          onSave={(id, data) => {
+            onUpdateCard(id, data);
+            setSessionCards(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
+          }}
           onClose={() => setEditingCard(null)}
         />
       )}

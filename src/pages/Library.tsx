@@ -21,13 +21,14 @@ interface Props {
   onBulkCreateAndAssignSet: (cardIds: string[], setName: string) => void;
   onBulkDelete: (cardIds: string[]) => void;
   onMergeCards: (cardIds: string[]) => void;
+  onSplitCard: (cardId: string) => void;
   onNavigate: (page: string) => void;
   initialSrsFilter?: string;
 }
 
 type ViewMode = 'grid' | 'list';
 
-export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onMergeCards, onNavigate, initialSrsFilter }: Props) {
+export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onMergeCards, onSplitCard, onNavigate, initialSrsFilter }: Props) {
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminers, setFilterExaminers] = useState<Set<string>>(new Set());
@@ -533,7 +534,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
               selectionMode={selectionMode}
               selected={selectedIds.has(card.id)}
               onToggleSelect={() => toggleSelection(card.id)}
-              onEdit={onEdit} onDelete={onDelete}
+              onEdit={onEdit} onDelete={onDelete} onSplit={onSplitCard}
               onPreview={setPreviewCard}
             />
           ))}
@@ -547,7 +548,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
               selectionMode={selectionMode}
               selected={selectedIds.has(card.id)}
               onToggleSelect={() => toggleSelection(card.id)}
-              onEdit={onEdit} onDelete={onDelete}
+              onEdit={onEdit} onDelete={onDelete} onSplit={onSplitCard}
               onPreview={setPreviewCard}
             />
           ))}
@@ -603,6 +604,7 @@ interface CardItemProps {
   onToggleSelect: () => void;
   onEdit: (c: Flashcard) => void;
   onDelete: (id: string) => void;
+  onSplit: (id: string) => void;
   onPreview: (c: Flashcard) => void;
 }
 
@@ -616,7 +618,7 @@ function flagTooltip(cardId: string, flagAttempts: FlagAttempt[], autoUnflagEnab
   return '🚩 Flagge wird bald automatisch entfernt';
 }
 
-function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete, onPreview }: CardItemProps) {
+function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete, onSplit, onPreview }: CardItemProps) {
   const status = getSRSStatus(card);
   const due = isDueToday(card);
   const linkCount = links.filter(l => l.cardId === card.id || l.linkedCardId === card.id).length;
@@ -684,6 +686,13 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
             Bearbeiten
           </button>
           <button
+            onClick={e => { e.stopPropagation(); onSplit(card.id); }}
+            className="text-xs py-1.5 px-2 rounded-lg bg-[#252840] hover:bg-violet-500/20 text-[#9ca3af] hover:text-violet-400 border border-[#2d3148] hover:border-violet-500/30 transition-colors"
+            title="Mit KI in mehrere Karten trennen"
+          >
+            ✂️
+          </button>
+          <button
             onClick={e => { e.stopPropagation(); exportJSON([card], `karte_${card.id.slice(0,8)}.json`); }}
             className="text-xs py-1.5 px-2 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] hover:border-indigo-500/30 transition-colors"
             title="JSON exportieren"
@@ -702,7 +711,7 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
   );
 }
 
-function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete, onPreview }: CardItemProps) {
+function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete, onSplit, onPreview }: CardItemProps) {
   const status = getSRSStatus(card);
   const due = isDueToday(card);
   const linkCount = links.filter(l => l.cardId === card.id || l.linkedCardId === card.id).length;
@@ -742,6 +751,7 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
         <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
           <button onClick={e => { e.stopPropagation(); onPreview(card); }} className="text-xs px-2 py-1.5 rounded-lg bg-[#252840] hover:bg-purple-500/20 text-[#9ca3af] hover:text-purple-400 border border-[#2d3148] transition-colors" title="Vorschau">👁</button>
           <button onClick={e => { e.stopPropagation(); onEdit(card); }} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] transition-colors">Bearbeiten</button>
+          <button onClick={e => { e.stopPropagation(); onSplit(card.id); }} className="text-xs px-2 py-1.5 rounded-lg bg-[#252840] hover:bg-violet-500/20 text-[#9ca3af] hover:text-violet-400 border border-[#2d3148] transition-colors" title="Mit KI in mehrere Karten trennen">✂️</button>
           <button onClick={e => { e.stopPropagation(); exportJSON([card], `karte_${card.id.slice(0,8)}.json`); }} className="text-xs px-2 py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] transition-colors" title="JSON exportieren">📦</button>
           <button onClick={e => { e.stopPropagation(); onDelete(card.id); }} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-red-500/20 text-[#9ca3af] hover:text-red-400 border border-[#2d3148] transition-colors">Löschen</button>
         </div>

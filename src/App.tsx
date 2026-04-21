@@ -4,6 +4,8 @@ import type { Flashcard, RatingValue, CardSet, FlagAttempt } from './types/card'
 import { isDueToday } from './types/card';
 import type { MergeResult } from './utils/claudeMerge';
 import { callClaudeMerge } from './utils/claudeMerge';
+import type { SplitResult, SplitCard } from './utils/claudeSplit';
+import { callClaudeSplit } from './utils/claudeSplit';
 import { useCards } from './hooks/useCards';
 import { useSettings } from './hooks/useSettings';
 import { useSets } from './hooks/useSets';
@@ -28,6 +30,7 @@ import SetsPage from './pages/SetsPage';
 import SetDetail from './pages/SetDetail';
 import ExamMode from './pages/ExamMode';
 import MergePreviewModal from './components/MergePreviewModal';
+import SplitPreviewModal from './components/SplitPreviewModal';
 
 type Page = 'dashboard' | 'library' | 'new-card' | 'edit-card' | 'study' | 'import-export' | 'settings' | 'sets' | 'set-detail' | 'exam';
 
@@ -53,6 +56,11 @@ export default function App() {
   const [mergeLoading, setMergeLoading] = useState(false);
   const [mergeSources, setMergeSources] = useState<Flashcard[] | null>(null);
   const [mergeSuggestion, setMergeSuggestion] = useState<MergeResult | null>(null);
+
+  // AI split state
+  const [splitLoading, setSplitLoading] = useState(false);
+  const [splitSource, setSplitSource] = useState<Flashcard | null>(null);
+  const [splitResult, setSplitResult] = useState<SplitResult | null>(null);
 
   const dueCount = cards.filter(isDueToday).length;
 
@@ -327,6 +335,88 @@ export default function App() {
     setMergeSuggestion(null);
   }, [mergeSources, links, addCard, addLink, removeCard, showToast]);
 
+  // ── AI Split ─────────────────────────────────────────────────
+  const handleSplitCard = useCallback(async (cardId: string) => {
+    const apiKey = settings.anthropicApiKey?.trim();
+    if (!apiKey) {
+      showToast('Bitte trage zuerst deinen Anthropic API-Schlüssel in den Einstellungen ein.', 'error');
+      return;
+    }
+    const source = cards.find(c => c.id === cardId);
+    if (!source) return;
+
+    setSplitLoading(true);
+    showToast('🤖 KI analysiert Karte…', 'info');
+    try {
+      const result = await callClaudeSplit(apiKey, source);
+      setSplitSource(source);
+      setSplitResult(result);
+    } catch (err) {
+      console.error('Claude split error:', err);
+      showToast(`KI-Fehler: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      setSplitLoading(false);
+    }
+  }, [cards, settings.anthropicApiKey, showToast]);
+
+  const handleConfirmSplit = useCallback((newCards: SplitCard[]) => {
+    if (!splitSource) return;
+    const source = splitSource;
+
+    // Global max timesAsked (for probability recompute after split)
+    const globalMaxAsked = cards.reduce((m, c) => Math.max(m, c.timesAsked ?? 0), 0);
+
+    // Create each new card inheriting metadata 1:1 from the original
+    const createdIds: string[] = [];
+    newCards.forEach(nc => {
+      // Inherited metadata (subjects, examiners, probability, set, etc.) come from source.
+      // customTags: the model already filtered per-part; fall back to source tags if empty.
+      const tags = nc.customTags.length > 0 ? nc.customTags : (source.customTags ?? []);
+      const timesAsked = source.timesAsked ?? 0;
+      const probabilityPercent = globalMaxAsked > 0
+        ? Math.round((timesAsked / globalMaxAsked) * 100)
+        : (source.probabilityPercent ?? 0);
+
+      const created = addCard({
+        front: nc.front,
+        back: nc.back,
+        frontImage: undefined,
+        backImage: undefined,
+        subjects: source.subjects ?? [],
+        examiners: source.examiners ?? [],
+        difficulty: nc.difficulty,
+        customTags: tags,
+        setId: source.setId,
+        flagged: source.flagged ?? false,
+        timesAsked: timesAsked > 0 ? timesAsked : undefined,
+        askedByExaminers: source.askedByExaminers ?? [],
+        askedInCatalogs: source.askedInCatalogs ?? [],
+        probabilityPercent: probabilityPercent > 0 ? probabilityPercent : undefined,
+      });
+      createdIds.push(created.id);
+    });
+
+    // Migrate any links from the original card to the FIRST new card.
+    // (Heuristic — user can re-link manually if a different target makes more sense.)
+    const firstId = createdIds[0];
+    if (firstId) {
+      links.forEach(link => {
+        if (link.cardId === source.id && link.linkedCardId !== source.id) {
+          addLink(firstId, link.linkedCardId, link.linkType);
+        } else if (link.linkedCardId === source.id && link.cardId !== source.id) {
+          addLink(link.cardId, firstId, link.linkType);
+        }
+      });
+    }
+
+    // Remove original
+    removeCard(source.id);
+
+    showToast(`✂️ Karte in ${newCards.length} Karten getrennt`, 'success');
+    setSplitSource(null);
+    setSplitResult(null);
+  }, [splitSource, cards, links, addCard, addLink, removeCard, showToast]);
+
   const handleViewSet = useCallback((set: CardSet) => {
     setViewingSet(set);
     setPage('set-detail');
@@ -521,6 +611,7 @@ export default function App() {
             onBulkCreateAndAssignSet={handleBulkCreateAndAssignSet}
             onBulkDelete={handleBulkDelete}
             onMergeCards={handleMergeCards}
+            onSplitCard={handleSplitCard}
             onNavigate={navigate}
             initialSrsFilter={libraryInitialSrs}
           />
@@ -591,6 +682,27 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* AI Split loading overlay */}
+      {splitLoading && (
+        <div className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center">
+          <div className="bg-[#1a1d27] border border-[#2d3148] rounded-2xl px-8 py-6 flex flex-col items-center gap-4 shadow-2xl">
+            <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+            <p className="text-white font-semibold">KI analysiert Karte…</p>
+            <p className="text-[#9ca3af] text-sm">Das dauert einen Moment</p>
+          </div>
+        </div>
+      )}
+
+      {/* AI Split preview modal */}
+      {splitSource && splitResult && (
+        <SplitPreviewModal
+          source={splitSource}
+          result={splitResult}
+          onConfirm={handleConfirmSplit}
+          onCancel={() => { setSplitSource(null); setSplitResult(null); }}
+        />
+      )}
 
       {/* AI Merge loading overlay */}
       {mergeLoading && (

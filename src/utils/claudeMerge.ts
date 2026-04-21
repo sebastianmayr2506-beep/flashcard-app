@@ -42,13 +42,10 @@ async function resolveBestModel(apiKey: string): Promise<string> {
     const data = await res.json();
     const ids: string[] = (data?.data ?? []).map((m: { id: string }) => m.id);
 
-    // Prefer: opus-4.x > sonnet-4.x > opus-3.x > sonnet-3.5.x (newest first)
+    // Prefer: sonnet-4.x > opus-4.x > any (newest version first via sort)
     const ranked = [
-      ids.filter(id => /claude-opus-4/i.test(id)).sort().reverse(),
-      ids.filter(id => /claude-sonnet-4/i.test(id)).sort().reverse(),
-      ids.filter(id => /claude-opus-3/i.test(id)).sort().reverse(),
-      ids.filter(id => /claude-3-5-sonnet/i.test(id)).sort().reverse(),
-      ids.filter(id => /claude-3-7-sonnet/i.test(id)).sort().reverse(),
+      ids.filter(id => /^claude-sonnet-4/i.test(id)).sort().reverse(),
+      ids.filter(id => /^claude-opus-4/i.test(id)).sort().reverse(),
       ids.sort().reverse(), // fallback: any model
     ];
     for (const group of ranked) {
@@ -57,7 +54,7 @@ async function resolveBestModel(apiKey: string): Promise<string> {
   } catch {
     // ignore — fall through to hardcoded fallback
   }
-  return 'claude-3-5-sonnet-20241022'; // last-resort default
+  return 'claude-sonnet-4-6'; // last-resort default
 }
 
 export async function callClaudeMerge(

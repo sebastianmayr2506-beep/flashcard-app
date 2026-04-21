@@ -60,7 +60,8 @@ export default function App() {
     if (target !== 'edit-card') setEditingCard(undefined);
     if (target !== 'study') { setStudyFilteredCards(null); setActiveDailyPlan(null); }
     if (target !== 'set-detail') setViewingSet(undefined);
-    if (target !== 'library') setLibraryInitialSrs(undefined);
+    // Always clear SRS pre-filter on normal navigation — only handleNavigateToLibraryWithSrs sets it
+    setLibraryInitialSrs(undefined);
     setPage(target as Page);
   }, []);
 

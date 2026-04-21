@@ -47,6 +47,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
   const [filterDifficulty, setFilterDifficulty] = useState<Difficulty | ''>('');
   const [filterTag, setFilterTag] = useState('');
   const [filterSRS, setFilterSRS] = useState<SRSStatus | ''>(initialSrsFilter as SRSStatus | '' ?? '');
+  const [showSrsFilterBanner, setShowSrsFilterBanner] = useState(!!initialSrsFilter);
   const [filterSet, setFilterSet] = useState('');
   const [filterCatalog, setFilterCatalog] = useState('');
   const [filterDue, setFilterDue] = useState(false);
@@ -268,6 +269,24 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
       )}
 
       <div className="p-4 md:p-6 lg:p-8 space-y-5">
+
+      {/* SRS filter banner — shown when navigated from Dashboard SRS grid */}
+      {showSrsFilterBanner && filterSRS && (
+        <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+          <p className="text-indigo-300 text-sm">
+            <span className="font-semibold">Gefiltert nach SRS-Status:</span>{' '}
+            {{ neu: 'Neu 🆕', lernend: 'Lernend 📘', wiederholen: 'Wiederholen 🔄', beherrscht: 'Beherrscht ✅' }[filterSRS] ?? filterSRS}
+            {' '}— {filtered.length} von {cards.length} Karten sichtbar
+          </p>
+          <button
+            onClick={() => { clearFilters(); setShowSrsFilterBanner(false); }}
+            className="text-indigo-400 hover:text-indigo-200 font-semibold text-sm shrink-0 transition-colors"
+          >
+            ✕ Filter löschen
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-white">Kartei-Bibliothek</h2>
@@ -487,9 +506,23 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
       {/* Cards */}
       {filtered.length === 0 ? (
         <div className="text-center py-16">
-          <p className="text-4xl mb-3">🔍</p>
-          <p className="text-lg font-semibold text-white">Keine Karten gefunden</p>
-          <p className="text-[#9ca3af] text-sm mt-1">Versuche andere Filtereinstellungen</p>
+          <p className="text-4xl mb-3">{hasFilters ? '🔍' : '🃏'}</p>
+          <p className="text-lg font-semibold text-white">
+            {hasFilters ? 'Keine Karten für diesen Filter' : 'Keine Karten vorhanden'}
+          </p>
+          <p className="text-[#9ca3af] text-sm mt-1">
+            {hasFilters
+              ? `${cards.length} Karte${cards.length !== 1 ? 'n' : ''} insgesamt – der aktive Filter zeigt keine Ergebnisse`
+              : 'Erstelle deine erste Karteikarte'}
+          </p>
+          {hasFilters && (
+            <button
+              onClick={clearFilters}
+              className="mt-4 bg-indigo-500 hover:bg-indigo-400 text-white font-semibold px-5 py-2.5 rounded-xl transition-colors"
+            >
+              ✕ Alle Filter löschen ({cards.length} Karten anzeigen)
+            </button>
+          )}
         </div>
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">

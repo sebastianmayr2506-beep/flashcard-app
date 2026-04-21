@@ -85,6 +85,14 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
         }
       }
 
+      // Safety: require explicit confirmation before replacing all cards
+      if (!mergeMode) {
+        const confirmed = window.confirm(
+          `⚠️ ACHTUNG: Ersetzen-Modus!\n\nAlle ${cards.length} vorhandenen Karten werden unwiderruflich gelöscht und durch ${allCards.length} neue Karten ersetzt.\n\nFortfahren?`
+        );
+        if (!confirmed) return;
+      }
+
       await onImport(allCards, mergeMode);
       showToast(
         `${allCards.length} Karten aus ${results.length} Datei${results.length !== 1 ? 'en' : ''} importiert!`,

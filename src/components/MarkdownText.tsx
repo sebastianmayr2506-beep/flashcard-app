@@ -6,7 +6,29 @@ export default function MarkdownText({ text, className = '' }: { text: string; c
   let i = 0;
 
   while (i < lines.length) {
-    const trimmed = lines[i].trimStart();
+    const rawLine = lines[i];
+    const trimmed = rawLine.trimStart();
+
+    // Fenced code block: ``` ... ``` — preserve ALL whitespace (critical for ASCII art)
+    if (trimmed.startsWith('```')) {
+      const lang = trimmed.slice(3).trim();
+      const bodyLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].trimStart().startsWith('```')) {
+        bodyLines.push(lines[i]);
+        i++;
+      }
+      i++; // skip closing ```
+      output.push(
+        <span key={`code-${i}`} className="block my-2 overflow-x-auto rounded-lg bg-[#0f1117] border border-[#2d3148] p-3">
+          <pre className="text-xs text-[#d1d5db] font-mono leading-snug whitespace-pre">
+            {lang && <span className="block text-[10px] text-[#6b7280] uppercase tracking-wider mb-1">{lang}</span>}
+            {bodyLines.join('\n')}
+          </pre>
+        </span>
+      );
+      continue;
+    }
 
     // Detect table: current line has pipes and next line is separator |---|
     if (trimmed.startsWith('|') && i + 1 < lines.length && lines[i + 1].trim().match(/^\|[-| :]+\|$/)) {

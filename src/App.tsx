@@ -98,13 +98,14 @@ export default function App() {
     const plan = calculateDailyPlan(cards, settings, newDoneToday);
     if (plan.totalToday === 0) return;
 
-    // Preserve newCardsDone from earlier today; only reset if it's a new day
+    // Preserve newCardsDone/totalDone from earlier today; only reset if it's a new day
     const newSnapshot = {
       date: today,
       totalCards: snap?.date === today
         ? Math.max(snap.totalCards, newDoneToday + plan.totalToday) // keep original total
         : plan.totalToday,
       newCardsDone: newDoneToday,
+      totalDone: snap?.date === today ? (snap.totalDone ?? 0) : 0,
     };
     updateSettings({ dailyPlanSnapshot: newSnapshot });
 
@@ -184,18 +185,22 @@ export default function App() {
   const handleRate = useCallback((id: string, rating: RatingValue) => {
     rateCard(id, rating, settings.examDate);
 
-    // Increment newCardsDone counter when a new card from the daily plan is rated
-    if (activeDailyPlan) {
+    // Track daily plan progress counters (only Schwer/Gut/Einfach, not Nochmal)
+    if (activeDailyPlan && rating >= 1) {
+      const today = new Date().toDateString();
+      const snap = settings.dailyPlanSnapshot;
       const isNewCard = activeDailyPlan.newCards.some(c => c.id === id);
-      if (isNewCard) {
-        const today = new Date().toDateString();
-        const snap = settings.dailyPlanSnapshot;
-        const doneSoFar = snap?.date === today ? (snap.newCardsDone ?? 0) : 0;
+      const isAnyPlanCard = isNewCard || activeDailyPlan.reviewCards.some(c => c.id === id);
+
+      if (isAnyPlanCard) {
+        const newCardsDoneSoFar = snap?.date === today ? (snap.newCardsDone ?? 0) : 0;
+        const totalDoneSoFar = snap?.date === today ? (snap.totalDone ?? 0) : 0;
         updateSettings({
           dailyPlanSnapshot: {
             date: today,
-            totalCards: snap?.date === today ? snap.totalCards : (activeDailyPlan.totalPlanned),
-            newCardsDone: doneSoFar + 1,
+            totalCards: snap?.date === today ? snap.totalCards : activeDailyPlan.totalPlanned,
+            newCardsDone: isNewCard ? newCardsDoneSoFar + 1 : newCardsDoneSoFar,
+            totalDone: totalDoneSoFar + 1,
           },
         });
       }

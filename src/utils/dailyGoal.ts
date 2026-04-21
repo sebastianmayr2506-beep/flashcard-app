@@ -183,15 +183,11 @@ export function calculateDailyPlan(
   };
 }
 
-// Cards actually rated today — includes both successfully-rated (repetitions > 0)
-// and Nochmal-failed new cards (repetitions=0, interval=1, updatedAt today).
+// Cards where the user successfully recalled something today (rating >= 1: Schwer/Gut/Einfach).
+// Only counts cards with repetitions > 0 — Nochmal resets to 0 and is excluded.
 export function getCardsRatedToday(cards: Flashcard[]): number {
   const today = new Date().toDateString();
-  return cards.filter(c => {
-    if (new Date(c.updatedAt).toDateString() !== today) return false;
-    if (c.repetitions > 0) return true;
-    // Nochmal on a previously-unseen card: interval bumped from 0 → 1
-    if (c.interval === 1 && c.updatedAt !== c.createdAt) return true;
-    return false;
-  }).length;
+  return cards.filter(c =>
+    c.repetitions > 0 && new Date(c.updatedAt).toDateString() === today
+  ).length;
 }

@@ -65,6 +65,7 @@ export interface AppSettings {
     date: string;           // toDateString() key
     totalCards: number;     // size of plan when session was first started today
     newCardsDone: number;   // new cards already introduced today (persists across session breaks)
+    totalDone: number;      // all cards rated ≥1 (Schwer/Gut/Einfach) today — for progress display
   };
   autoUnflagEnabled: boolean;        // remove flag after 2 correct days in Prüfungsmodus
   autoUnflagNotification?: {

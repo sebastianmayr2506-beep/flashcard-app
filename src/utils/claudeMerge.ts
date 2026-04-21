@@ -28,6 +28,38 @@ Antworte AUSSCHLIESSLICH mit validem JSON in folgendem Format:
   "difficulty": "mittel"
 }`;
 
+/** Fetches available models and returns the best Sonnet/Opus candidate. */
+async function resolveBestModel(apiKey: string): Promise<string> {
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/models?limit=50', {
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+    });
+    if (!res.ok) throw new Error('models list failed');
+    const data = await res.json();
+    const ids: string[] = (data?.data ?? []).map((m: { id: string }) => m.id);
+
+    // Prefer: opus-4.x > sonnet-4.x > opus-3.x > sonnet-3.5.x (newest first)
+    const ranked = [
+      ids.filter(id => /claude-opus-4/i.test(id)).sort().reverse(),
+      ids.filter(id => /claude-sonnet-4/i.test(id)).sort().reverse(),
+      ids.filter(id => /claude-opus-3/i.test(id)).sort().reverse(),
+      ids.filter(id => /claude-3-5-sonnet/i.test(id)).sort().reverse(),
+      ids.filter(id => /claude-3-7-sonnet/i.test(id)).sort().reverse(),
+      ids.sort().reverse(), // fallback: any model
+    ];
+    for (const group of ranked) {
+      if (group.length > 0) return group[0];
+    }
+  } catch {
+    // ignore — fall through to hardcoded fallback
+  }
+  return 'claude-3-5-sonnet-20241022'; // last-resort default
+}
+
 export async function callClaudeMerge(
   apiKey: string,
   cards: Flashcard[]
@@ -35,6 +67,9 @@ export async function callClaudeMerge(
   const userMessage = `Führe folgende ${cards.length} Karteikarten zusammen:\n\n${cards
     .map((c, i) => `### Karte ${i + 1}\n**Frage:** ${c.front}\n**Antwort:** ${c.back}\n**Fach:** ${(c.subjects ?? []).join(', ') || '—'}\n**Prüfer:** ${(c.examiners ?? []).join(', ') || '—'}\n**Schwierigkeit:** ${c.difficulty}\n**Wahrscheinlichkeit:** ${c.probabilityPercent != null ? c.probabilityPercent + '%' : '—'}\n**timesAsked:** ${c.timesAsked ?? 0}\n**askedInCatalogs:** ${(c.askedInCatalogs ?? []).join(', ') || '—'}\n**Tags:** ${(c.customTags ?? []).join(', ') || '—'}`)
     .join('\n\n---\n\n')}`;
+
+  const model = await resolveBestModel(apiKey);
+  console.log('[claudeMerge] using model:', model);
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -45,7 +80,7 @@ export async function callClaudeMerge(
       'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
-      model: 'claude-3-5-sonnet-20241022',
+      model,
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMessage }],

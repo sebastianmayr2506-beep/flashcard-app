@@ -62,6 +62,7 @@ function toDb(card: Flashcard, userId: string) {
 export function useCards(userId: string | null) {
   const [cards, setCards] = useState<Flashcard[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const cardsRef = useRef<Flashcard[]>([]);
 
   // DEV: warn whenever card count drops unexpectedly
@@ -84,15 +85,49 @@ export function useCards(userId: string | null) {
 
     const migrationKey = `supa_migrated_cards_${userId}`;
 
+    // Safe fetch with retry — returns { rows, ok } where ok=false means we
+    // cannot trust the result (DO NOT overwrite card state).
+    const fetchAllCardsWithRetry = async (): Promise<{ rows: Record<string, unknown>[]; ok: boolean }> => {
+      const MAX_ATTEMPTS = 3;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        let allRows: Record<string, unknown>[] = [];
+        let from = 0;
+        const PAGE = 1000;
+        let hadError = false;
+        while (true) {
+          const { data, error } = await supabase
+            .from('cards').select('*').eq('user_id', userId)
+            .range(from, from + PAGE - 1);
+          if (error) {
+            console.error(`[useCards] load attempt ${attempt} failed:`, error);
+            hadError = true;
+            break;
+          }
+          allRows = allRows.concat(data ?? []);
+          if ((data ?? []).length < PAGE) break;
+          from += PAGE;
+        }
+        if (!hadError) return { rows: allRows, ok: true };
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise(r => setTimeout(r, 500 * attempt));
+        }
+      }
+      return { rows: [], ok: false };
+    };
+
     const load = async () => {
       setLoading(true);
+      setLoadError(null);
       try {
         const alreadyMigrated = localStorage.getItem(migrationKey) === '1';
         if (!alreadyMigrated) {
-          const { data: existing } = await supabase
+          const { data: existing, error: existErr } = await supabase
             .from('cards').select('id').eq('user_id', userId).limit(1);
 
-          if ((existing ?? []).length === 0) {
+          // SAFETY: only migrate localStorage → Supabase if we can verify
+          // Supabase is truly empty. A failed query must NOT trigger migration
+          // (could duplicate existing data or corrupt state).
+          if (!existErr && (existing ?? []).length === 0) {
             const localCards = getLocalCards();
             if (localCards.length > 0) {
               for (let i = 0; i < localCards.length; i += 100) {
@@ -101,31 +136,34 @@ export function useCards(userId: string | null) {
                 );
               }
             }
+            localStorage.setItem(migrationKey, '1');
+          } else if (!existErr) {
+            // Supabase has data — migration not needed, mark as done
+            localStorage.setItem(migrationKey, '1');
           }
-          localStorage.setItem(migrationKey, '1');
+          // If existErr: do NOT set migration flag, retry next load
         }
 
-        // Fetch all cards in pages of 1000 (Supabase default max-rows is 1000)
-        let allRows: Record<string, unknown>[] = [];
-        let from = 0;
-        const PAGE = 1000;
-        while (true) {
-          const { data, error } = await supabase
-            .from('cards').select('*').eq('user_id', userId)
-            .range(from, from + PAGE - 1);
-          if (error) { console.error('Failed to load cards:', error); break; }
-          allRows = allRows.concat(data ?? []);
-          if ((data ?? []).length < PAGE) break; // last page
-          from += PAGE;
-        }
+        const { rows, ok } = await fetchAllCardsWithRetry();
+        if (cancelled) return;
 
-        if (!cancelled) {
-          setCards(allRows.map(r => fromDb(r as Record<string, unknown>)));
+        if (!ok) {
+          // CRITICAL: fetch failed after retries — do NOT clear card state.
+          // Surface an error so the UI can show a reload banner.
+          console.error('[useCards] All load attempts failed — keeping previous state');
+          setLoadError('Karten konnten nicht geladen werden. Bitte Seite neu laden.');
           setLoading(false);
+          return;
         }
+
+        setCards(rows.map(r => fromDb(r as Record<string, unknown>)));
+        setLoading(false);
       } catch (err) {
         console.error('useCards load error:', err);
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoadError('Karten konnten nicht geladen werden. Bitte Seite neu laden.');
+          setLoading(false);
+        }
       }
     };
 
@@ -138,15 +176,24 @@ export function useCards(userId: string | null) {
     let allRows: Record<string, unknown>[] = [];
     let from = 0;
     const PAGE = 1000;
+    let hadError = false;
     while (true) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('cards').select('*').eq('user_id', userId)
         .range(from, from + PAGE - 1);
+      if (error) {
+        console.error('[useCards] refresh failed:', error);
+        hadError = true;
+        break;
+      }
       allRows = allRows.concat(data ?? []);
       if ((data ?? []).length < PAGE) break;
       from += PAGE;
     }
-    setCards(allRows.map(r => fromDb(r as Record<string, unknown>)));
+    // SAFETY: only overwrite state if the refresh succeeded end-to-end
+    if (!hadError) {
+      setCards(allRows.map(r => fromDb(r as Record<string, unknown>)));
+    }
   }, [userId]);
 
   const addCard = useCallback((
@@ -252,5 +299,5 @@ export function useCards(userId: string | null) {
     return { ok: !failedChunk && saved >= expected, saved, expected };
   }, [userId]);
 
-  return { cards, loading, refresh, addCard, updateCard, removeCard, rateCard, importCards };
+  return { cards, loading, loadError, refresh, addCard, updateCard, removeCard, rateCard, importCards };
 }

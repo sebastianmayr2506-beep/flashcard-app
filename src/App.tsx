@@ -35,7 +35,7 @@ export default function App() {
   const { user, loading: authLoading, signOut } = useAuth();
   const userId = user?.id ?? null;
 
-  const { cards, loading: cardsLoading, addCard, updateCard, removeCard, rateCard, importCards } = useCards(userId);
+  const { cards, loading: cardsLoading, loadError: cardsLoadError, addCard, updateCard, removeCard, rateCard, importCards } = useCards(userId);
   const { settings, updateSettings, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag } = useSettings(userId);
   const { sets, addSet, updateSet, removeSet } = useSets(userId);
   const { links, addLink, removeLink, replaceLinks } = useCardLinks(userId);
@@ -420,6 +420,38 @@ export default function App() {
   }
 
   if (!user) return <AuthPage />;
+
+  // CRITICAL: if cards failed to load, block the app completely.
+  // Showing an empty library would cause users to panic-import and lose data.
+  if (cardsLoadError) {
+    return (
+      <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-6">
+        <div className="max-w-md bg-[#1e2130] border border-red-500/40 rounded-2xl p-6 text-center">
+          <p className="text-4xl mb-3">⚠️</p>
+          <h2 className="text-xl font-bold text-white mb-2">Karten konnten nicht geladen werden</h2>
+          <p className="text-[#9ca3af] text-sm mb-4">
+            Deine Karten sind <strong className="text-white">sicher auf dem Server gespeichert</strong> –
+            aber die Verbindung ist gerade fehlgeschlagen. Bitte lade die Seite neu.
+          </p>
+          <p className="text-xs text-amber-400 mb-5">
+            ⚠️ Importiere jetzt <strong>nicht</strong> deine Karteikarten neu – das würde deine Server-Daten überschreiben!
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-indigo-500 hover:bg-indigo-400 text-white font-semibold px-6 py-3 rounded-xl transition-colors w-full"
+          >
+            🔄 Seite neu laden
+          </button>
+          <button
+            onClick={signOut}
+            className="mt-2 text-xs text-[#6b7280] hover:text-[#9ca3af] transition-colors"
+          >
+            Abmelden und neu anmelden
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (page === 'exam') {
     return (

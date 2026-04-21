@@ -85,12 +85,21 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
         }
       }
 
-      // Safety: require explicit confirmation before replacing all cards
-      if (!mergeMode) {
-        const confirmed = window.confirm(
-          `⚠️ ACHTUNG: Ersetzen-Modus!\n\nAlle ${cards.length} vorhandenen Karten werden unwiderruflich gelöscht und durch ${allCards.length} neue Karten ersetzt.\n\nFortfahren?`
+      // Safety: typed confirmation before destroying existing data.
+      // Using prompt() instead of confirm() so users must actively type the word —
+      // prevents accidental data loss from muscle-memory clicks on "OK".
+      if (!mergeMode && cards.length > 0) {
+        const typed = window.prompt(
+          `⚠️ ACHTUNG: ERSETZEN-MODUS\n\n` +
+          `Alle ${cards.length} vorhandenen Karten werden UNWIDERRUFLICH gelöscht ` +
+          `und durch ${allCards.length} neue Karten ersetzt.\n\n` +
+          `Wenn du wirklich alle Karten überschreiben willst, tippe das Wort LÖSCHEN (in Großbuchstaben) ein.\n\n` +
+          `(Um einfach neue Karten hinzuzufügen, drücke Abbrechen und wechsle zu "Zusammenführen".)`
         );
-        if (!confirmed) return;
+        if (typed !== 'LÖSCHEN') {
+          showToast('Import abgebrochen – deine Karten sind sicher', 'info');
+          return;
+        }
       }
 
       await onImport(allCards, mergeMode);

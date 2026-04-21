@@ -22,11 +22,12 @@ interface Props {
   onBulkDelete: (cardIds: string[]) => void;
   onMergeCards: (cardIds: string[]) => void;
   onNavigate: (page: string) => void;
+  initialSrsFilter?: string;
 }
 
 type ViewMode = 'grid' | 'list';
 
-export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onMergeCards, onNavigate }: Props) {
+export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onMergeCards, onNavigate, initialSrsFilter }: Props) {
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminers, setFilterExaminers] = useState<Set<string>>(new Set());
@@ -45,7 +46,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
   }, []);
   const [filterDifficulty, setFilterDifficulty] = useState<Difficulty | ''>('');
   const [filterTag, setFilterTag] = useState('');
-  const [filterSRS, setFilterSRS] = useState<SRSStatus | ''>('');
+  const [filterSRS, setFilterSRS] = useState<SRSStatus | ''>(initialSrsFilter as SRSStatus | '' ?? '');
   const [filterSet, setFilterSet] = useState('');
   const [filterCatalog, setFilterCatalog] = useState('');
   const [filterDue, setFilterDue] = useState(false);

@@ -47,6 +47,7 @@ export default function App() {
   const [viewingSet, setViewingSet] = useState<CardSet | undefined>();
   const [studyFilteredCards, setStudyFilteredCards] = useState<Flashcard[] | null>(null);
   const [activeDailyPlan, setActiveDailyPlan] = useState<DailyPlanSession | null>(null);
+  const [libraryInitialSrs, setLibraryInitialSrs] = useState<string | undefined>();
 
   // AI merge state
   const [mergeLoading, setMergeLoading] = useState(false);
@@ -59,7 +60,17 @@ export default function App() {
     if (target !== 'edit-card') setEditingCard(undefined);
     if (target !== 'study') { setStudyFilteredCards(null); setActiveDailyPlan(null); }
     if (target !== 'set-detail') setViewingSet(undefined);
+    if (target !== 'library') setLibraryInitialSrs(undefined);
     setPage(target as Page);
+  }, []);
+
+  const handleNavigateToLibraryWithSrs = useCallback((srs: string) => {
+    setEditingCard(undefined);
+    setStudyFilteredCards(null);
+    setActiveDailyPlan(null);
+    setViewingSet(undefined);
+    setLibraryInitialSrs(srs);
+    setPage('library');
   }, []);
 
   const handleEditCard = useCallback((card: Flashcard) => {
@@ -457,6 +468,7 @@ export default function App() {
             cards={cards}
             settings={settings}
             onNavigate={navigate}
+            onNavigateToLibraryWithSrs={handleNavigateToLibraryWithSrs}
             onStartDailySession={handleStartDailySession}
             onDismissUnflagNotification={handleDismissUnflagNotification}
             onEditCard={handleEditCard}
@@ -477,6 +489,7 @@ export default function App() {
             onBulkDelete={handleBulkDelete}
             onMergeCards={handleMergeCards}
             onNavigate={navigate}
+            initialSrsFilter={libraryInitialSrs}
           />
         )}
         {(page === 'new-card' || page === 'edit-card') && (

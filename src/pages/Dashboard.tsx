@@ -7,6 +7,7 @@ import type { Flashcard, AppSettings } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
 import { calculateDailyPlan, getCardsRatedToday } from '../utils/dailyGoal';
 import ProbabilityBadge from '../components/ProbabilityBadge';
+import SrsLevelGrid, { type SrsKey } from '../components/SrsLevelGrid';
 
 interface Props {
   cards: Flashcard[];
@@ -168,7 +169,11 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
 
       {/* SRS Level Breakdown — clickable cards */}
       {cards.length > 0 && (
-        <SrsLevelGrid srsGroups={stats.srsGroups} total={stats.total} onNavigate={onNavigateToLibraryWithSrs} />
+        <SrsLevelGrid
+          srsGroups={stats.srsGroups}
+          total={stats.total}
+          onLevelClick={(srs: SrsKey) => onNavigateToLibraryWithSrs(srs)}
+        />
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
@@ -395,54 +400,3 @@ function StatCard({ value, label, icon, color, bg, onClick }: StatCardProps) {
   );
 }
 
-// ─── SRS Level Grid ──────────────────────────────────────────
-
-const SRS_LEVELS: { key: 'neu' | 'lernend' | 'wiederholen' | 'beherrscht'; label: string; icon: string; color: string; textColor: string; barColor: string; desc: string }[] = [
-  { key: 'neu',         label: 'Neu',         icon: '🆕', color: 'border-purple-500/30 bg-purple-500/5  hover:bg-purple-500/10', textColor: 'text-purple-400',  barColor: 'bg-purple-500', desc: 'Noch nie gelernt' },
-  { key: 'lernend',     label: 'Lernend',     icon: '📘', color: 'border-blue-500/30   bg-blue-500/5    hover:bg-blue-500/10',   textColor: 'text-blue-400',    barColor: 'bg-blue-500',   desc: 'Im aktiven Lernen' },
-  { key: 'wiederholen', label: 'Wiederholen', icon: '🔄', color: 'border-amber-500/30  bg-amber-500/5   hover:bg-amber-500/10',  textColor: 'text-amber-400',   barColor: 'bg-amber-500',  desc: 'Regelmäßige Wiederholung' },
-  { key: 'beherrscht',  label: 'Beherrscht',  icon: '✅', color: 'border-green-500/30  bg-green-500/5   hover:bg-green-500/10',  textColor: 'text-green-400',   barColor: 'bg-green-500',  desc: 'Langfristig eingeprägt' },
-];
-
-function SrsLevelGrid({ srsGroups, total, onNavigate }: {
-  srsGroups: Record<string, number>;
-  total: number;
-  onNavigate: (srs: string) => void;
-}) {
-  return (
-    <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold text-white">Lernfortschritt</h3>
-        <span className="text-xs text-[#6b7280]">Klicken zum Filtern</span>
-      </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {SRS_LEVELS.map(lvl => {
-          const count = srsGroups[lvl.key] ?? 0;
-          const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-          return (
-            <button
-              key={lvl.key}
-              onClick={() => onNavigate(lvl.key)}
-              className={`border rounded-xl p-4 text-left transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${lvl.color}`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-lg">{lvl.icon}</span>
-                <span className={`text-2xl font-bold ${lvl.textColor}`}>{count}</span>
-              </div>
-              <p className="text-sm font-medium text-white">{lvl.label}</p>
-              <p className="text-xs text-[#6b7280] mt-0.5 mb-3">{lvl.desc}</p>
-              {/* Progress bar */}
-              <div className="h-1.5 bg-[#252840] rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${lvl.barColor}`}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-              <p className="text-xs text-[#6b7280] mt-1">{pct}% aller Karten</p>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}

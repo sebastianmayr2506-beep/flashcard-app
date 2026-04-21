@@ -6,6 +6,7 @@ import { createShareCode } from '../utils/shareCode';
 import DifficultyBadge from '../components/DifficultyBadge';
 import SRSBadge from '../components/SRSBadge';
 import MarkdownText from '../components/MarkdownText';
+import SrsLevelGrid, { computeSrsGroups, type SrsKey } from '../components/SrsLevelGrid';
 
 interface Props {
   set: CardSet;
@@ -26,6 +27,16 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
 
   const setCards = cards.filter(c => c.setId === set.id);
   const dueCount = setCards.filter(isDueToday).length;
+  const srsGroups = computeSrsGroups(setCards);
+
+  const handleSrsLevelClick = (srs: SrsKey) => {
+    const filtered = setCards.filter(c => getSRSStatus(c) === srs);
+    if (filtered.length === 0) {
+      showToast('Keine Karten auf diesem Level', 'info');
+      return;
+    }
+    onStudy(filtered);
+  };
 
   const handleExportJSON = () => {
     exportSetJSON(set, setCards);
@@ -125,6 +136,18 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
           {sharing ? '⟳ Teilen…' : '🔗 Teilen'}
         </button>
       </div>
+
+      {/* SRS Level Breakdown — click to study that level's cards */}
+      {setCards.length > 0 && (
+        <SrsLevelGrid
+          srsGroups={srsGroups}
+          total={setCards.length}
+          onLevelClick={handleSrsLevelClick}
+          title="Lernfortschritt in diesem Set"
+          hint="Klicken zum Lernen"
+          percentLabel={(pct) => `${pct}% im Set`}
+        />
+      )}
 
       {/* Share code display */}
       {shareCode && (

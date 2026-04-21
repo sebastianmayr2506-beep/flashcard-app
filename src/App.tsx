@@ -573,6 +573,7 @@ export default function App() {
           dailyPlan={activeDailyPlan}
           onRate={handleRate}
           onUpdateCard={updateCard}
+          onDeleteCard={handleDeleteCard}
           onSessionComplete={handleSessionComplete}
           onNavigate={navigate}
         />

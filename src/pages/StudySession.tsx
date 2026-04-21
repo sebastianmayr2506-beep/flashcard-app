@@ -21,6 +21,7 @@ interface Props {
   dailyPlan?: DailyPlanSession | null;
   onRate: (id: string, rating: RatingValue) => void;
   onUpdateCard: (id: string, data: Partial<Flashcard>) => void;
+  onDeleteCard: (id: string) => void;
   onSessionComplete: () => void;
   onNavigate: (page: string) => void;
 }
@@ -31,7 +32,7 @@ interface RatingCount {
   nochmal: number; schwer: number; gut: number; einfach: number;
 }
 
-export default function StudySession({ cards, settings, sets, links, preFilteredCards, dailyPlan, onRate, onUpdateCard, onSessionComplete, onNavigate }: Props) {
+export default function StudySession({ cards, settings, sets, links, preFilteredCards, dailyPlan, onRate, onUpdateCard, onDeleteCard, onSessionComplete, onNavigate }: Props) {
   const isDailyMode = !!dailyPlan;
   const [sessionState, setSessionState] = useState<SessionState>(
     (preFilteredCards || dailyPlan) ? 'studying' : 'setup'
@@ -50,6 +51,7 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   const [ratings, setRatings] = useState<RatingCount>({ nochmal: 0, schwer: 0, gut: 0, einfach: 0 });
   const [zoomedImg, setZoomedImg] = useState<string | null>(null);
   const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // Cards available for setup
   const availableCards = useMemo(() => {
@@ -91,8 +93,25 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     setSessionState('studying');
   };
 
+  const handleDeleteCurrent = () => {
+    const card = sessionCards[currentIdx];
+    // Remove from session queue
+    const next = sessionCards.filter((_, i) => i !== currentIdx);
+    onDeleteCard(card.id);
+    setConfirmDeleteId(null);
+    setIsFlipped(false);
+    if (next.length === 0) {
+      setSessionState('summary');
+    } else {
+      setSessionCards(next);
+      // currentIdx stays — the next card slides into this slot; clamp if we deleted the last
+      if (currentIdx >= next.length) setCurrentIdx(next.length - 1);
+    }
+  };
+
   const handleRate = (rating: RatingValue) => {
     const card = sessionCards[currentIdx];
+    setConfirmDeleteId(null);
     onRate(card.id, rating);
     const key = ['nochmal', 'schwer', 'gut', 'einfach'][rating] as keyof RatingCount;
     setRatings(prev => ({ ...prev, [key]: prev[key] + 1 }));
@@ -389,6 +408,31 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                 >
                   ✏️
                 </button>
+                {confirmDeleteId === currentCard.id ? (
+                  <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                    <span className="text-xs text-red-400 font-medium whitespace-nowrap">Löschen?</span>
+                    <button
+                      onClick={e => { e.stopPropagation(); handleDeleteCurrent(); }}
+                      className="text-xs px-2 py-1 rounded-lg bg-red-500/20 border border-red-500/40 text-red-400 hover:bg-red-500/30 transition-colors font-semibold"
+                    >
+                      Ja
+                    </button>
+                    <button
+                      onClick={e => { e.stopPropagation(); setConfirmDeleteId(null); }}
+                      className="text-xs px-2 py-1 rounded-lg bg-[#252840] border border-[#2d3148] text-[#9ca3af] hover:text-white transition-colors"
+                    >
+                      Nein
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={e => { e.stopPropagation(); setConfirmDeleteId(currentCard.id); }}
+                    className="text-[#6b7280] hover:text-red-400 text-base transition-colors px-2 py-1 rounded-lg hover:bg-[#252840]"
+                    title="Karte löschen"
+                  >
+                    🗑️
+                  </button>
+                )}
               </div>
               <div className="shrink-0 pt-5 pb-2 text-center">
                 <span className="text-xs font-semibold text-purple-400 uppercase tracking-widest">Antwort</span>

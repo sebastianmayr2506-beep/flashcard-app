@@ -71,6 +71,7 @@ export interface AppSettings {
     count: number;
     dismissed: boolean;
   };
+  anthropicApiKey?: string;           // stored client-side for AI merge feature
 }
 
 export interface FlagAttempt {

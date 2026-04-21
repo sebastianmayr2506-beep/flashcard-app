@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { AppSettings, Flashcard } from '../types/card';
 import { calculatePaceMetrics } from '../utils/dailyGoal';
 
@@ -20,6 +20,13 @@ export default function Settings({
   onAddExaminer, onRemoveExaminer, onAddTag, onRemoveTag, showToast,
 }: Props) {
   const [dailyGoalInput, setDailyGoalInput] = useState(String(settings.dailyNewCardGoal ?? 10));
+  const [apiKeyInput, setApiKeyInput] = useState(settings.anthropicApiKey ?? '');
+  const [showApiKey, setShowApiKey] = useState(false);
+
+  // Sync when settings load from Supabase after mount
+  useEffect(() => {
+    setApiKeyInput(settings.anthropicApiKey ?? '');
+  }, [settings.anthropicApiKey]);
 
   const daysUntilExam = settings.examDate
     ? Math.ceil((new Date(settings.examDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
@@ -215,6 +222,55 @@ export default function Settings({
             <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${settings.autoUnflagEnabled ? 'left-5' : 'left-1'}`} />
           </div>
         </label>
+      </div>
+
+      {/* Anthropic API Key for AI Merge */}
+      <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-3">
+        <div>
+          <h3 className="font-semibold text-white flex items-center gap-2">🤖 KI-Zusammenführung</h3>
+          <p className="text-xs text-[#6b7280] mt-1">
+            Trage deinen Anthropic API-Schlüssel ein, um Karten per KI automatisch zusammenzuführen (Bibliothek → Auswählen → Zusammenführen).
+          </p>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-1.5">
+            Anthropic API Key
+          </label>
+          <div className="flex gap-2">
+            <div className="flex-1 flex items-center bg-[#252840] border border-[#2d3148] rounded-xl overflow-hidden focus-within:border-indigo-500">
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                value={apiKeyInput}
+                onChange={e => setApiKeyInput(e.target.value)}
+                placeholder="sk-ant-…"
+                className="flex-1 bg-transparent px-3 py-2 text-white text-sm focus:outline-none font-mono"
+              />
+              <button
+                onClick={() => setShowApiKey(s => !s)}
+                className="px-3 text-[#6b7280] hover:text-white text-xs transition-colors"
+              >
+                {showApiKey ? '🙈' : '👁'}
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                const key = apiKeyInput.trim();
+                onUpdateSettings({ anthropicApiKey: key || undefined });
+                showToast(key ? 'API-Schlüssel gespeichert ✓' : 'API-Schlüssel entfernt', key ? 'success' : 'info');
+              }}
+              className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-semibold transition-colors shrink-0"
+            >
+              Speichern
+            </button>
+          </div>
+          <p className="text-xs text-[#6b7280] mt-1.5">
+            Der Schlüssel wird verschlüsselt in deinem Account gespeichert.
+            API-Schlüssel erhältst du unter{' '}
+            <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">
+              console.anthropic.com
+            </a>.
+          </p>
+        </div>
       </div>
 
       <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5">

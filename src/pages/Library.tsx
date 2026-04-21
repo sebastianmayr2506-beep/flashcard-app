@@ -20,12 +20,13 @@ interface Props {
   onBulkAssignSet: (cardIds: string[], setId: string | undefined) => void;
   onBulkCreateAndAssignSet: (cardIds: string[], setName: string) => void;
   onBulkDelete: (cardIds: string[]) => void;
+  onMergeCards: (cardIds: string[]) => void;
   onNavigate: (page: string) => void;
 }
 
 type ViewMode = 'grid' | 'list';
 
-export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onNavigate }: Props) {
+export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onMergeCards, onNavigate }: Props) {
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminers, setFilterExaminers] = useState<Set<string>>(new Set());
@@ -240,6 +241,14 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
             >
               📦 Exportieren
             </button>
+            {selectedCount >= 2 && (
+              <button
+                onClick={() => onMergeCards(Array.from(selectedIds))}
+                className="px-4 py-2 rounded-xl bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/40 text-violet-300 text-sm font-semibold transition-colors shrink-0"
+              >
+                🤖 Zusammenführen
+              </button>
+            )}
             <button
               onClick={handleBulkDelete}
               disabled={selectedCount === 0}

@@ -27,6 +27,7 @@ function fromDb(row: Record<string, any>): AppSettings {
     dailyPlanSnapshot: row.daily_plan_snapshot ?? undefined,
     autoUnflagEnabled: row.auto_unflag_enabled ?? true,
     autoUnflagNotification: row.auto_unflag_notification ?? undefined,
+    anthropicApiKey: row.anthropic_api_key ?? undefined,
   };
 }
 
@@ -43,6 +44,7 @@ function toDb(settings: AppSettings, userId: string) {
     daily_plan_snapshot: settings.dailyPlanSnapshot ?? null,
     auto_unflag_enabled: settings.autoUnflagEnabled,
     auto_unflag_notification: settings.autoUnflagNotification ?? null,
+    anthropic_api_key: settings.anthropicApiKey ?? null,
     updated_at: new Date().toISOString(),
   };
 }

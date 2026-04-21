@@ -2,6 +2,8 @@ import { useState, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import type { Flashcard, RatingValue, CardSet, FlagAttempt } from './types/card';
 import { isDueToday } from './types/card';
+import type { MergeResult } from './utils/claudeMerge';
+import { callClaudeMerge } from './utils/claudeMerge';
 import { useCards } from './hooks/useCards';
 import { useSettings } from './hooks/useSettings';
 import { useSets } from './hooks/useSets';
@@ -25,6 +27,7 @@ import AuthPage from './pages/AuthPage';
 import SetsPage from './pages/SetsPage';
 import SetDetail from './pages/SetDetail';
 import ExamMode from './pages/ExamMode';
+import MergePreviewModal from './components/MergePreviewModal';
 
 type Page = 'dashboard' | 'library' | 'new-card' | 'edit-card' | 'study' | 'import-export' | 'settings' | 'sets' | 'set-detail' | 'exam';
 
@@ -44,6 +47,11 @@ export default function App() {
   const [viewingSet, setViewingSet] = useState<CardSet | undefined>();
   const [studyFilteredCards, setStudyFilteredCards] = useState<Flashcard[] | null>(null);
   const [activeDailyPlan, setActiveDailyPlan] = useState<DailyPlanSession | null>(null);
+
+  // AI merge state
+  const [mergeLoading, setMergeLoading] = useState(false);
+  const [mergeSources, setMergeSources] = useState<Flashcard[] | null>(null);
+  const [mergeSuggestion, setMergeSuggestion] = useState<MergeResult | null>(null);
 
   const dueCount = cards.filter(isDueToday).length;
 
@@ -182,6 +190,97 @@ export default function App() {
     cardIds.forEach(id => updateCard(id, { setId: newSet.id }));
     showToast(`Set "${setName}" erstellt und ${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} zugewiesen`, 'success');
   }, [userId, addSet, updateCard, showToast]);
+
+  const handleMergeCards = useCallback(async (cardIds: string[]) => {
+    if (cardIds.length < 2) return;
+
+    const apiKey = settings.anthropicApiKey?.trim();
+    if (!apiKey) {
+      showToast('Bitte trage zuerst deinen Anthropic API-Schlüssel in den Einstellungen ein.', 'error');
+      return;
+    }
+
+    const sources = cards.filter(c => cardIds.includes(c.id));
+    if (sources.length < 2) return;
+
+    setMergeLoading(true);
+    showToast('🤖 KI analysiert Karten…', 'info');
+
+    try {
+      const result = await callClaudeMerge(apiKey, sources);
+      setMergeSources(sources);
+      setMergeSuggestion(result);
+    } catch (err) {
+      console.error('Claude merge error:', err);
+      showToast(`KI-Fehler: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      setMergeLoading(false);
+    }
+  }, [cards, settings.anthropicApiKey, showToast]);
+
+  const handleConfirmMerge = useCallback((merged: MergeResult) => {
+    if (!mergeSources) return;
+
+    const sourceIds = new Set(mergeSources.map(c => c.id));
+
+    // ── Deterministic metadata calculations (don't rely on the AI for these) ──
+    // timesAsked: sum — the combined topic was asked N times total
+    const timesAsked = mergeSources.reduce((s, c) => s + (c.timesAsked ?? 0), 0);
+
+    // probabilityPercent: max — if any source card has high exam probability,
+    // the merged topic inherits that. (Averaging would artificially lower the value.)
+    const probabilityPercent = mergeSources.reduce(
+      (max, c) => Math.max(max, c.probabilityPercent ?? 0), 0
+    ) || undefined;
+
+    // Set-fields: union (deduplicated)
+    const union = <T,>(arrs: (T[] | undefined)[]): T[] =>
+      Array.from(new Set(arrs.flatMap(a => a ?? [])));
+
+    const subjects        = union(mergeSources.map(c => c.subjects));
+    const examiners       = union(mergeSources.map(c => c.examiners));
+    const askedByExaminers = union(mergeSources.map(c => c.askedByExaminers));
+    const askedInCatalogs  = union(mergeSources.map(c => c.askedInCatalogs));
+    const customTags       = union(mergeSources.map(c => c.customTags));
+
+    // Create the new merged card (addCard returns the created card with its new id)
+    const created = addCard({
+      front: merged.front,
+      back: merged.back,
+      subjects,
+      examiners,
+      difficulty: merged.difficulty,
+      customTags,
+      setId: mergeSources[0]?.setId,
+      probabilityPercent,
+      timesAsked: timesAsked > 0 ? timesAsked : undefined,
+      askedByExaminers,
+      askedInCatalogs,
+    });
+    const newCardId = created.id;
+
+    // Reparent links: any link connecting a source card to an external card
+    // gets migrated to the new merged card. source↔source links are dropped.
+    const alreadyLinked = new Set<string>(); // prevent duplicate edges
+    links.forEach(link => {
+      const fromSource = sourceIds.has(link.cardId);
+      const toSource = sourceIds.has(link.linkedCardId);
+      if (fromSource && !toSource) {
+        const key = `${newCardId}:${link.linkedCardId}`;
+        if (!alreadyLinked.has(key)) { alreadyLinked.add(key); addLink(newCardId, link.linkedCardId, link.linkType); }
+      } else if (!fromSource && toSource) {
+        const key = `${link.cardId}:${newCardId}`;
+        if (!alreadyLinked.has(key)) { alreadyLinked.add(key); addLink(link.cardId, newCardId, link.linkType); }
+      }
+    });
+
+    // Delete all source cards
+    mergeSources.forEach(c => removeCard(c.id));
+
+    showToast(`✅ ${mergeSources.length} Karten zusammengeführt`, 'success');
+    setMergeSources(null);
+    setMergeSuggestion(null);
+  }, [mergeSources, links, addCard, addLink, removeCard, showToast]);
 
   const handleViewSet = useCallback((set: CardSet) => {
     setViewingSet(set);
@@ -343,6 +442,7 @@ export default function App() {
             onBulkAssignSet={handleBulkAssignSet}
             onBulkCreateAndAssignSet={handleBulkCreateAndAssignSet}
             onBulkDelete={handleBulkDelete}
+            onMergeCards={handleMergeCards}
             onNavigate={navigate}
           />
         )}
@@ -412,6 +512,27 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* AI Merge loading overlay */}
+      {mergeLoading && (
+        <div className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center">
+          <div className="bg-[#1a1d27] border border-[#2d3148] rounded-2xl px-8 py-6 flex flex-col items-center gap-4 shadow-2xl">
+            <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+            <p className="text-white font-semibold">KI analysiert Karten…</p>
+            <p className="text-[#9ca3af] text-sm">Das dauert einen Moment</p>
+          </div>
+        </div>
+      )}
+
+      {/* AI Merge preview modal */}
+      {mergeSources && mergeSuggestion && (
+        <MergePreviewModal
+          sources={mergeSources}
+          suggestion={mergeSuggestion}
+          onConfirm={handleConfirmMerge}
+          onCancel={() => { setMergeSources(null); setMergeSuggestion(null); }}
+        />
+      )}
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>

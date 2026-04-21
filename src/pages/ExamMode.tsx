@@ -425,7 +425,7 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
 
         {/* Card */}
         <div className="flex-1 flex flex-col items-center px-4 md:px-8 py-4 min-h-0">
-          <div className="w-full max-w-2xl flex-1 perspective min-h-0">
+          <div key={card.id} className="w-full max-w-2xl flex-1 perspective min-h-0">
             <div
               className="card-inner cursor-pointer"
               style={{ transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)' }}

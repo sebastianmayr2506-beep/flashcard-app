@@ -316,7 +316,7 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
 
       {/* Card area */}
       <div className="flex-1 flex flex-col items-center px-2 md:px-4 py-2 min-h-0">
-        <div className="w-full max-w-5xl flex-1 perspective min-h-0">
+        <div key={currentCard.id} className="w-full max-w-5xl flex-1 perspective min-h-0">
           <div
             className="card-inner cursor-pointer"
             style={{ transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)' }}

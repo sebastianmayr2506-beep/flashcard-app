@@ -28,6 +28,50 @@ Antworte AUSSCHLIESSLICH mit validem JSON in folgendem Format:
   "difficulty": "mittel"
 }`;
 
+/**
+ * Repairs common Claude JSON quirks:
+ * - Unescaped newlines/tabs inside string values (e.g. multi-line markdown in "back")
+ * - Trailing commas before } or ]
+ */
+function repairJson(raw: string): string {
+  let result = '';
+  let inString = false;
+  let i = 0;
+  while (i < raw.length) {
+    const char = raw[i];
+    // Handle escape sequences inside strings — skip both chars unchanged
+    if (char === '\\' && inString) {
+      result += char + (raw[i + 1] ?? '');
+      i += 2;
+      continue;
+    }
+    // Toggle string mode on unescaped quotes
+    if (char === '"') {
+      inString = !inString;
+      result += char;
+      i++;
+      continue;
+    }
+    // Escape bare newlines/carriage-returns inside string values
+    if (inString && (char === '\n' || char === '\r')) {
+      result += '\\n';
+      if (char === '\r' && raw[i + 1] === '\n') i++; // skip \r of \r\n pair
+      i++;
+      continue;
+    }
+    // Escape bare tabs inside string values
+    if (inString && char === '\t') {
+      result += '\\t';
+      i++;
+      continue;
+    }
+    result += char;
+    i++;
+  }
+  // Strip trailing commas before closing braces/brackets
+  return result.replace(/,(\s*[}\]])/g, '$1');
+}
+
 /** Fetches available models and returns the best Sonnet/Opus candidate. */
 async function resolveBestModel(apiKey: string): Promise<string> {
   try {
@@ -102,16 +146,14 @@ export async function callClaudeMerge(
   try {
     parsed = JSON.parse(raw);
   } catch {
-    // Claude occasionally produces invalid JSON (unescaped quotes, trailing commas, etc.).
-    // Try a lenient repair: replace literal newlines inside string values and retry.
+    // Claude occasionally produces invalid JSON: literal newlines inside string values
+    // (e.g. multi-line markdown in "back"), trailing commas, etc.
+    // Repair: escape newlines/tabs ONLY inside string values using a char-by-char scan,
+    // then strip trailing commas. Structural newlines between keys are left alone.
     try {
-      const repaired = raw
-        .replace(/[\r\n]+/g, '\\n')          // literal newlines → \n
-        .replace(/,\s*([}\]])/g, '$1')        // trailing commas
-        .replace(/([^\\])\\'/g, "$1\\'");     // unescaped single quotes (edge case)
-      parsed = JSON.parse(repaired);
+      parsed = JSON.parse(repairJson(raw));
     } catch (e2) {
-      throw new Error(`Claude hat kein gültiges JSON zurückgegeben: ${(e2 as Error).message}\n\nRohantwort (Auszug): ${raw.slice(0, 200)}`);
+      throw new Error(`Claude hat kein gültiges JSON zurückgegeben: ${(e2 as Error).message}\n\nRohantwort (Auszug): ${raw.slice(0, 300)}`);
     }
   }
 

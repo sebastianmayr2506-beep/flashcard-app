@@ -37,6 +37,45 @@ Antworte AUSSCHLIESSLICH mit validem JSON in folgendem Format:
   "reasoning": "Kurze Begründung wie du getrennt hast"
 }`;
 
+/**
+ * Repairs common Claude JSON quirks:
+ * - Unescaped newlines/tabs inside string values (e.g. multi-line markdown in "back")
+ * - Trailing commas before } or ]
+ */
+function repairJson(raw: string): string {
+  let result = '';
+  let inString = false;
+  let i = 0;
+  while (i < raw.length) {
+    const char = raw[i];
+    if (char === '\\' && inString) {
+      result += char + (raw[i + 1] ?? '');
+      i += 2;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      result += char;
+      i++;
+      continue;
+    }
+    if (inString && (char === '\n' || char === '\r')) {
+      result += '\\n';
+      if (char === '\r' && raw[i + 1] === '\n') i++;
+      i++;
+      continue;
+    }
+    if (inString && char === '\t') {
+      result += '\\t';
+      i++;
+      continue;
+    }
+    result += char;
+    i++;
+  }
+  return result.replace(/,(\s*[}\]])/g, '$1');
+}
+
 async function resolveBestModel(apiKey: string): Promise<string> {
   try {
     const res = await fetch('https://api.anthropic.com/v1/models?limit=50', {
@@ -126,11 +165,7 @@ export async function callClaudeSplit(
     parsed = JSON.parse(raw);
   } catch {
     try {
-      const repaired = raw
-        .replace(/[\r\n]+/g, '\\n')
-        .replace(/,\s*([}\]])/g, '$1')
-        .replace(/([^\\])\\'/g, "$1\\'");
-      parsed = JSON.parse(repaired);
+      parsed = JSON.parse(repairJson(raw));
     } catch (e2) {
       throw new Error(`Claude hat kein gültiges JSON zurückgegeben: ${(e2 as Error).message}\n\nRohantwort (Auszug): ${raw.slice(0, 200)}`);
     }

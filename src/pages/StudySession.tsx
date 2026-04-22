@@ -22,6 +22,7 @@ interface Props {
   onRate: (id: string, rating: RatingValue) => void;
   onUpdateCard: (id: string, data: Partial<Flashcard>) => void;
   onDeleteCard: (id: string) => void;
+  onSplitCard?: (cardId: string, afterSplit: (newCardIds: string[]) => void) => void;
   onSessionComplete: () => void;
   onNavigate: (page: string) => void;
 }
@@ -32,7 +33,7 @@ interface RatingCount {
   nochmal: number; schwer: number; gut: number; einfach: number;
 }
 
-export default function StudySession({ cards, settings, sets, links, preFilteredCards, dailyPlan, onRate, onUpdateCard, onDeleteCard, onSessionComplete, onNavigate }: Props) {
+export default function StudySession({ cards, settings, sets, links, preFilteredCards, dailyPlan, onRate, onUpdateCard, onDeleteCard, onSplitCard, onSessionComplete, onNavigate }: Props) {
   const isDailyMode = !!dailyPlan;
   const [sessionState, setSessionState] = useState<SessionState>(
     (preFilteredCards || dailyPlan) ? 'studying' : 'setup'
@@ -52,6 +53,7 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   const [zoomedImg, setZoomedImg] = useState<string | null>(null);
   const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [splitInProgress, setSplitInProgress] = useState(false);
 
   // Cards available for setup
   const availableCards = useMemo(() => {
@@ -107,6 +109,30 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
       // currentIdx stays — the next card slides into this slot; clamp if we deleted the last
       if (currentIdx >= next.length) setCurrentIdx(next.length - 1);
     }
+  };
+
+  const handleSplitCurrent = () => {
+    if (!onSplitCard) return;
+    const card = sessionCards[currentIdx];
+    setSplitInProgress(true);
+    onSplitCard(card.id, (newCardIds) => {
+      setSplitInProgress(false);
+      // Replace original in session with the first new card; second card goes into deck only.
+      setSessionCards(prev => {
+        const updated = [...prev];
+        const firstNewCard = cards.find(c => c.id === newCardIds[0]);
+        if (firstNewCard) {
+          updated[currentIdx] = firstNewCard;
+        } else {
+          // Card not yet in prop (shouldn't happen) — just remove it
+          updated.splice(currentIdx, 1);
+          if (updated.length === 0) setSessionState('summary');
+          else if (currentIdx >= updated.length) setCurrentIdx(updated.length - 1);
+        }
+        return updated;
+      });
+      setIsFlipped(false);
+    });
   };
 
   const handleRate = (rating: RatingValue) => {
@@ -421,6 +447,20 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                     </button>
                   );
                 })()}
+                {onSplitCard && (
+                  <button
+                    onClick={e => { e.stopPropagation(); handleSplitCurrent(); }}
+                    disabled={splitInProgress}
+                    className={`text-base px-2 py-1 rounded-lg border transition-colors ${
+                      splitInProgress
+                        ? 'border-indigo-500/40 text-indigo-400 bg-indigo-500/10 animate-pulse cursor-wait'
+                        : 'text-[#6b7280] hover:text-indigo-400 border-transparent hover:bg-[#252840]'
+                    }`}
+                    title="Karte mit KI trennen"
+                  >
+                    ✂️
+                  </button>
+                )}
                 <button
                   onClick={e => { e.stopPropagation(); setEditingCard(currentCard); }}
                   className="text-[#6b7280] hover:text-indigo-400 text-base transition-colors px-2 py-1 rounded-lg hover:bg-[#252840]"

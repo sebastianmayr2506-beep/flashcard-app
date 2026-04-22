@@ -61,6 +61,8 @@ export default function App() {
   const [splitLoading, setSplitLoading] = useState(false);
   const [splitSource, setSplitSource] = useState<Flashcard | null>(null);
   const [splitResult, setSplitResult] = useState<SplitResult | null>(null);
+  // Optional callback fired after split is confirmed (used by StudySession)
+  const [splitAfterCallback, setSplitAfterCallback] = useState<((newCardIds: string[]) => void) | null>(null);
 
   const dueCount = cards.filter(isDueToday).length;
 
@@ -336,7 +338,7 @@ export default function App() {
   }, [mergeSources, links, addCard, addLink, removeCard, showToast]);
 
   // ── AI Split ─────────────────────────────────────────────────
-  const handleSplitCard = useCallback(async (cardId: string) => {
+  const handleSplitCard = useCallback(async (cardId: string, afterSplit?: (newCardIds: string[]) => void) => {
     const apiKey = settings.anthropicApiKey?.trim();
     if (!apiKey) {
       showToast('Bitte trage zuerst deinen Anthropic API-Schlüssel in den Einstellungen ein.', 'error');
@@ -345,6 +347,7 @@ export default function App() {
     const source = cards.find(c => c.id === cardId);
     if (!source) return;
 
+    if (afterSplit) setSplitAfterCallback(() => afterSplit);
     setSplitLoading(true);
     showToast('🤖 KI analysiert Karte…', 'info');
     try {
@@ -354,6 +357,7 @@ export default function App() {
     } catch (err) {
       console.error('Claude split error:', err);
       showToast(`KI-Fehler: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      setSplitAfterCallback(null);
     } finally {
       setSplitLoading(false);
     }
@@ -413,9 +417,16 @@ export default function App() {
     removeCard(source.id);
 
     showToast(`✂️ Karte in ${newCards.length} Karten getrennt`, 'success');
+
+    // Notify session if split was triggered from within StudySession
+    if (splitAfterCallback) {
+      splitAfterCallback(createdIds);
+      setSplitAfterCallback(null);
+    }
+
     setSplitSource(null);
     setSplitResult(null);
-  }, [splitSource, cards, links, addCard, addLink, removeCard, showToast]);
+  }, [splitSource, splitAfterCallback, cards, links, addCard, addLink, removeCard, showToast]);
 
   const handleViewSet = useCallback((set: CardSet) => {
     setViewingSet(set);
@@ -574,10 +585,29 @@ export default function App() {
           onRate={handleRate}
           onUpdateCard={updateCard}
           onDeleteCard={handleDeleteCard}
+          onSplitCard={handleSplitCard}
           onSessionComplete={handleSessionComplete}
           onNavigate={navigate}
         />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+        {/* Split preview modal rendered on top of session */}
+        {splitSource && splitResult && (
+          <SplitPreviewModal
+            source={splitSource}
+            result={splitResult}
+            onConfirm={handleConfirmSplit}
+            onCancel={() => { setSplitSource(null); setSplitResult(null); setSplitAfterCallback(null); }}
+          />
+        )}
+        {splitLoading && (
+          <div className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center">
+            <div className="bg-[#1a1d27] border border-[#2d3148] rounded-2xl px-8 py-6 flex flex-col items-center gap-4 shadow-2xl">
+              <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-white font-semibold">KI analysiert Karte…</p>
+              <p className="text-[#9ca3af] text-sm">Das dauert einen Moment</p>
+            </div>
+          </div>
+        )}
       </>
     );
   }

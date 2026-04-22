@@ -118,8 +118,23 @@ export async function callClaudeSplit(
   const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ?? text.match(/(\{[\s\S]*\})/);
   if (!jsonMatch) throw new Error('Claude hat kein gültiges JSON zurückgegeben');
 
+  const raw = jsonMatch[1] ?? jsonMatch[0];
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const parsed: any = JSON.parse(jsonMatch[1] ?? jsonMatch[0]);
+  let parsed: any;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    try {
+      const repaired = raw
+        .replace(/[\r\n]+/g, '\\n')
+        .replace(/,\s*([}\]])/g, '$1')
+        .replace(/([^\\])\\'/g, "$1\\'");
+      parsed = JSON.parse(repaired);
+    } catch (e2) {
+      throw new Error(`Claude hat kein gültiges JSON zurückgegeben: ${(e2 as Error).message}\n\nRohantwort (Auszug): ${raw.slice(0, 200)}`);
+    }
+  }
 
   if (parsed?.split === false) {
     return { split: false, reasoning: String(parsed.reasoning ?? 'Karte ist nicht trennbar.') };

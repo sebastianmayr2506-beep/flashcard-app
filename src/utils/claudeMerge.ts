@@ -96,13 +96,30 @@ export async function callClaudeMerge(
   const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ?? text.match(/(\{[\s\S]*\})/);
   if (!jsonMatch) throw new Error('Claude hat kein gültiges JSON zurückgegeben');
 
-  const parsed = JSON.parse(jsonMatch[1] ?? jsonMatch[0]);
+  const raw = jsonMatch[1] ?? jsonMatch[0];
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    // Claude occasionally produces invalid JSON (unescaped quotes, trailing commas, etc.).
+    // Try a lenient repair: replace literal newlines inside string values and retry.
+    try {
+      const repaired = raw
+        .replace(/[\r\n]+/g, '\\n')          // literal newlines → \n
+        .replace(/,\s*([}\]])/g, '$1')        // trailing commas
+        .replace(/([^\\])\\'/g, "$1\\'");     // unescaped single quotes (edge case)
+      parsed = JSON.parse(repaired);
+    } catch (e2) {
+      throw new Error(`Claude hat kein gültiges JSON zurückgegeben: ${(e2 as Error).message}\n\nRohantwort (Auszug): ${raw.slice(0, 200)}`);
+    }
+  }
 
   return {
     front: String(parsed.front ?? ''),
     back: String(parsed.back ?? ''),
     reasoning: String(parsed.reasoning ?? ''),
-    difficulty: (['einfach', 'mittel', 'schwer'].includes(parsed.difficulty)
+    difficulty: (['einfach', 'mittel', 'schwer'].includes(parsed.difficulty as string)
       ? parsed.difficulty
       : 'mittel') as Difficulty,
   };

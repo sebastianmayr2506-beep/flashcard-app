@@ -143,6 +143,36 @@ export async function callClaudeSplit(
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMessage }],
+      // Force structured output via tool use — API validates JSON for us.
+      tools: [
+        {
+          name: 'return_split_result',
+          description: 'Gib das Trenn-Ergebnis zurück (entweder split=true mit cards oder split=false mit reasoning).',
+          input_schema: {
+            type: 'object',
+            properties: {
+              split: { type: 'boolean' },
+              cards: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    front: { type: 'string' },
+                    back: { type: 'string' },
+                    difficulty: { type: 'string', enum: ['einfach', 'mittel', 'schwer'] },
+                    customTags: { type: 'array', items: { type: 'string' } },
+                  },
+                  required: ['front', 'back', 'difficulty', 'customTags'],
+                },
+              },
+              original_front: { type: 'string' },
+              reasoning: { type: 'string' },
+            },
+            required: ['split', 'reasoning'],
+          },
+        },
+      ],
+      tool_choice: { type: 'tool', name: 'return_split_result' },
     }),
   });
 
@@ -152,22 +182,33 @@ export async function callClaudeSplit(
   }
 
   const data = await response.json();
-  const text: string = data?.content?.[0]?.text ?? '';
 
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ?? text.match(/(\{[\s\S]*\})/);
-  if (!jsonMatch) throw new Error('Claude hat kein gültiges JSON zurückgegeben');
-
-  const raw = jsonMatch[1] ?? jsonMatch[0];
+  interface ContentBlock {
+    type: string;
+    input?: Record<string, unknown>;
+    text?: string;
+  }
+  const contentBlocks: ContentBlock[] = data?.content ?? [];
+  const toolUse = contentBlocks.find(b => b.type === 'tool_use');
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let parsed: any;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
+  if (toolUse?.input && typeof toolUse.input === 'object') {
+    parsed = toolUse.input;
+  } else {
+    // Fallback for edge cases.
+    const text: string = contentBlocks.find(b => b.type === 'text')?.text ?? '';
+    const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ?? text.match(/(\{[\s\S]*\})/);
+    if (!jsonMatch) throw new Error('Claude hat kein gültiges JSON zurückgegeben');
+    const raw = jsonMatch[1] ?? jsonMatch[0];
     try {
-      parsed = JSON.parse(repairJson(raw));
-    } catch (e2) {
-      throw new Error(`Claude hat kein gültiges JSON zurückgegeben: ${(e2 as Error).message}\n\nRohantwort (Auszug): ${raw.slice(0, 200)}`);
+      parsed = JSON.parse(raw);
+    } catch {
+      try {
+        parsed = JSON.parse(repairJson(raw));
+      } catch (e2) {
+        throw new Error(`Claude hat kein gültiges JSON zurückgegeben: ${(e2 as Error).message}\n\nRohantwort (Auszug): ${raw.slice(0, 200)}`);
+      }
     }
   }
 

@@ -125,6 +125,25 @@ export async function callClaudeMerge(
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMessage }],
+      // Force structured output via tool use — API validates JSON for us,
+      // so we never have to repair malformed strings with markdown/tables/quotes.
+      tools: [
+        {
+          name: 'return_merged_card',
+          description: 'Gib die zusammengeführte Karteikarte zurück.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              front: { type: 'string', description: 'Die zusammengeführte Frage.' },
+              back: { type: 'string', description: 'Die zusammengeführte Antwort (Markdown erlaubt).' },
+              reasoning: { type: 'string', description: 'Kurze Erklärung wie zusammengeführt wurde.' },
+              difficulty: { type: 'string', enum: ['einfach', 'mittel', 'schwer'] },
+            },
+            required: ['front', 'back', 'reasoning', 'difficulty'],
+          },
+        },
+      ],
+      tool_choice: { type: 'tool', name: 'return_merged_card' },
     }),
   });
 
@@ -134,26 +153,33 @@ export async function callClaudeMerge(
   }
 
   const data = await response.json();
-  const text: string = data?.content?.[0]?.text ?? '';
 
-  // Extract JSON from the response (Claude sometimes wraps in ```json ... ```)
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ?? text.match(/(\{[\s\S]*\})/);
-  if (!jsonMatch) throw new Error('Claude hat kein gültiges JSON zurückgegeben');
-
-  const raw = jsonMatch[1] ?? jsonMatch[0];
+  // Primary path: tool_use block with already-parsed input object.
+  interface ContentBlock {
+    type: string;
+    input?: Record<string, unknown>;
+    text?: string;
+  }
+  const contentBlocks: ContentBlock[] = data?.content ?? [];
+  const toolUse = contentBlocks.find(b => b.type === 'tool_use');
 
   let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    // Claude occasionally produces invalid JSON: literal newlines inside string values
-    // (e.g. multi-line markdown in "back"), trailing commas, etc.
-    // Repair: escape newlines/tabs ONLY inside string values using a char-by-char scan,
-    // then strip trailing commas. Structural newlines between keys are left alone.
+  if (toolUse?.input && typeof toolUse.input === 'object') {
+    parsed = toolUse.input;
+  } else {
+    // Fallback: older/edge-case responses with plain text JSON.
+    const text: string = contentBlocks.find(b => b.type === 'text')?.text ?? '';
+    const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ?? text.match(/(\{[\s\S]*\})/);
+    if (!jsonMatch) throw new Error('Claude hat kein gültiges JSON zurückgegeben');
+    const raw = jsonMatch[1] ?? jsonMatch[0];
     try {
-      parsed = JSON.parse(repairJson(raw));
-    } catch (e2) {
-      throw new Error(`Claude hat kein gültiges JSON zurückgegeben: ${(e2 as Error).message}\n\nRohantwort (Auszug): ${raw.slice(0, 300)}`);
+      parsed = JSON.parse(raw);
+    } catch {
+      try {
+        parsed = JSON.parse(repairJson(raw));
+      } catch (e2) {
+        throw new Error(`Claude hat kein gültiges JSON zurückgegeben: ${(e2 as Error).message}\n\nRohantwort (Auszug): ${raw.slice(0, 300)}`);
+      }
     }
   }
 

@@ -679,6 +679,17 @@ export default function App() {
             onRemoveExaminer={removeExaminer}
             onAddTag={addTag}
             onRemoveTag={removeTag}
+            onResetAllSrs={() => {
+              const now = new Date().toISOString();
+              cards.forEach(c => updateCard(c.id, {
+                interval: 0,
+                repetitions: 0,
+                easeFactor: 2.5,
+                nextReviewDate: now,
+              }));
+              // Also clear the daily snapshot so counts reset cleanly
+              updateSettings({ dailyPlanSnapshot: undefined });
+            }}
             showToast={showToast}
           />
         )}

@@ -12,12 +12,13 @@ interface Props {
   onRemoveExaminer: (e: string) => void;
   onAddTag: (t: string) => void;
   onRemoveTag: (t: string) => void;
+  onResetAllSrs: () => void;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 export default function Settings({
   settings, cards, onUpdateSettings, onAddSubject, onRemoveSubject,
-  onAddExaminer, onRemoveExaminer, onAddTag, onRemoveTag, showToast,
+  onAddExaminer, onRemoveExaminer, onAddTag, onRemoveTag, onResetAllSrs, showToast,
 }: Props) {
   const [dailyGoalInput, setDailyGoalInput] = useState(String(settings.dailyNewCardGoal ?? 10));
   const [reviewCapInput, setReviewCapInput] = useState(
@@ -319,6 +320,33 @@ export default function Settings({
         {settings.lastStudiedDate && (
           <p className="text-xs text-[#6b7280] mt-1">Zuletzt gelernt: {settings.lastStudiedDate}</p>
         )}
+      </div>
+
+      {/* SRS Reset */}
+      <div className="bg-[#1e2130] border border-red-500/20 rounded-2xl p-5 space-y-3">
+        <h3 className="font-semibold text-white flex items-center gap-2">⚠️ Lernfortschritt zurücksetzen</h3>
+        <p className="text-sm text-[#9ca3af]">
+          Setzt alle Karten auf <span className="text-white font-medium">„Neu"</span> zurück —
+          alle Wiederholungsintervalle, Wiederholungszähler und SRS-Daten werden gelöscht.
+          Sinnvoll wenn du Karten importiert hast, die bereits den Lernstand von jemand anderem hatten.
+        </p>
+        <p className="text-xs text-red-400">Nicht rückgängig zu machen. Dein eigener Lernfortschritt geht verloren.</p>
+        <button
+          onClick={() => {
+            const typed = window.prompt(
+              `⚠️ SRS-Daten zurücksetzen\n\nAlle ${cards.length} Karten werden auf "Neu" gesetzt — Intervalle, Wiederholungen und Lernfortschritt werden gelöscht.\n\nTippe RESET (in Großbuchstaben) um fortzufahren.`
+            );
+            if (typed === 'RESET') {
+              onResetAllSrs();
+              showToast(`✅ SRS-Daten für ${cards.length} Karten zurückgesetzt`, 'success');
+            } else if (typed !== null) {
+              showToast('Abgebrochen — falsches Wort eingegeben', 'info');
+            }
+          }}
+          className="px-4 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-sm font-semibold transition-colors"
+        >
+          🔄 Alle Karten auf Neu zurücksetzen
+        </button>
       </div>
     </div>
   );

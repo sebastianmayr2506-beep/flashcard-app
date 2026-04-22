@@ -56,6 +56,7 @@ export default function App() {
   const [mergeLoading, setMergeLoading] = useState(false);
   const [mergeSources, setMergeSources] = useState<Flashcard[] | null>(null);
   const [mergeSuggestion, setMergeSuggestion] = useState<MergeResult | null>(null);
+  const [mergeReviseLoading, setMergeReviseLoading] = useState(false);
 
   // AI split state
   const [splitLoading, setSplitLoading] = useState(false);
@@ -297,6 +298,26 @@ export default function App() {
       setMergeLoading(false);
     }
   }, [cards, settings.anthropicApiKey, showToast]);
+
+  const handleReviseMerge = useCallback(async (current: MergeResult, feedback: string) => {
+    if (!mergeSources) return;
+    const apiKey = settings.anthropicApiKey?.trim();
+    if (!apiKey) {
+      showToast('Bitte trage zuerst deinen Anthropic API-Schlüssel in den Einstellungen ein.', 'error');
+      return;
+    }
+    setMergeReviseLoading(true);
+    try {
+      const result = await callClaudeMerge(apiKey, mergeSources, { previous: current, feedback });
+      setMergeSuggestion(result);
+      showToast('✨ KI hat die Karte überarbeitet', 'success');
+    } catch (err) {
+      console.error('Claude revise error:', err);
+      showToast(`KI-Fehler: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      setMergeReviseLoading(false);
+    }
+  }, [mergeSources, settings.anthropicApiKey, showToast]);
 
   const handleConfirmMerge = useCallback((merged: MergeResult) => {
     if (!mergeSources) return;
@@ -791,6 +812,8 @@ export default function App() {
           suggestion={mergeSuggestion}
           onConfirm={handleConfirmMerge}
           onCancel={() => { setMergeSources(null); setMergeSuggestion(null); }}
+          onRevise={handleReviseMerge}
+          reviseLoading={mergeReviseLoading}
         />
       )}
 

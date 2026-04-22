@@ -101,13 +101,23 @@ async function resolveBestModel(apiKey: string): Promise<string> {
   return 'claude-sonnet-4-6'; // last-resort default
 }
 
+export interface MergeRevision {
+  previous: MergeResult;
+  feedback: string;
+}
+
 export async function callClaudeMerge(
   apiKey: string,
-  cards: Flashcard[]
+  cards: Flashcard[],
+  revision?: MergeRevision
 ): Promise<MergeResult> {
-  const userMessage = `Führe folgende ${cards.length} Karteikarten zusammen:\n\n${cards
+  const sourcesBlock = cards
     .map((c, i) => `### Karte ${i + 1}\n**Frage:** ${c.front}\n**Antwort:** ${c.back}\n**Fach:** ${(c.subjects ?? []).join(', ') || '—'}\n**Prüfer:** ${(c.examiners ?? []).join(', ') || '—'}\n**Schwierigkeit:** ${c.difficulty}\n**Wahrscheinlichkeit:** ${c.probabilityPercent != null ? c.probabilityPercent + '%' : '—'}\n**timesAsked:** ${c.timesAsked ?? 0}\n**askedInCatalogs:** ${(c.askedInCatalogs ?? []).join(', ') || '—'}\n**Tags:** ${(c.customTags ?? []).join(', ') || '—'}`)
-    .join('\n\n---\n\n')}`;
+    .join('\n\n---\n\n');
+
+  const userMessage = revision
+    ? `Du hast bereits folgende ${cards.length} Karteikarten zu einer zusammengeführt:\n\n### Aktuelle zusammengeführte Karte\n**Frage:** ${revision.previous.front}\n**Antwort:** ${revision.previous.back}\n**Schwierigkeit:** ${revision.previous.difficulty}\n\n### Änderungswünsche des Nutzers\n${revision.feedback}\n\nBitte überarbeite die zusammengeführte Karte entsprechend den Änderungswünschen. Behalte alles was der Nutzer nicht bemängelt hat bei. Hier sind die ursprünglichen Quellkarten zur Referenz:\n\n${sourcesBlock}`
+    : `Führe folgende ${cards.length} Karteikarten zusammen:\n\n${sourcesBlock}`;
 
   const model = await resolveBestModel(apiKey);
   console.log('[claudeMerge] using model:', model);

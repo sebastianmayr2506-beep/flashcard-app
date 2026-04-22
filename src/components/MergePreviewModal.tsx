@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Flashcard, Difficulty } from '../types/card';
 import type { MergeResult } from '../utils/claudeMerge';
 import MarkdownText from './MarkdownText';
@@ -8,14 +8,25 @@ interface Props {
   suggestion: MergeResult;
   onConfirm: (merged: MergeResult) => void;
   onCancel: () => void;
+  onRevise?: (current: MergeResult, feedback: string) => Promise<void> | void;
+  reviseLoading?: boolean;
 }
 
-export default function MergePreviewModal({ sources, suggestion, onConfirm, onCancel }: Props) {
+export default function MergePreviewModal({ sources, suggestion, onConfirm, onCancel, onRevise, reviseLoading }: Props) {
   const [front, setFront] = useState(suggestion.front);
   const [back, setBack] = useState(suggestion.back);
   const [difficulty, setDifficulty] = useState<Difficulty>(suggestion.difficulty);
   const [showReasoning, setShowReasoning] = useState(false);
   const [tab, setTab] = useState<'edit' | 'preview'>('edit');
+  const [feedback, setFeedback] = useState('');
+  const [showFeedback, setShowFeedback] = useState(false);
+
+  // When a new AI suggestion arrives (e.g. after revision), sync local editor state
+  useEffect(() => {
+    setFront(suggestion.front);
+    setBack(suggestion.back);
+    setDifficulty(suggestion.difficulty);
+  }, [suggestion]);
 
   // Warn if source cards have different subjects
   const allSubjects = new Set(sources.flatMap(c => c.subjects ?? []));
@@ -27,6 +38,15 @@ export default function MergePreviewModal({ sources, suggestion, onConfirm, onCa
 
   const handleConfirm = () => {
     onConfirm({ ...suggestion, front: front.trim(), back: back.trim(), difficulty });
+  };
+
+  const handleRevise = async () => {
+    if (!onRevise || !feedback.trim() || reviseLoading) return;
+    await onRevise(
+      { front: front.trim(), back: back.trim(), difficulty, reasoning: suggestion.reasoning },
+      feedback.trim()
+    );
+    setFeedback('');
   };
 
   return (
@@ -181,19 +201,65 @@ export default function MergePreviewModal({ sources, suggestion, onConfirm, onCa
               </div>
             )}
           </div>
+
         </div>
+
+        {/* Revision / feedback panel — sticky above footer, always visible */}
+        {onRevise && (
+          <div className="shrink-0 border-t border-[#2d3148] bg-[#1a1d27]">
+            <button
+              onClick={() => setShowFeedback(s => !s)}
+              className="w-full flex items-center justify-between px-6 py-3 hover:bg-[#1e2130] transition-colors"
+            >
+              <span className="flex items-center gap-2 text-xs font-semibold text-purple-400 uppercase tracking-wider">
+                <span>✨</span> Änderungswünsche an KI {showFeedback ? '' : '— klicken zum Öffnen'}
+              </span>
+              <span className="text-[#9ca3af] text-xs">{showFeedback ? '▾' : '▸'}</span>
+            </button>
+            {showFeedback && (
+              <div className="px-6 pb-4 space-y-3 border-t border-[#2d3148] pt-3">
+                <p className="text-xs text-[#9ca3af] leading-relaxed">
+                  Beschreibe, was du ändern möchtest (z.&nbsp;B. „Kürzer", „Mehr Beispiele", „Tabelle ergänzen", „Die Frage präziser formulieren"). Die KI überarbeitet die aktuelle Karte entsprechend.
+                </p>
+                <textarea
+                  value={feedback}
+                  onChange={e => setFeedback(e.target.value)}
+                  rows={2}
+                  placeholder="z.B. Mach die Antwort kürzer und ergänze eine Tabelle mit den Vor- und Nachteilen."
+                  className="w-full bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white text-sm placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
+                  disabled={reviseLoading}
+                />
+                <button
+                  onClick={handleRevise}
+                  disabled={!feedback.trim() || reviseLoading}
+                  className="w-full py-2.5 rounded-xl bg-purple-500 hover:bg-purple-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                >
+                  {reviseLoading ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      KI überarbeitet…
+                    </>
+                  ) : (
+                    <>🔄 KI überarbeiten lassen</>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Footer */}
         <div className="flex gap-3 px-6 py-4 border-t border-[#2d3148] shrink-0">
           <button
             onClick={onCancel}
-            className="flex-1 py-2.5 rounded-xl border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm font-medium transition-colors"
+            disabled={reviseLoading}
+            className="flex-1 py-2.5 rounded-xl border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Abbrechen
           </button>
           <button
             onClick={handleConfirm}
-            disabled={!front.trim() || !back.trim()}
+            disabled={!front.trim() || !back.trim() || reviseLoading}
             className="flex-1 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2"
           >
             ✓ Zusammenführen & {sources.length} Karten löschen

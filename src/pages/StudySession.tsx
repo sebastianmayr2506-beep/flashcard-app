@@ -401,6 +401,26 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                     </button>
                   );
                 })()}
+                {(() => {
+                  const liveCard = cards.find(c => c.id === currentCard.id) ?? currentCard;
+                  const isFlagged = !!liveCard.flagged;
+                  return (
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        onUpdateCard(currentCard.id, { flagged: !isFlagged });
+                      }}
+                      title={isFlagged ? 'Flagge entfernen' : 'Als schwierig flaggen'}
+                      className={`text-base px-2 py-1 rounded-lg border transition-colors ${
+                        isFlagged
+                          ? 'bg-red-500/20 border-red-500/40 text-red-400'
+                          : 'text-[#6b7280] hover:text-red-400 border-transparent hover:bg-[#252840]'
+                      }`}
+                    >
+                      🚩
+                    </button>
+                  );
+                })()}
                 <button
                   onClick={e => { e.stopPropagation(); setEditingCard(currentCard); }}
                   className="text-[#6b7280] hover:text-indigo-400 text-base transition-colors px-2 py-1 rounded-lg hover:bg-[#252840]"

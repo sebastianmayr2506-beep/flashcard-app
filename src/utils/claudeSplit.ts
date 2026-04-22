@@ -138,7 +138,58 @@ export async function callClaudeSplit(
     : `Trenne diese Karteikarte:\n\n${cardJson}`;
 
   const model = await resolveBestModel(apiKey);
-  console.log('[claudeSplit] using model:', model);
+  console.log('[claudeSplit] using model:', model, force ? '(FORCE mode)' : '');
+
+  // In force mode: use a strict tool that REQUIRES cards — no way for Claude
+  // to decline. Also swap the system prompt so it doesn't even mention the
+  // "not splittable" option.
+  const cardItemSchema = {
+    type: 'object',
+    properties: {
+      front: { type: 'string' },
+      back: { type: 'string' },
+      difficulty: { type: 'string', enum: ['einfach', 'mittel', 'schwer'] },
+      customTags: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['front', 'back', 'difficulty', 'customTags'],
+  };
+
+  const normalTool = {
+    name: 'return_split_result',
+    description: 'Gib das Trenn-Ergebnis zurück (entweder split=true mit cards oder split=false mit reasoning).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        split: { type: 'boolean' },
+        cards: { type: 'array', items: cardItemSchema },
+        original_front: { type: 'string' },
+        reasoning: { type: 'string' },
+      },
+      required: ['split', 'reasoning'],
+    },
+  };
+
+  const forceTool = {
+    name: 'return_forced_split',
+    description: 'Teile die Karte in mindestens zwei eigenständige Karten auf. Ablehnung ist NICHT erlaubt — du MUSST cards zurückgeben.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        cards: { type: 'array', minItems: 2, items: cardItemSchema },
+        original_front: { type: 'string' },
+        reasoning: { type: 'string' },
+      },
+      required: ['cards', 'reasoning'],
+    },
+  };
+
+  const FORCE_SYSTEM_PROMPT = `Du bist ein Karteikarten-Trenn-Assistent. Der Nutzer hat bereits EINMAL gesagt, dass er die Karte TROTZDEM aufgeteilt haben möchte. Ablehnung ist nicht erlaubt.
+
+REGELN:
+1. FRONT: Jede neue Karte bekommt EINE klare Frage. Formuliere sie so, dass sie alleine Sinn ergibt.
+2. BACK: Teile die Antwort auf — jede neue Karte bekommt NUR den Teil der Antwort, der zu IHRER Frage gehört. Markdown erlaubt.
+3. difficulty und customTags: Übernimm von der Originalkarte (Tags ggf. thematisch filtern).
+4. Gib IMMER mindestens 2 Karten zurück — auch wenn du sie normalerweise nicht trennen würdest. Finde die beste mögliche Aufteilung.`;
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -151,38 +202,10 @@ export async function callClaudeSplit(
     body: JSON.stringify({
       model,
       max_tokens: 4096,
-      system: SYSTEM_PROMPT,
+      system: force ? FORCE_SYSTEM_PROMPT : SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMessage }],
-      // Force structured output via tool use — API validates JSON for us.
-      tools: [
-        {
-          name: 'return_split_result',
-          description: 'Gib das Trenn-Ergebnis zurück (entweder split=true mit cards oder split=false mit reasoning).',
-          input_schema: {
-            type: 'object',
-            properties: {
-              split: { type: 'boolean' },
-              cards: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    front: { type: 'string' },
-                    back: { type: 'string' },
-                    difficulty: { type: 'string', enum: ['einfach', 'mittel', 'schwer'] },
-                    customTags: { type: 'array', items: { type: 'string' } },
-                  },
-                  required: ['front', 'back', 'difficulty', 'customTags'],
-                },
-              },
-              original_front: { type: 'string' },
-              reasoning: { type: 'string' },
-            },
-            required: ['split', 'reasoning'],
-          },
-        },
-      ],
-      tool_choice: { type: 'tool', name: 'return_split_result' },
+      tools: [force ? forceTool : normalTool],
+      tool_choice: { type: 'tool', name: force ? 'return_forced_split' : 'return_split_result' },
     }),
   });
 

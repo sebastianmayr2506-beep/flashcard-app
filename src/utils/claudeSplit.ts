@@ -222,11 +222,17 @@ export async function callClaudeSplit(
     }
   }
 
-  if (parsed?.split === false) {
+  // When force=true, ignore split===false if Claude still provided cards.
+  // Claude sometimes returns split:false even when instructed otherwise.
+  const hasCards = Array.isArray(parsed?.cards) && parsed.cards.length >= 2;
+  if (parsed?.split === false && !force) {
     return { split: false, reasoning: String(parsed.reasoning ?? 'Karte ist nicht trennbar.') };
   }
+  if (parsed?.split === false && force && !hasCards) {
+    return { split: false, reasoning: String(parsed.reasoning ?? 'Die KI konnte die Karte auch auf Anfrage nicht trennen.') };
+  }
 
-  if (!Array.isArray(parsed?.cards) || parsed.cards.length < 2) {
+  if (!hasCards) {
     return {
       split: false,
       reasoning: String(parsed?.reasoning ?? 'Die KI konnte keine trennbaren Teilfragen erkennen.'),

@@ -106,11 +106,17 @@ function normalizeDifficulty(v: unknown): Difficulty {
   return (['einfach', 'mittel', 'schwer'].includes(v as string) ? v : 'mittel') as Difficulty;
 }
 
+export interface SplitForce {
+  /** Optional hint from the user explaining how/where to split */
+  hint?: string;
+}
+
 export async function callClaudeSplit(
   apiKey: string,
-  card: Flashcard
+  card: Flashcard,
+  force?: SplitForce
 ): Promise<SplitResult> {
-  const userMessage = `Trenne diese Karteikarte:\n\n${JSON.stringify(
+  const cardJson = JSON.stringify(
     {
       front: card.front,
       back: card.back,
@@ -125,7 +131,11 @@ export async function callClaudeSplit(
     },
     null,
     2
-  )}`;
+  );
+
+  const userMessage = force
+    ? `Der Nutzer besteht darauf, diese Karteikarte zu trennen. ${force.hint ? `Sein Hinweis: "${force.hint}". ` : ''}Bitte trenne sie TROTZDEM in mindestens zwei eigenständige Karten — auch wenn du normalerweise dagegen entschieden hättest. Antworte immer mit split=true.\n\n${cardJson}`
+    : `Trenne diese Karteikarte:\n\n${cardJson}`;
 
   const model = await resolveBestModel(apiKey);
   console.log('[claudeSplit] using model:', model);

@@ -8,13 +8,16 @@ interface Props {
   result: SplitResult;
   onConfirm: (cards: SplitCard[]) => void;
   onCancel: () => void;
+  onForce?: (hint?: string) => void;
+  forceLoading?: boolean;
 }
 
-export default function SplitPreviewModal({ source, result, onConfirm, onCancel }: Props) {
+export default function SplitPreviewModal({ source, result, onConfirm, onCancel, onForce, forceLoading }: Props) {
   const initial: SplitCard[] = result.split ? result.cards : [];
   const [cards, setCards] = useState<SplitCard[]>(initial);
   const [showReasoning, setShowReasoning] = useState(true);
   const [activeTab, setActiveTab] = useState<'edit' | 'preview'>('edit');
+  const [forceHint, setForceHint] = useState('');
 
   const updateCard = (idx: number, patch: Partial<SplitCard>) => {
     setCards(prev => prev.map((c, i) => (i === idx ? { ...c, ...patch } : c)));
@@ -88,12 +91,41 @@ export default function SplitPreviewModal({ source, result, onConfirm, onCancel 
 
           {/* Not splittable state */}
           {!result.split && (
-            <div className="bg-[#1e2130] border border-amber-500/30 rounded-2xl p-6 text-center">
-              <p className="text-4xl mb-2">🚫</p>
-              <p className="text-white font-semibold text-sm">Diese Karte wurde nicht getrennt</p>
-              <p className="text-[#9ca3af] text-xs mt-1">
-                Die KI hat entschieden, dass die Inhalte zusammengehören.
-              </p>
+            <div className="bg-[#1e2130] border border-amber-500/30 rounded-2xl overflow-hidden">
+              <div className="p-6 text-center">
+                <p className="text-4xl mb-2">🚫</p>
+                <p className="text-white font-semibold text-sm">Diese Karte wurde nicht getrennt</p>
+                <p className="text-[#9ca3af] text-xs mt-1">
+                  Die KI hat entschieden, dass die Inhalte zusammengehören.
+                </p>
+              </div>
+              {onForce && (
+                <div className="border-t border-amber-500/20 px-5 pb-5 pt-4 space-y-3">
+                  <p className="text-xs font-semibold text-amber-300 uppercase tracking-wider">Trotzdem trennen?</p>
+                  <input
+                    type="text"
+                    value={forceHint}
+                    onChange={e => setForceHint(e.target.value)}
+                    placeholder='Optional: Hinweis geben, z.B. "Trenn bei Frage 1 und Frage 2"'
+                    className="w-full bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white text-sm placeholder-[#6b7280] focus:border-amber-500 focus:outline-none"
+                    disabled={forceLoading}
+                  />
+                  <button
+                    onClick={() => onForce(forceHint.trim() || undefined)}
+                    disabled={forceLoading}
+                    className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-black text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                  >
+                    {forceLoading ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                        KI trennt…
+                      </>
+                    ) : (
+                      <>✂️ KI zum Trennen zwingen</>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

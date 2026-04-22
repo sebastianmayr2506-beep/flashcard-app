@@ -60,6 +60,7 @@ export default function App() {
 
   // AI split state
   const [splitLoading, setSplitLoading] = useState(false);
+  const [splitForceLoading, setSplitForceLoading] = useState(false);
   const [splitSource, setSplitSource] = useState<Flashcard | null>(null);
   const [splitResult, setSplitResult] = useState<SplitResult | null>(null);
   // Optional callback fired after split is confirmed (used by StudySession)
@@ -409,6 +410,23 @@ export default function App() {
     }
   }, [cards, settings.anthropicApiKey, showToast]);
 
+  const handleForceSplit = useCallback(async (hint?: string) => {
+    if (!splitSource) return;
+    const apiKey = settings.anthropicApiKey?.trim();
+    if (!apiKey) return;
+    setSplitForceLoading(true);
+    try {
+      const result = await callClaudeSplit(apiKey, splitSource, { hint });
+      setSplitResult(result);
+      if (result.split) showToast('✂️ KI hat die Karte getrennt', 'success');
+    } catch (err) {
+      console.error('Claude force split error:', err);
+      showToast(`KI-Fehler: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      setSplitForceLoading(false);
+    }
+  }, [splitSource, settings.anthropicApiKey, showToast]);
+
   const handleConfirmSplit = useCallback((newCards: SplitCard[]) => {
     if (!splitSource) return;
     const source = splitSource;
@@ -643,6 +661,8 @@ export default function App() {
             result={splitResult}
             onConfirm={handleConfirmSplit}
             onCancel={() => { setSplitSource(null); setSplitResult(null); setSplitAfterCallback(null); }}
+            onForce={handleForceSplit}
+            forceLoading={splitForceLoading}
           />
         )}
         {splitLoading && (
@@ -791,6 +811,8 @@ export default function App() {
           result={splitResult}
           onConfirm={handleConfirmSplit}
           onCancel={() => { setSplitSource(null); setSplitResult(null); }}
+          onForce={handleForceSplit}
+          forceLoading={splitForceLoading}
         />
       )}
 

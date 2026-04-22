@@ -215,6 +215,7 @@ REGELN:
   }
 
   const data = await response.json();
+  console.log('[claudeSplit] raw response:', data);
 
   interface ContentBlock {
     type: string;
@@ -223,6 +224,7 @@ REGELN:
   }
   const contentBlocks: ContentBlock[] = data?.content ?? [];
   const toolUse = contentBlocks.find(b => b.type === 'tool_use');
+  console.log('[claudeSplit] toolUse block:', toolUse);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let parsed: any;
@@ -245,9 +247,11 @@ REGELN:
     }
   }
 
+  console.log('[claudeSplit] parsed input:', parsed, '| force mode:', !!force);
   // When force=true, ignore split===false if Claude still provided cards.
   // Claude sometimes returns split:false even when instructed otherwise.
   const hasCards = Array.isArray(parsed?.cards) && parsed.cards.length >= 2;
+  console.log('[claudeSplit] hasCards:', hasCards, '| parsed.split:', parsed?.split);
   if (parsed?.split === false && !force) {
     return { split: false, reasoning: String(parsed.reasoning ?? 'Karte ist nicht trennbar.') };
   }

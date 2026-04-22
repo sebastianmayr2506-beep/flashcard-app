@@ -12,7 +12,7 @@ interface Props {
   onRemoveExaminer: (e: string) => void;
   onAddTag: (t: string) => void;
   onRemoveTag: (t: string) => void;
-  onResetAllSrs: () => void;
+  onResetAllSrs: (mode: 'all' | 'broken-only') => void;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
@@ -323,30 +323,56 @@ export default function Settings({
       </div>
 
       {/* SRS Reset */}
-      <div className="bg-[#1e2130] border border-red-500/20 rounded-2xl p-5 space-y-3">
+      <div className="bg-[#1e2130] border border-red-500/20 rounded-2xl p-5 space-y-4">
         <h3 className="font-semibold text-white flex items-center gap-2">⚠️ Lernfortschritt zurücksetzen</h3>
-        <p className="text-sm text-[#9ca3af]">
-          Setzt alle Karten auf <span className="text-white font-medium">„Neu"</span> zurück —
-          alle Wiederholungsintervalle, Wiederholungszähler und SRS-Daten werden gelöscht.
-          Sinnvoll wenn du Karten importiert hast, die bereits den Lernstand von jemand anderem hatten.
-        </p>
-        <p className="text-xs text-red-400">Nicht rückgängig zu machen. Dein eigener Lernfortschritt geht verloren.</p>
-        <button
-          onClick={() => {
-            const typed = window.prompt(
-              `⚠️ SRS-Daten zurücksetzen\n\nAlle ${cards.length} Karten werden auf "Neu" gesetzt — Intervalle, Wiederholungen und Lernfortschritt werden gelöscht.\n\nTippe RESET (in Großbuchstaben) um fortzufahren.`
-            );
-            if (typed === 'RESET') {
-              onResetAllSrs();
-              showToast(`✅ SRS-Daten für ${cards.length} Karten zurückgesetzt`, 'success');
-            } else if (typed !== null) {
-              showToast('Abgebrochen — falsches Wort eingegeben', 'info');
-            }
-          }}
-          className="px-4 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-sm font-semibold transition-colors"
-        >
-          🔄 Alle Karten auf Neu zurücksetzen
-        </button>
+
+        {/* Option 1: surgical — safe */}
+        {(() => {
+          const brokenCount = cards.filter(c => c.repetitions === 0 && c.interval > 0).length;
+          return brokenCount > 0 ? (
+            <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 space-y-2">
+              <p className="text-sm font-semibold text-amber-300">🩹 Empfohlen: Nur fehlerhafte Import-Daten bereinigen</p>
+              <p className="text-sm text-[#9ca3af]">
+                {brokenCount} Karten haben widersprüchliche SRS-Werte (aus einem fremden Import):
+                sie stehen als <span className="text-white font-medium">„Neu"</span> aber haben bereits ein Review-Intervall gesetzt.
+                Das sorgt für falsche Wiederholungen. <span className="text-white">Deine {cards.filter(c => c.repetitions > 0).length} gelernten Karten bleiben unberührt.</span>
+              </p>
+              <button
+                onClick={() => {
+                  onResetAllSrs('broken-only');
+                  showToast(`✅ ${brokenCount} fehlerhafte Karten bereinigt — dein Fortschritt bleibt erhalten`, 'success');
+                }}
+                className="px-4 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-sm font-semibold transition-colors"
+              >
+                🩹 {brokenCount} fehlerhafte Karten bereinigen (sicher)
+              </button>
+            </div>
+          ) : null;
+        })()}
+
+        {/* Option 2: full reset — nuclear */}
+        <div className="space-y-2">
+          <p className="text-sm text-[#9ca3af]">
+            Setzt <span className="text-white font-medium">alle</span> Karten auf „Neu" zurück — auch deine eigenen Lernfortschritte gehen verloren.
+          </p>
+          <p className="text-xs text-red-400">Nicht rückgängig zu machen.</p>
+          <button
+            onClick={() => {
+              const typed = window.prompt(
+                `⚠️ ALLES zurücksetzen\n\nAlle ${cards.length} Karten werden auf "Neu" gesetzt — auch dein eigener Lernfortschritt geht verloren.\n\nTippe RESET (in Großbuchstaben) um fortzufahren.`
+              );
+              if (typed === 'RESET') {
+                onResetAllSrs('all');
+                showToast(`✅ SRS-Daten für alle ${cards.length} Karten zurückgesetzt`, 'success');
+              } else if (typed !== null) {
+                showToast('Abgebrochen — falsches Wort eingegeben', 'info');
+              }
+            }}
+            className="px-4 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-sm font-semibold transition-colors"
+          >
+            🔄 Alle Karten zurücksetzen
+          </button>
+        </div>
       </div>
     </div>
   );

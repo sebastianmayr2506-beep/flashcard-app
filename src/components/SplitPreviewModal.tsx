@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Flashcard, Difficulty } from '../types/card';
 import type { SplitResult, SplitCard } from '../utils/claudeSplit';
 import MarkdownText from './MarkdownText';
@@ -13,11 +13,16 @@ interface Props {
 }
 
 export default function SplitPreviewModal({ source, result, onConfirm, onCancel, onForce, forceLoading }: Props) {
-  const initial: SplitCard[] = result.split ? result.cards : [];
-  const [cards, setCards] = useState<SplitCard[]>(initial);
+  const [cards, setCards] = useState<SplitCard[]>(result.split ? result.cards : []);
   const [showReasoning, setShowReasoning] = useState(true);
   const [activeTab, setActiveTab] = useState<'edit' | 'preview'>('edit');
   const [forceHint, setForceHint] = useState('');
+
+  // Sync cards when result changes (e.g. after force split returns split=true)
+  useEffect(() => {
+    setCards(result.split ? result.cards : []);
+    setShowReasoning(true);
+  }, [result]);
 
   const updateCard = (idx: number, patch: Partial<SplitCard>) => {
     setCards(prev => prev.map((c, i) => (i === idx ? { ...c, ...patch } : c)));

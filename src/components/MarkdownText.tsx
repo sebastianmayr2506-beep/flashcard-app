@@ -114,6 +114,14 @@ export default function MarkdownText({ text, className = '' }: { text: string; c
         </span>
       );
     }
+    // Horizontal rule: --- / *** / ___
+    else if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      output.push(
+        <span key={i} className="block my-3">
+          <span className="block border-t border-[#2d3148]" />
+        </span>
+      );
+    }
     // Empty line → spacer
     else if (trimmed === '') {
       output.push(<span key={i} className="block h-2" />);

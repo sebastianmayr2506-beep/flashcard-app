@@ -21,7 +21,8 @@ export function applySM2(card: Flashcard, rating: RatingValue, daysUntilExam?: n
   if (rating >= 2) {
     // Correct response
     if (repetitions === 0) {
-      interval = 1;
+      // First review: Einfach gets a head-start of 2 days, Gut/Schwer stay at 1
+      interval = rating === 3 ? 2 : 1;
     } else if (repetitions === 1) {
       interval = 6;
     } else {

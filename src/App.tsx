@@ -212,29 +212,47 @@ export default function App() {
   }, [settings, updateSettings, showToast]);
 
   const handleRate = useCallback((id: string, rating: RatingValue) => {
+    // Capture pre-rate state to detect "was a new card" (repetitions=0 && interval=0)
+    // — the activeDailyPlan membership check was too narrow: cards rated in filtered/custom
+    // sessions never reached the snapshot.
+    const cardBefore = cards.find(c => c.id === id);
+    const wasNewCard = !!cardBefore && cardBefore.repetitions === 0 && cardBefore.interval === 0;
+
     rateCard(id, rating, settings.examDate);
 
-    // Track daily plan progress counters (only Schwer/Gut/Einfach, not Nochmal)
-    if (activeDailyPlan && rating >= 1) {
+    // Track daily progress — Schwer/Gut/Einfach count as "done", Nochmal does not.
+    // Runs for every rating regardless of session type so the progress bar is always accurate.
+    if (rating >= 1) {
       const today = new Date().toDateString();
       const snap = settings.dailyPlanSnapshot;
-      const isNewCard = activeDailyPlan.newCards.some(c => c.id === id);
-      const isAnyPlanCard = isNewCard || activeDailyPlan.reviewCards.some(c => c.id === id);
+      const hasSnapToday = snap?.date === today;
 
-      if (isAnyPlanCard) {
-        const newCardsDoneSoFar = snap?.date === today ? (snap.newCardsDone ?? 0) : 0;
-        const totalDoneSoFar = snap?.date === today ? (snap.totalDone ?? 0) : 0;
+      if (hasSnapToday) {
+        updateSettings({
+          dailyPlanSnapshot: {
+            ...snap,
+            newCardsDone: wasNewCard ? snap.newCardsDone + 1 : snap.newCardsDone,
+            totalDone: snap.totalDone + 1,
+          },
+        });
+      } else {
+        // Auto-create snapshot on first rating of the day — covers sessions that
+        // started outside the daily-plan flow (e.g. study page, set detail, filters).
+        // Bootstrap from card state so prior rates today (pre-fix, or other entry paths)
+        // are reflected in the denominator.
+        const alreadyDone = getCardsRatedToday(cards);
+        const plan = calculateDailyPlan(cards, settings, 0);
         updateSettings({
           dailyPlanSnapshot: {
             date: today,
-            totalCards: snap?.date === today ? snap.totalCards : activeDailyPlan.totalPlanned,
-            newCardsDone: isNewCard ? newCardsDoneSoFar + 1 : newCardsDoneSoFar,
-            totalDone: totalDoneSoFar + 1,
+            totalCards: alreadyDone + plan.totalToday,
+            newCardsDone: wasNewCard ? 1 : 0,
+            totalDone: alreadyDone + 1,
           },
         });
       }
     }
-  }, [rateCard, settings.examDate, activeDailyPlan, settings.dailyPlanSnapshot, updateSettings]);
+  }, [cards, rateCard, settings, updateSettings]);
 
   const handleBulkAssignSet = useCallback((cardIds: string[], setId: string | undefined) => {
     cardIds.forEach(id => updateCard(id, { setId }));

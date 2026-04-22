@@ -18,19 +18,22 @@ function capIntervalForExam(interval: number, daysUntilExam: number): number {
 export function applySM2(card: Flashcard, rating: RatingValue, daysUntilExam?: number): Partial<Flashcard> {
   let { interval, repetitions, easeFactor } = card;
 
-  if (rating >= 2) {
-    // Correct response
+  if (rating >= 1) {
+    // Success (Schwer / Gut / Einfach) — card is remembered, progress it.
+    // Schwer grows the interval gently (*1.2); Gut/Einfach follow the ease factor.
     if (repetitions === 0) {
-      // First review: Einfach gets a head-start of 2 days, Gut/Schwer stay at 1
+      // First review: Einfach 2 days, Gut/Schwer 1 day
       interval = rating === 3 ? 2 : 1;
     } else if (repetitions === 1) {
-      interval = 6;
+      interval = rating === 1 ? Math.max(1, Math.round(interval * 1.2)) : 6;
     } else {
-      interval = Math.round(interval * easeFactor);
+      interval = rating === 1
+        ? Math.max(1, Math.round(interval * 1.2))
+        : Math.round(interval * easeFactor);
     }
     repetitions += 1;
   } else {
-    // Incorrect response — reset
+    // Nochmal — full reset
     repetitions = 0;
     interval = 1;
   }

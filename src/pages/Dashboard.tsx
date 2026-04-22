@@ -35,10 +35,11 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
   );
 
   // Use snapshot totalDone when available (accurate: only counts rating >= 1, incl. Schwer).
-  // Fall back to card-state computation for existing snapshots that predate this field.
+  // Always fall back to card-state count — covers the case where the user rated cards
+  // outside the daily-plan flow (no snapshot), so the progress bar still reflects real work.
   const ratedToday = snap?.date === today
     ? (snap.totalDone ?? getCardsRatedToday(cards))
-    : 0;
+    : getCardsRatedToday(cards);
 
   const stats = useMemo(() => {
     const due = cards.filter(isDueToday);
@@ -79,8 +80,11 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
     unflagNotif.date === new Date().toDateString() &&
     !unflagNotif.dismissed;
 
-  // Progress bar for today's goal
-  const snapshotTotal = snap?.date === today ? snap.totalCards : plan.totalToday;
+  // Progress bar for today's goal.
+  // Prefer snapshot total (set at session-start and accounts for all planned work).
+  // If no snapshot yet, compute it as ratedToday + remaining planned — so the bar
+  // already reflects reviews done before the user pressed "Jetzt lernen".
+  const snapshotTotal = snap?.date === today ? snap.totalCards : ratedToday + plan.totalToday;
   const progressTotal = Math.max(snapshotTotal, ratedToday);
   const progressPct = progressTotal > 0 ? Math.min(100, Math.round((ratedToday / progressTotal) * 100)) : 0;
 

@@ -14,7 +14,7 @@ import { useFlagAttempts } from './hooks/useFlagAttempts';
 import { useToast } from './hooks/useToast';
 import { useAuth } from './hooks/useAuth';
 import { extractParentLinks } from './utils/import';
-import { calculateDailyPlan } from './utils/dailyGoal';
+import { calculateDailyPlan, getCardsRatedToday } from './utils/dailyGoal';
 
 import Sidebar from './components/Sidebar';
 import ToastContainer from './components/ToastContainer';
@@ -115,19 +115,26 @@ export default function App() {
   const handleStartDailySession = useCallback(() => {
     const today = new Date().toDateString();
     const snap = settings.dailyPlanSnapshot;
-    const newDoneToday = snap?.date === today ? (snap.newCardsDone ?? 0) : 0;
+    const hasSnapToday = snap?.date === today;
 
+    const newDoneToday = hasSnapToday ? (snap.newCardsDone ?? 0) : 0;
     const plan = calculateDailyPlan(cards, settings, newDoneToday);
     if (plan.totalToday === 0) return;
 
-    // Preserve newCardsDone/totalDone from earlier today; only reset if it's a new day
+    // How many cards were already successfully rated today — either from the snapshot
+    // (accurate, set by handleRate) or bootstrapped from card state (covers the case
+    // where the user did reviews/new cards outside the daily-plan flow, so no snapshot exists yet).
+    const doneSoFar = hasSnapToday
+      ? (snap.totalDone ?? 0)
+      : getCardsRatedToday(cards);
+
     const newSnapshot = {
       date: today,
-      totalCards: snap?.date === today
-        ? Math.max(snap.totalCards, newDoneToday + plan.totalToday) // keep original total
-        : plan.totalToday,
+      totalCards: hasSnapToday
+        ? Math.max(snap.totalCards, doneSoFar + plan.totalToday)
+        : doneSoFar + plan.totalToday,
       newCardsDone: newDoneToday,
-      totalDone: snap?.date === today ? (snap.totalDone ?? 0) : 0,
+      totalDone: doneSoFar,
     };
     updateSettings({ dailyPlanSnapshot: newSnapshot });
 

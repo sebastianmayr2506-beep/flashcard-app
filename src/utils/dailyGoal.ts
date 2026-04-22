@@ -103,7 +103,8 @@ export function calculatePaceMetrics(cards: Flashcard[], daysUntilExam: number):
 }
 
 export interface DailyPlan {
-  reviewCards: Flashcard[];      // due cards (repetitions > 0, due today)
+  reviewCards: Flashcard[];      // due cards shown today (may be capped)
+  reviewOverflow: number;        // due cards deferred to tomorrow due to dailyReviewCap
   newCards: Flashcard[];         // unseen cards to learn today
   totalToday: number;
   daysUntilExam: number | null;
@@ -128,10 +129,19 @@ export function calculateDailyPlan(
   // — these land in neither reviewCards nor unseenCards without this, causing them to
   // disappear entirely if the user aborts and restarts a session.
   const nochmalDue = cards.filter(c => c.repetitions === 0 && c.interval > 0 && isDueToday(c));
-  const reviewCards = [
-    ...cards.filter(c => c.repetitions > 0 && isDueToday(c)),
+  const allDueReviews = [
+    // Sort by nextReviewDate ascending: most overdue (oldest) shown first
+    ...cards.filter(c => c.repetitions > 0 && isDueToday(c))
+      .sort((a, b) => new Date(a.nextReviewDate).getTime() - new Date(b.nextReviewDate).getTime()),
+    // Nochmal-due cards after regular reviews
     ...nochmalDue,
   ];
+
+  // Cap daily reviews to prevent overload (e.g. after importing cards with existing SRS data).
+  // Default 9999 = effectively no cap. User can lower it in Settings.
+  const cap = settings.dailyReviewCap ?? 9999;
+  const reviewCards = allDueReviews.slice(0, cap);
+  const reviewOverflow = Math.max(0, allDueReviews.length - cap);
 
   // Truly unseen cards: interval === 0 means SM-2 has never touched this card.
   // Cards rated Nochmal get interval=1 so they're excluded here and treated as
@@ -178,6 +188,7 @@ export function calculateDailyPlan(
 
   return {
     reviewCards,
+    reviewOverflow,
     newCards,
     totalToday: reviewCards.length + newCards.length,
     daysUntilExam,

@@ -238,6 +238,7 @@ const defaultSettings: AppSettings = {
   studyStreak: 0,
   lastStudiedDate: null,
   dailyNewCardGoal: 10,
+  dailyReviewCap: 9999,
   autoUnflagEnabled: true,
 };
 

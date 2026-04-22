@@ -321,6 +321,9 @@ function DailyGoalCard({ plan, ratedToday, progressPct, progressTotal, onStart }
         <div className="bg-[#252840] rounded-xl p-3">
           <p className="text-2xl font-bold text-amber-400">{plan.reviewCards.length}</p>
           <p className="text-xs text-[#9ca3af] mt-0.5">✅ Zu wiederholen</p>
+          {plan.reviewOverflow > 0 && (
+            <p className="text-[10px] text-amber-500/70 mt-1">+{plan.reviewOverflow} auf morgen verschoben</p>
+          )}
         </div>
         <div className="bg-[#252840] rounded-xl p-3">
           <p className="text-2xl font-bold text-indigo-400">{plan.newCards.length}</p>

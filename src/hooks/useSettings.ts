@@ -11,6 +11,7 @@ const defaultSettings: AppSettings = {
   studyStreak: 0,
   lastStudiedDate: null,
   dailyNewCardGoal: 10,
+  dailyReviewCap: 9999,
   autoUnflagEnabled: true,
 };
 
@@ -24,6 +25,7 @@ function fromDb(row: Record<string, any>): AppSettings {
     lastStudiedDate: row.last_studied_date ?? null,
     examDate: row.exam_date ?? undefined,
     dailyNewCardGoal: row.daily_new_card_goal ?? 10,
+    dailyReviewCap: row.daily_review_cap ?? 9999,
     dailyPlanSnapshot: row.daily_plan_snapshot ?? undefined,
     autoUnflagEnabled: row.auto_unflag_enabled ?? true,
     autoUnflagNotification: row.auto_unflag_notification ?? undefined,
@@ -42,6 +44,7 @@ function toDb(settings: AppSettings, userId: string) {
     last_studied_date: settings.lastStudiedDate ?? null,
     exam_date: settings.examDate ?? null,
     daily_new_card_goal: settings.dailyNewCardGoal,
+    daily_review_cap: settings.dailyReviewCap ?? 9999,
     daily_plan_snapshot: settings.dailyPlanSnapshot ?? null,
     auto_unflag_enabled: settings.autoUnflagEnabled,
     auto_unflag_notification: settings.autoUnflagNotification ?? null,

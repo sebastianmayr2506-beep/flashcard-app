@@ -59,7 +59,8 @@ export interface AppSettings {
   lastStudiedDate: string | null;
   // Exam countdown & daily goal
   examDate?: string;        // ISO date string (YYYY-MM-DD)
-  dailyNewCardGoal: number; // default: 10
+  dailyNewCardGoal: number;   // default: 10
+  dailyReviewCap: number;     // max reviews shown per day (default: 9999 = no cap)
   // Daily progress snapshot (resets each day)
   dailyPlanSnapshot?: {
     date: string;           // toDateString() key

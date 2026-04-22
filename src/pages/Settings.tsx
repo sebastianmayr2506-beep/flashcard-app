@@ -20,6 +20,9 @@ export default function Settings({
   onAddExaminer, onRemoveExaminer, onAddTag, onRemoveTag, showToast,
 }: Props) {
   const [dailyGoalInput, setDailyGoalInput] = useState(String(settings.dailyNewCardGoal ?? 10));
+  const [reviewCapInput, setReviewCapInput] = useState(
+    settings.dailyReviewCap && settings.dailyReviewCap < 9999 ? String(settings.dailyReviewCap) : ''
+  );
   const [apiKeyInput, setApiKeyInput] = useState(settings.anthropicApiKey ?? '');
   const [showApiKey, setShowApiKey] = useState(false);
 
@@ -50,6 +53,19 @@ export default function Settings({
     setDailyGoalInput(String(n));
     onUpdateSettings({ dailyNewCardGoal: n });
     showToast(`Tagesmaximum: ${n} neue Karten pro Tag`);
+  };
+
+  const handleReviewCapBlur = () => {
+    const raw = reviewCapInput.trim();
+    if (!raw) {
+      // Empty = no cap
+      onUpdateSettings({ dailyReviewCap: 9999 });
+      return;
+    }
+    const n = Math.max(1, Math.min(9999, parseInt(raw) || 9999));
+    setReviewCapInput(String(n));
+    onUpdateSettings({ dailyReviewCap: n });
+    showToast(`Max. Wiederholungen: ${n} pro Tag`);
   };
 
   return (
@@ -102,6 +118,30 @@ export default function Settings({
               {hasExamDate
                 ? 'Begrenzt die tägliche Anzahl nach oben'
                 : 'Wird ohne Prüfungsdatum als fixes Ziel verwendet'}
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">
+              Max. Wiederholungen pro Tag
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={9999}
+                value={reviewCapInput}
+                onChange={e => setReviewCapInput(e.target.value)}
+                onBlur={handleReviewCapBlur}
+                onKeyDown={e => e.key === 'Enter' && handleReviewCapBlur()}
+                placeholder="Kein Limit"
+                className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#4b5563] focus:border-indigo-500 focus:outline-none"
+              />
+              <span className="text-[#6b7280] text-sm shrink-0">/ Tag</span>
+            </div>
+            <p className="text-xs text-[#6b7280] mt-1.5">
+              Verhindert Überschwemmung durch importierte Karten mit altem SRS-Stand.
+              Leer lassen = kein Limit. Tipp: z.B. 20–30 am Anfang.
             </p>
           </div>
         </div>

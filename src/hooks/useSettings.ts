@@ -29,8 +29,9 @@ function fromDb(row: Record<string, any>): AppSettings {
     dailyPlanSnapshot: row.daily_plan_snapshot ?? undefined,
     autoUnflagEnabled: row.auto_unflag_enabled ?? true,
     autoUnflagNotification: row.auto_unflag_notification ?? undefined,
-    // API key is stored in localStorage only (no DB column needed)
+    // API keys are stored in localStorage only (no DB column needed)
     anthropicApiKey: localStorage.getItem('anthropic_api_key') ?? undefined,
+    geminiApiKey: localStorage.getItem('gemini_api_key') ?? undefined,
   };
 }
 
@@ -95,6 +96,11 @@ export function useSettings(userId: string | null) {
       const key = updates.anthropicApiKey;
       if (key) localStorage.setItem('anthropic_api_key', key);
       else localStorage.removeItem('anthropic_api_key');
+    }
+    if ('geminiApiKey' in updates) {
+      const key = updates.geminiApiKey;
+      if (key) localStorage.setItem('gemini_api_key', key);
+      else localStorage.removeItem('gemini_api_key');
     }
     const updated = { ...settingsRef.current, ...updates };
     settingsRef.current = updated;

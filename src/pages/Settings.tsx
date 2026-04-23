@@ -26,11 +26,17 @@ export default function Settings({
   );
   const [apiKeyInput, setApiKeyInput] = useState(settings.anthropicApiKey ?? '');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [geminiKeyInput, setGeminiKeyInput] = useState(settings.geminiApiKey ?? '');
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
 
   // Sync when settings load from Supabase after mount
   useEffect(() => {
     setApiKeyInput(settings.anthropicApiKey ?? '');
   }, [settings.anthropicApiKey]);
+
+  useEffect(() => {
+    setGeminiKeyInput(settings.geminiApiKey ?? '');
+  }, [settings.geminiApiKey]);
 
   const daysUntilExam = settings.examDate
     ? Math.ceil((new Date(settings.examDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
@@ -310,6 +316,51 @@ export default function Settings({
             <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">
               console.anthropic.com
             </a>.
+          </p>
+        </div>
+
+        {/* Gemini key — for AI card revision inside the editor */}
+        <div className="pt-4 border-t border-[#2d3148]">
+          <h3 className="font-semibold text-white flex items-center gap-2">✨ KI-Überarbeitung (Gemini)</h3>
+          <p className="text-xs text-[#6b7280] mt-1 mb-3">
+            Trage deinen Google AI Studio API-Schlüssel ein, um einzelne Karten während des Lernens oder in der Bibliothek per KI überarbeiten zu lassen. Gemini 2.5 Flash ist kostenlos nutzbar.
+          </p>
+          <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-1.5">
+            Gemini API Key
+          </label>
+          <div className="flex gap-2">
+            <div className="flex-1 flex items-center bg-[#252840] border border-[#2d3148] rounded-xl overflow-hidden focus-within:border-purple-500">
+              <input
+                type={showGeminiKey ? 'text' : 'password'}
+                value={geminiKeyInput}
+                onChange={e => setGeminiKeyInput(e.target.value)}
+                placeholder="AIza…"
+                className="flex-1 bg-transparent px-3 py-2 text-white text-sm focus:outline-none font-mono"
+              />
+              <button
+                onClick={() => setShowGeminiKey(s => !s)}
+                className="px-3 text-[#6b7280] hover:text-white text-xs transition-colors"
+              >
+                {showGeminiKey ? '🙈' : '👁'}
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                const key = geminiKeyInput.trim();
+                onUpdateSettings({ geminiApiKey: key || undefined });
+                showToast(key ? 'Gemini-Schlüssel gespeichert ✓' : 'Gemini-Schlüssel entfernt', key ? 'success' : 'info');
+              }}
+              className="px-4 py-2 rounded-xl bg-purple-500 hover:bg-purple-400 text-white text-sm font-semibold transition-colors shrink-0"
+            >
+              Speichern
+            </button>
+          </div>
+          <p className="text-xs text-[#6b7280] mt-1.5">
+            API-Schlüssel erhältst du unter{' '}
+            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:underline">
+              aistudio.google.com/apikey
+            </a>
+            {' '}— gratis, ohne Kreditkarte.
           </p>
         </div>
       </div>

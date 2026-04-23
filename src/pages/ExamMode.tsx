@@ -32,6 +32,7 @@ interface Props {
   onUpdateCard: (id: string, data: Partial<Flashcard>) => void;
   onRecordAttempts: (correct: Flashcard[], wrong: Flashcard[]) => Flashcard[];
   onNavigate: (page: string) => void;
+  onApiError?: (message: string) => void;
 }
 
 // ─── Grade helper ─────────────────────────────────────────────
@@ -127,7 +128,7 @@ function DonutChart({ correct, total }: { correct: number; total: number }) {
 
 // ─── Main Component ───────────────────────────────────────────
 
-export default function ExamMode({ cards, settings, sets, links, onFlagCards, onUpdateCard, onRecordAttempts, onNavigate }: Props) {
+export default function ExamMode({ cards, settings, sets, links, onFlagCards, onUpdateCard, onRecordAttempts, onNavigate, onApiError }: Props) {
   const [phase, setPhase] = useState<Phase>('setup');
   const [config, setConfig] = useState<ExamConfig>({
     source: 'all',
@@ -551,6 +552,8 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
               setSessionCards(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
             }}
             onClose={() => setEditingCard(null)}
+            geminiApiKey={settings.geminiApiKey}
+            onApiError={onApiError}
           />
         )}
       </div>

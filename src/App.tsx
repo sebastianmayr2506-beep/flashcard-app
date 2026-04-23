@@ -630,6 +630,7 @@ export default function App() {
           onUpdateCard={updateCard}
           onRecordAttempts={handleRecordAttempts}
           onNavigate={navigate}
+          onApiError={msg => showToast(msg, 'error')}
         />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </>
@@ -652,6 +653,7 @@ export default function App() {
           onSplitCard={handleSplitCard}
           onSessionComplete={handleSessionComplete}
           onNavigate={navigate}
+          onApiError={msg => showToast(msg, 'error')}
         />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
         {/* Split preview modal rendered on top of session */}
@@ -724,6 +726,7 @@ export default function App() {
             onCancel={() => navigate('library')}
             onAddLink={addLink}
             onRemoveLink={removeLink}
+            onApiError={msg => showToast(msg, 'error')}
           />
         )}
         {page === 'sets' && (

@@ -3,6 +3,7 @@ import type { Flashcard, Difficulty, AppSettings, CardImage, CardSet, CardLink }
 import ImageInput from '../components/ImageInput';
 import LinkedCards from '../components/LinkedCards';
 import ProbabilityBadge from '../components/ProbabilityBadge';
+import { reviseCardWithGemini } from '../utils/geminiReviseCard';
 
 interface Props {
   card?: Flashcard;
@@ -14,6 +15,7 @@ interface Props {
   onCancel: () => void;
   onAddLink: (cardId: string, linkedCardId: string, linkType: 'child' | 'related') => void;
   onRemoveLink: (linkId: string) => void;
+  onApiError?: (message: string) => void;
 }
 
 const DIFFICULTIES: { value: Difficulty; label: string }[] = [
@@ -22,7 +24,7 @@ const DIFFICULTIES: { value: Difficulty; label: string }[] = [
   { value: 'schwer',  label: 'Schwer' },
 ];
 
-export default function CardEditor({ card, settings, sets, allCards, links, onSave, onCancel, onAddLink, onRemoveLink }: Props) {
+export default function CardEditor({ card, settings, sets, allCards, links, onSave, onCancel, onAddLink, onRemoveLink, onApiError }: Props) {
   const [front, setFront] = useState(card?.front ?? '');
   const [back, setBack] = useState(card?.back ?? '');
   const [frontImage, setFrontImage] = useState<CardImage | undefined>(card?.frontImage);
@@ -34,6 +36,37 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
   const [selectedSetId, setSelectedSetId] = useState<string>(card?.setId ?? '');
   const [flagged, setFlagged] = useState<boolean>(card?.flagged ?? false);
   const [errors, setErrors] = useState<string[]>([]);
+  // AI revision state
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiFeedback, setAiFeedback] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiScope, setAiScope] = useState<'back' | 'both'>('back');
+
+  const handleAiRevise = async () => {
+    if (!aiFeedback.trim() || aiLoading) return;
+    if (!settings.geminiApiKey?.trim()) {
+      onApiError?.('Bitte trage zuerst deinen Gemini API-Schlüssel in den Einstellungen ein.');
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const result = await reviseCardWithGemini({
+        apiKey: settings.geminiApiKey,
+        front,
+        back,
+        feedback: aiFeedback.trim(),
+        backOnly: aiScope === 'back',
+      });
+      if (aiScope === 'both') setFront(result.front);
+      setBack(result.back);
+      setAiFeedback('');
+    } catch (err) {
+      console.error('Gemini revise error:', err);
+      onApiError?.(`Gemini-Fehler: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (card) {
@@ -119,6 +152,68 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
               className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2.5 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none resize-none"
             />
             <ImageInput value={backImage} onChange={setBackImage} label="Bild Rückseite" />
+
+            {/* AI revision panel (Gemini) */}
+            <div className="border border-purple-500/30 rounded-xl overflow-hidden bg-[#15172a]">
+              <button
+                type="button"
+                onClick={() => setAiOpen(s => !s)}
+                className="w-full flex items-center justify-between px-3 py-2 hover:bg-[#1e2130] transition-colors"
+              >
+                <span className="flex items-center gap-2 text-xs font-semibold text-purple-400 uppercase tracking-wider">
+                  <span>✨</span> KI überarbeiten (Gemini) {aiOpen ? '' : '— klicken zum Öffnen'}
+                </span>
+                <span className="text-[#9ca3af] text-xs">{aiOpen ? '▾' : '▸'}</span>
+              </button>
+              {aiOpen && (
+                <div className="px-3 pb-3 pt-2 border-t border-purple-500/20 space-y-2.5">
+                  <div className="flex gap-1 text-xs flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setAiScope('back')}
+                      className={`px-2.5 py-1 rounded-lg transition-colors ${aiScope === 'back' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : 'text-[#9ca3af] hover:text-white border border-transparent'}`}
+                    >
+                      Nur Antwort ändern
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAiScope('both')}
+                      className={`px-2.5 py-1 rounded-lg transition-colors ${aiScope === 'both' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : 'text-[#9ca3af] hover:text-white border border-transparent'}`}
+                    >
+                      Frage + Antwort
+                    </button>
+                  </div>
+                  <textarea
+                    value={aiFeedback}
+                    onChange={e => setAiFeedback(e.target.value)}
+                    rows={2}
+                    placeholder='z.B. "Mach die Antwort kürzer und ergänze eine Tabelle" oder "Erklär das ausführlicher mit Beispiel"'
+                    className="w-full bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white text-sm placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
+                    disabled={aiLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAiRevise}
+                    disabled={!aiFeedback.trim() || aiLoading}
+                    className="w-full py-2 rounded-xl bg-purple-500 hover:bg-purple-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                  >
+                    {aiLoading ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Gemini überarbeitet…
+                      </>
+                    ) : (
+                      <>🔄 Mit Gemini überarbeiten</>
+                    )}
+                  </button>
+                  {!settings.geminiApiKey?.trim() && (
+                    <p className="text-[11px] text-amber-300/80">
+                      ⚠️ Kein Gemini API-Schlüssel hinterlegt. Trage einen in den Einstellungen ein (gratis via aistudio.google.com).
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Meta */}

@@ -75,6 +75,7 @@ export interface AppSettings {
     dismissed: boolean;
   };
   anthropicApiKey?: string;           // stored client-side for AI merge feature
+  geminiApiKey?: string;              // stored client-side for AI card revision (Google AI Studio)
 }
 
 export interface FlagAttempt {

@@ -25,6 +25,7 @@ interface Props {
   onSplitCard?: (cardId: string, afterSplit: (newCardIds: string[]) => void) => void;
   onSessionComplete: () => void;
   onNavigate: (page: string) => void;
+  onApiError?: (message: string) => void;
 }
 
 type SessionState = 'setup' | 'studying' | 'summary';
@@ -33,7 +34,7 @@ interface RatingCount {
   nochmal: number; schwer: number; gut: number; einfach: number;
 }
 
-export default function StudySession({ cards, settings, sets, links, preFilteredCards, dailyPlan, onRate, onUpdateCard, onDeleteCard, onSplitCard, onSessionComplete, onNavigate }: Props) {
+export default function StudySession({ cards, settings, sets, links, preFilteredCards, dailyPlan, onRate, onUpdateCard, onDeleteCard, onSplitCard, onSessionComplete, onNavigate, onApiError }: Props) {
   const isDailyMode = !!dailyPlan;
   const [sessionState, setSessionState] = useState<SessionState>(
     (preFilteredCards || dailyPlan) ? 'studying' : 'setup'
@@ -559,6 +560,8 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
             setSessionCards(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
           }}
           onClose={() => setEditingCard(null)}
+          geminiApiKey={settings.geminiApiKey}
+          onApiError={onApiError}
         />
       )}
     </div>

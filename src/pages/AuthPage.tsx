@@ -44,8 +44,8 @@ export default function AuthPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="text-4xl mb-3">🃏</div>
-          <h1 className="text-2xl font-bold text-white">KarteAI</h1>
+          <div className="text-4xl mb-3">✨</div>
+          <h1 className="text-2xl font-bold text-white">Sebi AI</h1>
           <p className="text-[#9ca3af] text-sm mt-1">Bachelor Prüfungsvorbereitung</p>
         </div>
 

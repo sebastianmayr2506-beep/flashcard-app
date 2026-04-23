@@ -31,7 +31,7 @@ export default function Sidebar({ active, onChange, dueCount, onSignOut, userEma
       {/* Desktop sidebar */}
       <aside className="hidden md:flex flex-col w-64 min-h-screen bg-[#1a1d27] border-r border-[#2d3148] p-4 shrink-0">
         <div className="mb-8 px-2">
-          <h1 className="text-xl font-bold text-white tracking-tight">🎓 KarteAI</h1>
+          <h1 className="text-xl font-bold text-white tracking-tight">✨ Sebi AI</h1>
           <p className="text-xs text-[#6b7280] mt-0.5">Exam Prep</p>
         </div>
         <nav className="flex flex-col gap-1 flex-1">

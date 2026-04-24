@@ -87,6 +87,31 @@ export function useSettings(userId: string | null) {
     };
 
     load();
+
+    // Real-time sync: whenever another device changes this user's settings, pull the update
+    const channel = supabase
+      .channel(`user_settings:${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_settings', filter: `user_id=eq.${userId}` },
+        (payload) => {
+          if (payload.new && typeof payload.new === 'object') {
+            const s = fromDb(payload.new as Record<string, unknown>);
+            settingsRef.current = s;
+            setSettings(s);
+          }
+        },
+      )
+      .subscribe();
+
+    // Re-fetch on window focus (catches missed events if tab was suspended)
+    const onFocus = () => { load(); };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [userId]);
 
   const updateSettings = useCallback((updates: Partial<AppSettings>) => {

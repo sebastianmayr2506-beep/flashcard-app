@@ -14,8 +14,18 @@ export interface PaceMetrics {
   peakDailyLoad: number;         // new + reviews on busiest day
 }
 
-/** Full SM-2-aware pace calculation. Pass daysUntilExam > 0. */
-export function calculatePaceMetrics(cards: Flashcard[], daysUntilExam: number): PaceMetrics {
+/**
+ * Full SM-2-aware pace calculation. Pass daysUntilExam > 0.
+ * If `plannedNewPerDay` is provided, the mastery projection simulates the
+ * user's actual chosen pace (capped at requiredNewPerDay so overshooting
+ * doesn't inflate mastery beyond 100%). Otherwise it assumes they'll do
+ * the required pace.
+ */
+export function calculatePaceMetrics(
+  cards: Flashcard[],
+  daysUntilExam: number,
+  plannedNewPerDay?: number,
+): PaceMetrics {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -35,6 +45,12 @@ export function calculatePaceMetrics(cards: Flashcard[], daysUntilExam: number):
   const simpleNewPerDay = unseenCards.length > 0
     ? Math.ceil(unseenCards.length / daysUntilExam)
     : 0;
+
+  // Actual pace used for mastery projection: what the user will really do.
+  // Cap at requiredNewPerDay (no point simulating more than needed).
+  const actualNewPerDay = plannedNewPerDay !== undefined
+    ? Math.min(plannedNewPerDay, requiredNewPerDay || plannedNewPerDay)
+    : requiredNewPerDay;
 
   // ── Simulate daily review load ──────────────────────────────────────────────
   const horizon = daysUntilExam + 1;
@@ -56,19 +72,19 @@ export function calculatePaceMetrics(cards: Flashcard[], daysUntilExam: number):
     }
   });
 
-  // Reviews from new cards to be introduced at requiredNewPerDay/day
+  // Reviews from new cards to be introduced at actualNewPerDay/day
   const newCardReviewOffsets = SM2_CUM.slice(1, MASTERY_REVIEWS + 2); // [1,5,15,40]
   for (let d = 0; d < effectiveDays; d++) {
     for (const offset of newCardReviewOffsets) {
       const rd = d + offset;
-      if (rd < horizon) reviewsPerDay[rd] += requiredNewPerDay;
+      if (rd < horizon) reviewsPerDay[rd] += actualNewPerDay;
     }
   }
 
   // Average daily reviews (skip first 2 days, which are usually low)
   const slice = Array.from(reviewsPerDay.slice(2));
   const avgDailyReviews = Math.round(slice.reduce((a, b) => a + b, 0) / Math.max(1, slice.length));
-  const peakDailyLoad = Math.round(Math.max(...slice)) + requiredNewPerDay;
+  const peakDailyLoad = Math.round(Math.max(...slice)) + actualNewPerDay;
 
   // ── Mastery projection ──────────────────────────────────────────────────────
   const alreadyMastered = seenCards.filter(c => c.repetitions >= MASTERY_REVIEWS).length;
@@ -84,8 +100,8 @@ export function calculatePaceMetrics(cards: Flashcard[], daysUntilExam: number):
       return daysToNext + (SM2_CUM[reviewsStillNeeded] ?? 999) <= daysUntilExam;
     }).length;
 
-  // New cards that will be mastered (those introduced within effectiveDays)
-  const newCardsMastered = Math.min(unseenCards.length, effectiveDays * requiredNewPerDay);
+  // New cards that will be mastered (those introduced within effectiveDays at the actual pace)
+  const newCardsMastered = Math.min(unseenCards.length, effectiveDays * actualNewPerDay);
 
   const totalMastered = alreadyMastered + partialMastered + newCardsMastered;
   const masteryRateAtExam = cards.length > 0
@@ -167,7 +183,9 @@ export function calculateDailyPlan(
   let masteryRateAtExam = 0;
 
   if (daysUntilExam !== null && !examPassed && daysUntilExam > 0) {
-    const pace = calculatePaceMetrics(cards, daysUntilExam);
+    // Pass the user's actual daily goal so the mastery projection reflects
+    // what they'll really accomplish, not the ideal required pace.
+    const pace = calculatePaceMetrics(cards, daysUntilExam, settings.dailyNewCardGoal);
     newCardsPerDay = Math.min(settings.dailyNewCardGoal, pace.requiredNewPerDay);
     if (pace.requiredNewPerDay <= settings.dailyNewCardGoal) isAheadOfSchedule = true;
     estimatedDailyReviews = pace.estimatedDailyReviews;

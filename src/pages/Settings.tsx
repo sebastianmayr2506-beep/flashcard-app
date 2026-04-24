@@ -45,7 +45,7 @@ export default function Settings({
 
   // SM-2-aware pace metrics (only compute when exam date is set and there are cards)
   const pace = (daysUntilExam !== null && daysUntilExam > 0 && cards.length > 0)
-    ? calculatePaceMetrics(cards, daysUntilExam)
+    ? calculatePaceMetrics(cards, daysUntilExam, settings.dailyNewCardGoal)
     : null;
 
   const unseenCount = cards.filter(c => c.repetitions === 0).length;

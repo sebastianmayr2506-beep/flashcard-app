@@ -120,7 +120,7 @@ async function tryClaude(apiKey: string, promptText: string): Promise<string> {
     },
     body: JSON.stringify({
       model: 'claude-3-5-haiku-20241022',
-      max_tokens: 2048,
+      max_tokens: 4096,
       messages: [{ role: 'user', content: promptText + '\n\nAntworte NUR mit gültigem JSON, kein weiterer Text.' }],
     }),
   });
@@ -150,7 +150,7 @@ async function tryGroq(apiKey: string, promptText: string): Promise<string> {
       ],
       response_format: { type: 'json_object' },
       temperature: 0.5,
-      max_tokens: 2048,
+      max_tokens: 4096,
     }),
   });
   if (!res.ok) {

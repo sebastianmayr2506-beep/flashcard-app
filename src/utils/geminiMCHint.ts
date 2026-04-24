@@ -176,7 +176,7 @@ export async function generateMCHintBundle(
     throw new Error('Kein AI-Schlüssel konfiguriert. Bitte Gemini, Claude oder Groq in den Einstellungen hinterlegen.');
   }
 
-  const prompt = `You are a learning assistant. Generate ${count} multiple-choice hint questions from the flashcard below, each testing a DIFFERENT aspect of the answer.
+  const prompt = `You are a learning assistant. You MUST generate EXACTLY ${count} multiple-choice questions — not 1, not 2, exactly ${count}. Each tests a DIFFERENT aspect of the flashcard answer below.
 
 ### Card – Question:
 ${front}
@@ -184,14 +184,17 @@ ${front}
 ### Card – Answer:
 ${back}
 
+CRITICAL OUTPUT RULE:
+Your response MUST be a JSON object with a top-level "questions" array containing ${count} entries. Returning fewer than ${count} questions is a failure. Returning a single question object (without the "questions" array) is a failure.
+
 TASK: Create ${count} MC questions that together help the learner recall the full answer. Each question must focus on a DIFFERENT sub-aspect (e.g. definition, application, delimitation, examples, exceptions).
 
 RULES:
-1. Each question has its own "topic" field — a short German label (1-3 words) naming the sub-aspect tested (e.g. "Definition", "Anwendung", "Abgrenzung", "Beispiel", "Ausnahme").
-2. Mix question types: at least ${count >= 2 ? '1 question should be "multiple"' : '"single"'} (2–3 correct answers) and the rest "single" (exactly 1 correct).
+1. Each question has a "topic" field — a short German label (1-3 words) naming the sub-aspect tested (e.g. "Definition", "Anwendung", "Abgrenzung", "Beispiel", "Ausnahme").
+2. Mix question types: at least ${count >= 2 ? 'ONE question must be "multiple"' : '"single"'} (with 2–3 correct options) and the rest "single" (exactly 1 correct).
 3. Always exactly 4 options per question, with ids "a", "b", "c", "d".
 4. Mark each option with correct: true or correct: false.
-5. Do NOT repeat the same question or near-duplicates. Each question must test something distinct.
+5. Do NOT repeat the same question. Each of the ${count} questions must test something distinct.
 6. Write question, options, topic and explanation in GERMAN.
 
 REQUIRED JSON FORMAT (use EXACTLY these English field names):
@@ -199,7 +202,7 @@ REQUIRED JSON FORMAT (use EXACTLY these English field names):
   "questions": [
     {
       "topic": "Definition",
-      "question": "Die Frage auf Deutsch",
+      "question": "Erste Frage (Aspekt 1) auf Deutsch",
       "type": "single",
       "options": [
         {"id": "a", "text": "Option A", "correct": true},
@@ -208,12 +211,35 @@ REQUIRED JSON FORMAT (use EXACTLY these English field names):
         {"id": "d", "text": "Option D", "correct": false}
       ],
       "explanation": "Kurze Erklärung auf Deutsch"
+    },
+    {
+      "topic": "Anwendung",
+      "question": "Zweite Frage (Aspekt 2) auf Deutsch",
+      "type": "multiple",
+      "options": [
+        {"id": "a", "text": "Option A", "correct": true},
+        {"id": "b", "text": "Option B", "correct": true},
+        {"id": "c", "text": "Option C", "correct": false},
+        {"id": "d", "text": "Option D", "correct": false}
+      ],
+      "explanation": "Kurze Erklärung auf Deutsch"
+    },
+    {
+      "topic": "Abgrenzung",
+      "question": "Dritte Frage (Aspekt 3) auf Deutsch",
+      "type": "single",
+      "options": [
+        {"id": "a", "text": "Option A", "correct": false},
+        {"id": "b", "text": "Option B", "correct": true},
+        {"id": "c", "text": "Option C", "correct": false},
+        {"id": "d", "text": "Option D", "correct": false}
+      ],
+      "explanation": "Kurze Erklärung auf Deutsch"
     }
-    // … ${count} questions total
   ]
 }
 
-Return ONLY the JSON object, no other text.`;
+Return ONLY the JSON object with ALL ${count} questions, no other text.`;
 
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -238,8 +264,14 @@ Return ONLY the JSON object, no other text.`;
 
   const bundle = normalizeBundle(raw);
   if (!bundle || bundle.questions.length === 0) {
-    console.error('[MC hint] could not normalize bundle:', JSON.stringify(raw).slice(0, 500));
+    console.error('[MC hint] could not normalize bundle:', JSON.stringify(raw).slice(0, 800));
     throw new Error('KI hat eine unerwartete Struktur zurückgegeben — bitte nochmal versuchen');
+  }
+  console.log(`[MC hint] got ${bundle.questions.length}/${count} questions`,
+    bundle.questions.map(q => `${q.topic}/${q.type}`));
+  if (bundle.questions.length < count) {
+    console.warn('[MC hint] AI returned fewer questions than requested — raw was:',
+      JSON.stringify(raw).slice(0, 800));
   }
   return bundle;
 }

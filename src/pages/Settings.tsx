@@ -3,7 +3,7 @@ import type { AppSettings, Flashcard } from '../types/card';
 import { calculatePaceMetrics } from '../utils/dailyGoal';
 import { supabase } from '../lib/supabase';
 
-const ADMIN_EMAIL = 'sebastianmayr2506@gmail.com';
+const ADMIN_EMAIL = 'bastimayr@gmx.at';
 
 interface Props {
   settings: AppSettings;

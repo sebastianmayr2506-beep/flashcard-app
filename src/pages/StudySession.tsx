@@ -541,7 +541,6 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                         }}
                         onNext={() => {
                           if (effectiveMcHint.status !== 'submitted') return;
-                          const q = effectiveMcHint.questions[effectiveMcHint.index];
                           const newAnswer: MCAnswer = { selected: effectiveMcHint.selected, isCorrect: effectiveMcHint.isCorrect };
                           const allAnswers = [...effectiveMcHint.answers, newAnswer];
                           const nextIdx = effectiveMcHint.index + 1;

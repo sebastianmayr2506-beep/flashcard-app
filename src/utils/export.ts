@@ -5,6 +5,32 @@ export function exportJSON(cards: Flashcard[], filename = 'karteikarten_export.j
   downloadFile(json, filename, 'application/json');
 }
 
+/** Full backup — includes all SRS state so the user can restore their exact progress. */
+export function exportBackupJSON(cards: Flashcard[]): void {
+  const date = new Date().toISOString().slice(0, 10);
+  const filename = `sebi_ai_backup_${date}.json`;
+  downloadFile(JSON.stringify(cards, null, 2), filename, 'application/json');
+}
+
+/**
+ * Share export — strips personal SRS progress so recipients start fresh.
+ * Keeps all content & exam-metadata (timesAsked, probabilityPercent, etc.)
+ * but resets interval/repetitions/easeFactor/nextReviewDate to initial values.
+ */
+export function exportShareJSON(cards: Flashcard[]): void {
+  const date = new Date().toISOString().slice(0, 10);
+  const filename = `karteikarten_teilen_${date}.json`;
+  const freshCards = cards.map(({ interval: _i, repetitions: _r, easeFactor: _e, nextReviewDate: _n, flagged: _f, ...rest }) => ({
+    ...rest,
+    interval: 0,
+    repetitions: 0,
+    easeFactor: 2.5,
+    nextReviewDate: new Date().toISOString(),
+    flagged: false,
+  }));
+  downloadFile(JSON.stringify(freshCards, null, 2), filename, 'application/json');
+}
+
 export function exportCSV(cards: Flashcard[]): void {
   const csv = buildCSV(cards);
   downloadFile('\uFEFF' + csv, 'karteikarten_export.csv', 'text/csv;charset=utf-8');

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import type { Flashcard, CardSet } from '../types/card';
-import { exportJSON, exportCSV } from '../utils/export';
+import { exportCSV, exportBackupJSON, exportShareJSON } from '../utils/export';
 import { importFromJSON, importFromCSV, extractParentLinks } from '../utils/import';
 import { importByShareCode } from '../utils/shareCode';
 
@@ -24,14 +24,19 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
   const [shareCodeInput, setShareCodeInput] = useState('');
   const [shareLoading, setShareLoading] = useState(false);
 
-  const handleExportJSON = () => {
-    exportJSON(cards);
-    showToast(`${cards.length} Karten als JSON exportiert`);
-  };
-
   const handleExportCSV = () => {
     exportCSV(cards);
     showToast(`${cards.length} Karten als CSV exportiert`);
+  };
+
+  const handleExportBackup = () => {
+    exportBackupJSON(cards);
+    showToast(`💾 Backup mit ${cards.length} Karten + SRS-Stand erstellt`, 'success');
+  };
+
+  const handleExportShare = () => {
+    exportShareJSON(cards);
+    showToast(`📤 ${cards.length} Karten ohne SRS-Daten exportiert — bereit zum Teilen`, 'success');
   };
 
   // Process a single file in isolation (handles set-export JSON up front).
@@ -169,27 +174,45 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
       {/* Export */}
       <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-4">
         <h3 className="font-semibold text-white">Export</h3>
-        <p className="text-sm text-[#9ca3af]">Alle {cards.length} Karten exportieren</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <p className="text-sm text-[#9ca3af]">{cards.length} Karten exportieren</p>
+
+        {/* Backup */}
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-[#9ca3af] uppercase tracking-wider">💾 Backup (für dich)</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <ExportCard
+              icon="💾"
+              title="Backup JSON"
+              description="Alle Karten inkl. SRS-Stand, Wiederholungen & Fortschritt — wiederherstellbar"
+              badge="Empfohlen"
+              onClick={handleExportBackup}
+              disabled={cards.length === 0}
+            />
+            <ExportCard
+              icon="📊"
+              title="CSV-Export"
+              description="Textfelder für Excel / Sheets (ohne SRS)"
+              onClick={handleExportCSV}
+              disabled={cards.length === 0}
+            />
+          </div>
+        </div>
+
+        {/* Share */}
+        <div className="space-y-2 pt-2 border-t border-[#2d3148]">
+          <p className="text-xs font-semibold text-[#9ca3af] uppercase tracking-wider">📤 Teilen (für andere User)</p>
           <ExportCard
-            icon="📦"
-            title="JSON-Export"
-            description="Vollständige Daten inkl. SRS-Status"
-            badge="Empfohlen"
-            onClick={handleExportJSON}
-            disabled={cards.length === 0}
-          />
-          <ExportCard
-            icon="📊"
-            title="CSV-Export"
-            description="Textfelder für Excel / Sheets"
-            onClick={handleExportCSV}
+            icon="📤"
+            title="Karten teilen"
+            description="Nur Karteninhalte ohne persönlichen Lernfortschritt — Empfänger starten bei Null"
+            onClick={handleExportShare}
             disabled={cards.length === 0}
           />
         </div>
+
         {sets.length > 0 && (
-          <p className="text-xs text-[#6b7280]">
-            Sets einzeln exportieren: Sets-Seite → Set öffnen → Exportieren
+          <p className="text-xs text-[#6b7280] pt-1">
+            💡 Sets einzeln exportieren: Sets-Seite → Set öffnen → Exportieren
           </p>
         )}
       </div>

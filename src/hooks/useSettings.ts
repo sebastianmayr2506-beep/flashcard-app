@@ -71,16 +71,19 @@ export function useSettings(userId: string | null) {
         const { data, error } = await supabase
           .from('user_settings').select('*').eq('user_id', userId).single();
 
-        if (error || !data) {
+        if (data) {
+          // Row exists in Supabase — always prefer this (it's the source of truth)
+          const s = fromDb(data as Record<string, unknown>);
+          setSettings(s);
+          settingsRef.current = s;
+        } else if (error?.code === 'PGRST116') {
+          // Row truly doesn't exist yet (new user) — seed from localStorage
           const local = getLocalSettings();
           await supabase.from('user_settings').upsert(toDb(local, userId), { onConflict: 'user_id' });
           setSettings(local);
           settingsRef.current = local;
-        } else {
-          const s = fromDb(data as Record<string, unknown>);
-          setSettings(s);
-          settingsRef.current = s;
         }
+        // Any other error (network blip etc.): keep current state, don't overwrite Supabase
       } catch (err) {
         console.error('useSettings load error:', err);
       }

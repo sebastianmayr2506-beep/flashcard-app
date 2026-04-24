@@ -76,6 +76,7 @@ export interface AppSettings {
   };
   anthropicApiKey?: string;           // stored client-side for AI merge feature
   geminiApiKey?: string;              // stored client-side for AI card revision (Google AI Studio)
+  studyOrder?: 'new-first' | 'review-first' | 'mixed'; // stored client-side
 }
 
 export interface FlagAttempt {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import type { Flashcard, AppSettings, RatingValue, CardSet, CardLink } from '../types/card';
 import { isDueToday, STUDY_RATINGS } from '../types/card';
 import DifficultyBadge from '../components/DifficultyBadge';
@@ -29,6 +29,7 @@ interface Props {
 }
 
 type SessionState = 'setup' | 'studying' | 'summary';
+type StudyOrder = 'new-first' | 'review-first' | 'mixed';
 
 interface RatingCount {
   nochmal: number; schwer: number; gut: number; einfach: number;
@@ -36,8 +37,9 @@ interface RatingCount {
 
 export default function StudySession({ cards, settings, sets, links, preFilteredCards, dailyPlan, onRate, onUpdateCard, onDeleteCard, onSplitCard, onSessionComplete, onNavigate, onApiError }: Props) {
   const isDailyMode = !!dailyPlan;
-  const [sessionState, setSessionState] = useState<SessionState>(
-    (preFilteredCards || dailyPlan) ? 'studying' : 'setup'
+  const [sessionState, setSessionState] = useState<SessionState>('setup');
+  const [studyOrder, setStudyOrder] = useState<StudyOrder>(
+    () => (localStorage.getItem('study_order') as StudyOrder) ?? 'review-first'
   );
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminer, setFilterExaminer] = useState('');
@@ -71,24 +73,35 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     return result;
   }, [cards, preFilteredCards, filterSubject, filterExaminer, filterDifficulty, filterSet, onlyDue, endlessMode, filterKlassiker, sortByProbability]);
 
-  useEffect(() => {
-    if (dailyPlan) {
-      // Reviews first (shuffled), then new cards (shuffled) — intentional order
-      const shuffledReviews = [...dailyPlan.reviewCards].sort(() => Math.random() - 0.5);
-      const shuffledNew = [...dailyPlan.newCards].sort(() => Math.random() - 0.5);
-      setSessionCards([...shuffledReviews, ...shuffledNew]);
-      setSessionState('studying');
-    } else if (preFilteredCards) {
-      setSessionCards([...preFilteredCards].sort(() => Math.random() - 0.5));
-      setSessionState('studying');
-    }
-  }, [preFilteredCards, dailyPlan]);
+  const applyStudyOrder = (newCards: Flashcard[], reviewCards: Flashcard[]): Flashcard[] => {
+    if (studyOrder === 'new-first') return [...newCards, ...reviewCards];
+    if (studyOrder === 'review-first') return [...reviewCards, ...newCards];
+    // mixed: interleave randomly
+    return [...newCards, ...reviewCards].sort(() => Math.random() - 0.5);
+  };
+
+  const handleOrderChange = (order: StudyOrder) => {
+    setStudyOrder(order);
+    localStorage.setItem('study_order', order);
+  };
 
   const startSession = () => {
-    if (availableCards.length === 0) return;
-    const ordered = sortByProbability
-      ? [...availableCards].sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0))
-      : [...availableCards].sort(() => Math.random() - 0.5);
+    let ordered: Flashcard[];
+
+    if (dailyPlan) {
+      const sNew = [...dailyPlan.newCards].sort(() => Math.random() - 0.5);
+      const sReview = [...dailyPlan.reviewCards].sort(() => Math.random() - 0.5);
+      ordered = applyStudyOrder(sNew, sReview);
+    } else {
+      if (availableCards.length === 0) return;
+      const newCards = availableCards.filter(c => c.repetitions === 0).sort(() => Math.random() - 0.5);
+      const reviewCards = sortByProbability
+        ? availableCards.filter(c => c.repetitions > 0).sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0))
+        : availableCards.filter(c => c.repetitions > 0).sort(() => Math.random() - 0.5);
+      ordered = applyStudyOrder(newCards, reviewCards);
+    }
+
+    if (ordered.length === 0) return;
     setSessionCards(ordered);
     setCurrentIdx(0);
     setIsFlipped(false);
@@ -165,99 +178,151 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     : null;
 
   if (sessionState === 'setup') {
+    // Compute new/review split for the preview
+    const previewNew = isDailyMode
+      ? dailyPlan!.newCards.length
+      : availableCards.filter(c => c.repetitions === 0).length;
+    const previewReview = isDailyMode
+      ? dailyPlan!.reviewCards.length
+      : availableCards.filter(c => c.repetitions > 0).length;
+    const previewTotal = isDailyMode ? dailyPlan!.totalPlanned : availableCards.length;
+    const canStart = previewTotal > 0;
+
+    const ORDER_OPTIONS: { value: StudyOrder; icon: string; label: string; desc: string }[] = [
+      { value: 'review-first', icon: '🔁', label: 'Wiederholen zuerst', desc: 'Bekanntes auffrischen — gut für anstrengende Tage' },
+      { value: 'new-first',    icon: '🆕', label: 'Neue zuerst',        desc: 'Frisches Wissen während der Kopf noch fit ist' },
+      { value: 'mixed',        icon: '🔀', label: 'Gemischt',           desc: 'Alles durchgemischt — wissenschaftlich am effektivsten' },
+    ];
+
     return (
       <div className="p-4 md:p-6 lg:p-8 fade-in">
         <div className="max-w-lg mx-auto">
-          <h2 className="text-2xl font-bold text-white mb-1">Lern-Session starten</h2>
-          <p className="text-[#9ca3af] text-sm mb-6">Wähle deine Filter und beginne zu lernen</p>
+          <h2 className="text-2xl font-bold text-white mb-1">
+            {isDailyMode ? '📅 Tagesplan' : '📚 Lern-Session'}
+          </h2>
+          <p className="text-[#9ca3af] text-sm mb-6">
+            {isDailyMode ? 'Dein gesteuerter Tagesplan' : 'Wähle deine Filter und beginne zu lernen'}
+          </p>
 
-          <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-4">
-            <div>
-              <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">Fach</label>
-              <select value={filterSubject} onChange={e => setFilterSubject(e.target.value)}
-                className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none">
-                <option value="">Alle Fächer</option>
-                {settings.subjects.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+          {/* Card breakdown preview */}
+          <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 mb-4">
+            <p className="text-xs font-semibold text-[#9ca3af] uppercase tracking-wider mb-3">Heute wartet auf dich</p>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold text-blue-400">{previewNew}</p>
+                <p className="text-xs text-[#9ca3af] mt-0.5">🆕 Neu</p>
+              </div>
+              <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold text-purple-400">{previewReview}</p>
+                <p className="text-xs text-[#9ca3af] mt-0.5">🔁 Wiederholen</p>
+              </div>
+              <div className={`rounded-xl p-3 text-center border ${canStart ? 'bg-indigo-500/10 border-indigo-500/20' : 'bg-[#252840] border-[#2d3148]'}`}>
+                <p className={`text-2xl font-bold ${canStart ? 'text-indigo-400' : 'text-[#6b7280]'}`}>{previewTotal}</p>
+                <p className="text-xs text-[#9ca3af] mt-0.5">∑ Gesamt</p>
+              </div>
             </div>
-            <div>
-              <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">Prüfer</label>
-              <select value={filterExaminer} onChange={e => setFilterExaminer(e.target.value)}
-                className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none">
-                <option value="">Alle Prüfer</option>
-                {settings.examiners.map(e => <option key={e} value={e}>{e}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">Schwierigkeit</label>
-              <select value={filterDifficulty} onChange={e => setFilterDifficulty(e.target.value)}
-                className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none">
-                <option value="">Alle</option>
-                <option value="einfach">Einfach</option>
-                <option value="mittel">Mittel</option>
-                <option value="schwer">Schwer</option>
-              </select>
-            </div>
-            {sets.length > 0 && (
-              <div>
-                <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">Set</label>
-                <select value={filterSet} onChange={e => setFilterSet(e.target.value)}
-                  className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none">
-                  <option value="">Alle Sets</option>
-                  {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </div>
-            )}
-            <label className="flex items-center gap-3 cursor-pointer">
-              <div
-                onClick={() => setOnlyDue(!onlyDue)}
-                className={`w-10 h-6 rounded-full transition-colors relative ${onlyDue ? 'bg-indigo-500' : 'bg-[#2d3148]'}`}
-              >
-                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${onlyDue ? 'left-5' : 'left-1'}`} />
-              </div>
-              <span className="text-sm text-white">Nur fällige Karten</span>
-            </label>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <div
-                onClick={() => setFilterKlassiker(!filterKlassiker)}
-                className={`w-10 h-6 rounded-full transition-colors relative ${filterKlassiker ? 'bg-red-500' : 'bg-[#2d3148]'}`}
-              >
-                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${filterKlassiker ? 'left-5' : 'left-1'}`} />
-              </div>
-              <span className="text-sm text-white">🔥 Nur Klassiker (&gt;60% Wahrscheinlichkeit)</span>
-            </label>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <div
-                onClick={() => setSortByProbability(!sortByProbability)}
-                className={`w-10 h-6 rounded-full transition-colors relative ${sortByProbability ? 'bg-amber-500' : 'bg-[#2d3148]'}`}
-              >
-                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${sortByProbability ? 'left-5' : 'left-1'}`} />
-              </div>
-              <span className="text-sm text-white">📊 Nach Wahrscheinlichkeit sortieren</span>
-            </label>
 
-            <div className="border-t border-[#2d3148] pt-3">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <div
-                  onClick={() => setEndlessMode(!endlessMode)}
-                  className={`w-10 h-6 rounded-full transition-colors relative ${endlessMode ? 'bg-violet-500' : 'bg-[#2d3148]'}`}
+            {/* Order selector */}
+            <p className="text-xs font-semibold text-[#9ca3af] uppercase tracking-wider mb-2">Reihenfolge</p>
+            <div className="space-y-2">
+              {ORDER_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => handleOrderChange(opt.value)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
+                    studyOrder === opt.value
+                      ? 'bg-indigo-500/15 border-indigo-500/50 text-white'
+                      : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white hover:border-[#3d4168]'
+                  }`}
                 >
-                  <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${endlessMode ? 'left-5' : 'left-1'}`} />
-                </div>
-                <div>
-                  <span className="text-sm text-white">♾️ Endlos-Modus</span>
-                  <p className="text-xs text-[#6b7280] mt-0.5">Alle Karten ohne Tageslimit — fällige UND nicht-fällige</p>
-                </div>
-              </label>
-            </div>
-
-            <div className={`p-3 rounded-xl text-center ${availableCards.length > 0 ? 'bg-indigo-500/10 border border-indigo-500/20' : 'bg-[#252840]'}`}>
-              <p className={`text-2xl font-bold ${availableCards.length > 0 ? 'text-indigo-400' : 'text-[#6b7280]'}`}>
-                {availableCards.length}
-              </p>
-              <p className="text-xs text-[#9ca3af] mt-0.5">Karten verfügbar</p>
+                  <span className="text-lg shrink-0">{opt.icon}</span>
+                  <div className="min-w-0">
+                    <p className={`text-sm font-semibold ${studyOrder === opt.value ? 'text-indigo-300' : ''}`}>{opt.label}</p>
+                    <p className="text-xs text-[#6b7280] mt-0.5 leading-snug">{opt.desc}</p>
+                  </div>
+                  {studyOrder === opt.value && (
+                    <span className="ml-auto shrink-0 w-5 h-5 rounded-full bg-indigo-500 flex items-center justify-center text-white text-xs">✓</span>
+                  )}
+                </button>
+              ))}
             </div>
           </div>
+
+          {/* Filters — only in non-daily mode */}
+          {!isDailyMode && (
+            <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-4">
+              <p className="text-xs font-semibold text-[#9ca3af] uppercase tracking-wider">Filter</p>
+              <div>
+                <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">Fach</label>
+                <select value={filterSubject} onChange={e => setFilterSubject(e.target.value)}
+                  className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none">
+                  <option value="">Alle Fächer</option>
+                  {settings.subjects.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">Prüfer</label>
+                <select value={filterExaminer} onChange={e => setFilterExaminer(e.target.value)}
+                  className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none">
+                  <option value="">Alle Prüfer</option>
+                  {settings.examiners.map(e => <option key={e} value={e}>{e}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">Schwierigkeit</label>
+                <select value={filterDifficulty} onChange={e => setFilterDifficulty(e.target.value)}
+                  className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none">
+                  <option value="">Alle</option>
+                  <option value="einfach">Einfach</option>
+                  <option value="mittel">Mittel</option>
+                  <option value="schwer">Schwer</option>
+                </select>
+              </div>
+              {sets.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">Set</label>
+                  <select value={filterSet} onChange={e => setFilterSet(e.target.value)}
+                    className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none">
+                    <option value="">Alle Sets</option>
+                    {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <label className="flex items-center gap-3 cursor-pointer">
+                <div onClick={() => setOnlyDue(!onlyDue)}
+                  className={`w-10 h-6 rounded-full transition-colors relative ${onlyDue ? 'bg-indigo-500' : 'bg-[#2d3148]'}`}>
+                  <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${onlyDue ? 'left-5' : 'left-1'}`} />
+                </div>
+                <span className="text-sm text-white">Nur fällige Karten</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <div onClick={() => setFilterKlassiker(!filterKlassiker)}
+                  className={`w-10 h-6 rounded-full transition-colors relative ${filterKlassiker ? 'bg-red-500' : 'bg-[#2d3148]'}`}>
+                  <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${filterKlassiker ? 'left-5' : 'left-1'}`} />
+                </div>
+                <span className="text-sm text-white">🔥 Nur Klassiker (&gt;60% Wahrscheinlichkeit)</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <div onClick={() => setSortByProbability(!sortByProbability)}
+                  className={`w-10 h-6 rounded-full transition-colors relative ${sortByProbability ? 'bg-amber-500' : 'bg-[#2d3148]'}`}>
+                  <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${sortByProbability ? 'left-5' : 'left-1'}`} />
+                </div>
+                <span className="text-sm text-white">📊 Nach Wahrscheinlichkeit sortieren</span>
+              </label>
+              <div className="border-t border-[#2d3148] pt-3">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <div onClick={() => setEndlessMode(!endlessMode)}
+                    className={`w-10 h-6 rounded-full transition-colors relative ${endlessMode ? 'bg-violet-500' : 'bg-[#2d3148]'}`}>
+                    <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${endlessMode ? 'left-5' : 'left-1'}`} />
+                  </div>
+                  <div>
+                    <span className="text-sm text-white">♾️ Endlos-Modus</span>
+                    <p className="text-xs text-[#6b7280] mt-0.5">Alle Karten ohne Tageslimit — fällige UND nicht-fällige</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-3 mt-5">
             <button onClick={() => onNavigate('dashboard')}
@@ -266,10 +331,10 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
             </button>
             <button
               onClick={startSession}
-              disabled={availableCards.length === 0}
+              disabled={!canStart}
               className="flex-1 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
             >
-              ▶ Starten
+              ▶ Los geht's
             </button>
           </div>
         </div>

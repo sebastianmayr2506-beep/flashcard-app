@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import type { AppSettings, Flashcard } from '../types/card';
 import { calculatePaceMetrics } from '../utils/dailyGoal';
+import { supabase } from '../lib/supabase';
+
+const ADMIN_EMAIL = 'sebastianmayr2506@gmail.com';
 
 interface Props {
   settings: AppSettings;
@@ -14,11 +17,12 @@ interface Props {
   onRemoveTag: (t: string) => void;
   onResetAllSrs: (mode: 'all' | 'broken-only') => void;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+  userEmail?: string;
 }
 
 export default function Settings({
   settings, cards, onUpdateSettings, onAddSubject, onRemoveSubject,
-  onAddExaminer, onRemoveExaminer, onAddTag, onRemoveTag, onResetAllSrs, showToast,
+  onAddExaminer, onRemoveExaminer, onAddTag, onRemoveTag, onResetAllSrs, showToast, userEmail,
 }: Props) {
   const [dailyGoalInput, setDailyGoalInput] = useState(String(settings.dailyNewCardGoal ?? 10));
   const [reviewCapInput, setReviewCapInput] = useState(
@@ -373,6 +377,11 @@ export default function Settings({
         )}
       </div>
 
+      {/* Invite codes — admin only */}
+      {userEmail === ADMIN_EMAIL && (
+        <InviteCodesPanel showToast={showToast} />
+      )}
+
       {/* SRS Reset */}
       <div className="bg-[#1e2130] border border-red-500/20 rounded-2xl p-5 space-y-4">
         <h3 className="font-semibold text-white flex items-center gap-2">⚠️ Lernfortschritt zurücksetzen</h3>
@@ -446,6 +455,116 @@ const colorMap = {
   purple: { btn: 'bg-purple-500 hover:bg-purple-400', pill: 'bg-purple-500/10 border-purple-500/30 text-purple-300', input: 'focus:border-purple-500' },
   amber:  { btn: 'bg-amber-500 hover:bg-amber-400',   pill: 'bg-amber-500/10 border-amber-500/30 text-amber-300',   input: 'focus:border-amber-500' },
 };
+
+interface InviteCode {
+  id: string;
+  code: string;
+  created_at: string;
+  used_at: string | null;
+  used_by_email: string | null;
+}
+
+function generateCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I confusion
+  const seg = (n: number) => Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  return `${seg(4)}-${seg(4)}`;
+}
+
+function InviteCodesPanel({ showToast }: { showToast: (msg: string, type?: 'success' | 'error' | 'info') => void }) {
+  const [codes, setCodes] = useState<InviteCode[]>([]);
+  const [loadingCodes, setLoadingCodes] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const loadCodes = async () => {
+    setLoadingCodes(true);
+    const { data } = await supabase
+      .from('invite_codes')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(30);
+    if (data) setCodes(data as InviteCode[]);
+    setLoadingCodes(false);
+  };
+
+  useEffect(() => { loadCodes(); }, []);
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    const code = generateCode();
+    const { error } = await supabase.from('invite_codes').insert({ code });
+    if (error) {
+      showToast('Fehler: ' + error.message, 'error');
+    } else {
+      showToast(`✓ Code generiert: ${code}`, 'success');
+      await loadCodes();
+    }
+    setGenerating(false);
+  };
+
+  const copyCode = async (code: string, id: string) => {
+    await navigator.clipboard.writeText(code);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const unused = codes.filter(c => !c.used_at);
+  const used   = codes.filter(c =>  c.used_at);
+
+  return (
+    <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-white flex items-center gap-2">🔑 Einladungscodes</h3>
+          <p className="text-xs text-[#6b7280] mt-0.5">Nur du siehst diesen Bereich · jeder Code ist einmalig verwendbar</p>
+        </div>
+        <button
+          onClick={handleGenerate}
+          disabled={generating}
+          className="shrink-0 px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+        >
+          {generating ? '…' : '+ Neuer Code'}
+        </button>
+      </div>
+
+      {loadingCodes ? (
+        <p className="text-xs text-[#6b7280] animate-pulse">Laden…</p>
+      ) : codes.length === 0 ? (
+        <p className="text-xs text-[#6b7280]">Noch keine Codes — klick auf „+ Neuer Code"</p>
+      ) : (
+        <div className="space-y-3">
+          {unused.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider">Verfügbar ({unused.length})</p>
+              {unused.map(c => (
+                <div key={c.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-[#252840] border border-[#2d3148]">
+                  <span className="font-mono font-bold text-sm tracking-widest text-white flex-1">{c.code}</span>
+                  <button
+                    onClick={() => copyCode(c.code, c.id)}
+                    className="text-xs px-2.5 py-1 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/30 transition-colors shrink-0"
+                  >
+                    {copiedId === c.id ? '✓ Kopiert!' : '📋 Kopieren'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {used.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider">Verwendet ({used.length})</p>
+              {used.map(c => (
+                <div key={c.id} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-[#1a1d27] border border-[#2d3148] opacity-50">
+                  <span className="font-mono text-sm tracking-widest text-[#6b7280] line-through flex-1">{c.code}</span>
+                  <span className="text-xs text-[#6b7280] truncate max-w-[140px]">{c.used_by_email}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function TagManager({ title, icon, items, color, onAdd, onRemove, placeholder }: {
   title: string; icon: string; items: string[]; color: 'indigo' | 'purple' | 'amber';

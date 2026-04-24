@@ -771,6 +771,7 @@ export default function App() {
           <Settings
             settings={settings}
             cards={cards}
+            userEmail={user.email ?? undefined}
             onUpdateSettings={updateSettings}
             onAddSubject={addSubject}
             onRemoveSubject={removeSubject}

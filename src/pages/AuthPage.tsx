@@ -7,6 +7,7 @@ export default function AuthPage() {
   const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -22,6 +23,14 @@ export default function AuthPage() {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else if (mode === 'register') {
+        // Validate invite code before creating account
+        const { data: codeOk, error: rpcErr } = await supabase.rpc('consume_invite_code', {
+          p_code: inviteCode.trim().toUpperCase(),
+          p_email: email.trim().toLowerCase(),
+        });
+        if (rpcErr) throw new Error('Code-Prüfung fehlgeschlagen. Bitte versuche es erneut.');
+        if (!codeOk) throw new Error('Ungültiger oder bereits verwendeter Einladungscode.');
+
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
         setSuccess('Bestätigungsmail gesendet! Bitte überprüfe dein Postfach.');
@@ -94,6 +103,25 @@ export default function AuthPage() {
                   minLength={6}
                   className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2.5 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none"
                 />
+              </div>
+            )}
+
+            {mode === 'register' && (
+              <div>
+                <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-1.5">
+                  Einladungscode
+                </label>
+                <input
+                  type="text"
+                  value={inviteCode}
+                  onChange={e => setInviteCode(e.target.value.toUpperCase())}
+                  required
+                  placeholder="XXXX-XXXX"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2.5 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none font-mono tracking-widest"
+                />
+                <p className="text-xs text-[#6b7280] mt-1.5">Du brauchst einen Code von Sebi um dich zu registrieren.</p>
               </div>
             )}
 

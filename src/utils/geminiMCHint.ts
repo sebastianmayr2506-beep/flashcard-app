@@ -20,6 +20,118 @@ export interface MCHintResult {
   explanation: string;
 }
 
+// ─── Normalizer ──────────────────────────────────────────────────────────────
+// Handles all field-name variants that different AI providers return:
+//   - English (standard):  question / type / options / explanation
+//   - German (Groq/Llama): frage / typ / optionen / erklärung / antworten
+//   - Object-style options: { a: "text", b: "text", ... }  →  array
+//   - Correct answers from antworten: ["b"]  array
+//   - Wrapped objects: { mc_question: {...} }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeMCHint(raw: any): MCHintResult | null {
+  if (!raw || typeof raw !== 'object') return null;
+
+  // Unwrap common wrapper keys
+  const wrappers = ['mc_question', 'quiz', 'question', 'result', 'data', 'hint'];
+  for (const w of wrappers) {
+    if (raw[w] && typeof raw[w] === 'object' && !Array.isArray(raw[w])) {
+      // Only unwrap if the nested object looks like our target (has question/frage/options/optionen)
+      const inner = raw[w];
+      if (inner.question || inner.frage || inner.options || inner.optionen) {
+        raw = inner;
+        break;
+      }
+    }
+  }
+
+  // Resolve question string
+  const question: string =
+    raw.question ?? raw.frage ?? raw.Question ?? raw.Frage ?? '';
+  if (!question) return null;
+
+  // Resolve type
+  const rawType = (raw.type ?? raw.typ ?? raw.Type ?? raw.Typ ?? 'single')
+    .toString()
+    .toLowerCase();
+  const type: 'single' | 'multiple' = rawType === 'multiple' ? 'multiple' : 'single';
+
+  // Resolve explanation
+  const explanation: string =
+    raw.explanation ??
+    raw.erklärung ??
+    raw.erklaerung ??
+    raw.Erklärung ??
+    raw.Explanation ??
+    '';
+
+  // Collect correct answer ids from antworten / answers / correct_answers arrays
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const answerIds: Set<string> = new Set<string>();
+  const answerSource =
+    raw.antworten ?? raw.answers ?? raw.correct_answers ?? raw.correctAnswers ?? null;
+  if (Array.isArray(answerSource)) {
+    for (const a of answerSource) {
+      if (typeof a === 'string') answerIds.add(a.toLowerCase().trim());
+    }
+  }
+
+  // Resolve options
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let rawOptions: any = raw.options ?? raw.optionen ?? raw.Options ?? raw.Optionen ?? null;
+  const options: MCOption[] = [];
+
+  if (Array.isArray(rawOptions)) {
+    // Standard array format: [{id,text,correct}] or [{id,text}] (correct from antworten)
+    for (const o of rawOptions) {
+      if (!o || typeof o !== 'object') continue;
+      const id = String(o.id ?? o.Id ?? '').toLowerCase().trim();
+      const text = String(o.text ?? o.Text ?? o.label ?? o.Label ?? '');
+      if (!id || !text) continue;
+      // Prefer explicit correct field; fall back to answerIds lookup
+      const correct: boolean =
+        typeof o.correct === 'boolean'
+          ? o.correct
+          : typeof o.correct === 'string'
+          ? o.correct === 'true'
+          : answerIds.size > 0
+          ? answerIds.has(id)
+          : false;
+      options.push({ id, text, correct });
+    }
+  } else if (rawOptions && typeof rawOptions === 'object') {
+    // Object format: { a: "text", b: "text", ... }
+    for (const [k, v] of Object.entries(rawOptions)) {
+      const id = k.toLowerCase().trim();
+      const text = typeof v === 'string' ? v : String(v);
+      if (!text) continue;
+      const correct = answerIds.size > 0 ? answerIds.has(id) : false;
+      options.push({ id, text, correct });
+    }
+    // Sort by id so a,b,c,d are in order
+    options.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  if (options.length < 2) return null;
+
+  // Guarantee at least one correct answer is marked
+  const hasCorrect = options.some(o => o.correct);
+  if (!hasCorrect) {
+    // If we still have answerIds, try marking again (ids may not have matched perfectly)
+    // Otherwise fall back: mark first option as correct so UI doesn't break
+    if (answerIds.size > 0) {
+      for (const o of options) {
+        if (answerIds.has(o.id)) o.correct = true;
+      }
+    }
+    if (!options.some(o => o.correct)) {
+      options[0].correct = true;
+    }
+  }
+
+  return { question, type, options, explanation };
+}
+
 export async function generateMCHint(
   keys: AIKeys,
   front: string,
@@ -74,57 +186,19 @@ Return ONLY the JSON object, no other text.`;
   if (!text) throw new Error('Keine Antwort erhalten');
 
   // Strip accidental markdown fences (```json … ```)
-  const cleaned = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/,'').trim();
+  const cleaned = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/, '').trim();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let parsed: any;
+  let raw: any;
   try {
-    parsed = JSON.parse(cleaned);
+    raw = JSON.parse(cleaned);
   } catch {
     throw new Error('KI hat kein gültiges JSON zurückgegeben');
   }
 
-  // Unwrap top-level wrapper keys some models use
-  const wrapper = parsed.mc_question ?? parsed.quiz ?? parsed.mc ?? parsed.result ?? parsed.data;
-  if (wrapper && typeof wrapper === 'object') parsed = wrapper;
-
-  // Normalize German field names → English
-  if (!parsed.question)     parsed.question     = parsed.frage      ?? parsed.fragestellung ?? parsed.titel ?? '';
-  if (!parsed.type)         parsed.type         = parsed.typ        ?? parsed.fragetyp      ?? 'single';
-  if (!parsed.explanation)  parsed.explanation  = parsed.erklaerung ?? parsed.erklärung     ?? parsed.begruendung ?? '';
-
-  // Normalize options: object {a:"text",...} → array [{id,text,correct}]
-  if (!Array.isArray(parsed.options)) {
-    const raw = parsed.options ?? parsed.optionen ?? parsed.antworten ?? parsed.choices ?? {};
-    if (typeof raw === 'object' && !Array.isArray(raw)) {
-      // Try to find which option is marked as correct
-      const correctKey: string =
-        parsed.correct_answer ?? parsed.richtige_antwort ?? parsed.correct ?? parsed.answer ?? '';
-      parsed.options = Object.entries(raw).map(([id, text]) => ({
-        id,
-        text: String(text),
-        correct: correctKey
-          ? id.toLowerCase() === String(correctKey).toLowerCase().replace(/[^a-d]/g, '')
-          : false,
-      }));
-    }
-  }
-
-  // Normalize each option's fields (some models use different names)
-  if (Array.isArray(parsed.options)) {
-    parsed.options = parsed.options.map((o: Record<string, unknown>, i: number) => ({
-      id:      String(o.id      ?? o.buchstabe ?? String.fromCharCode(97 + i)),
-      text:    String(o.text    ?? o.antwort   ?? o.content ?? o.value ?? ''),
-      correct: Boolean(o.correct ?? o.korrekt  ?? o.richtig ?? false),
-    }));
-  }
-
-  if (!parsed.question || !Array.isArray(parsed.options) || parsed.options.length < 2) {
-    console.error('[MC hint] unexpected structure:', JSON.stringify(parsed).slice(0, 400));
+  const result = normalizeMCHint(raw);
+  if (!result) {
+    console.error('[MC hint] could not normalize:', JSON.stringify(raw).slice(0, 400));
     throw new Error('KI hat eine unerwartete Struktur zurückgegeben — bitte nochmal versuchen');
   }
-
-  // Ensure type is valid
-  if (parsed.type !== 'single' && parsed.type !== 'multiple') parsed.type = 'single';
-
-  return parsed as MCHintResult;
+  return result;
 }

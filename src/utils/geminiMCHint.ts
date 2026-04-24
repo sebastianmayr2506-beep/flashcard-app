@@ -2,7 +2,8 @@
 // question from a flashcard's front+back to help the learner recall.
 // This NEVER feeds into SRS — it's a pure learning aid.
 
-import { callGeminiWithRetry } from './geminiModels';
+import { callAIWithFallback } from './geminiModels';
+import type { AIKeys } from './geminiModels';
 
 export interface MCOption {
   id: string;    // 'a' | 'b' | 'c' | 'd'
@@ -20,11 +21,13 @@ export interface MCHintResult {
 }
 
 export async function generateMCHint(
-  apiKey: string,
+  keys: AIKeys,
   front: string,
   back: string,
 ): Promise<MCHintResult> {
-  if (!apiKey.trim()) throw new Error('Kein Gemini API-Schlüssel hinterlegt');
+  if (!keys.gemini?.trim() && !keys.anthropic?.trim() && !keys.groq?.trim()) {
+    throw new Error('Kein AI-Schlüssel konfiguriert. Bitte Gemini, Claude oder Groq in den Einstellungen hinterlegen.');
+  }
 
   const prompt = `Du bist ein Lernassistent. Du bekommst eine Karteikarte und sollst eine Lernhilfe als Multiple-Choice-Frage erstellen.
 
@@ -77,9 +80,7 @@ Gib NUR gültiges JSON zurück.`;
     },
   };
 
-  const { data } = await callGeminiWithRetry(apiKey, body);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const text: string = ((data as any)?.candidates?.[0]?.content?.parts?.[0]?.text as string) ?? '';
+  const { text } = await callAIWithFallback(keys, body, prompt);
   if (!text) throw new Error('Keine Antwort von Gemini erhalten');
   const parsed = JSON.parse(text) as MCHintResult;
   if (!parsed.question || !Array.isArray(parsed.options) || parsed.options.length < 2) {

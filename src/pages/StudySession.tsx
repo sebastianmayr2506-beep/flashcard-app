@@ -159,11 +159,15 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   };
 
   const handleRequestMCHint = async () => {
-    if (!currentCard || !settings.geminiApiKey) return;
+    if (!currentCard) return;
     const cardId = currentCard.id;
     setMcHint({ cardId, status: 'loading' });
     try {
-      const result = await generateMCHint(settings.geminiApiKey, currentCard.front, currentCard.back);
+      const result = await generateMCHint(
+        { gemini: settings.geminiApiKey, anthropic: settings.anthropicApiKey, groq: settings.groqApiKey },
+        currentCard.front,
+        currentCard.back,
+      );
       setMcHint({ cardId, status: 'ready', result, selected: [] });
     } catch (err) {
       setMcHint(null);
@@ -485,7 +489,7 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                 </p>
 
                 {/* MC Hint section — only if Gemini key is configured */}
-                {settings.geminiApiKey && (
+                {(settings.geminiApiKey || settings.anthropicApiKey || settings.groqApiKey) && (
                   <div className="w-full mt-1 border-t border-[#2d3148]/60 pt-3" onClick={e => e.stopPropagation()}>
                     {!effectiveMcHint && (
                       <button
@@ -697,6 +701,8 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
           }}
           onClose={() => setEditingCard(null)}
           geminiApiKey={settings.geminiApiKey}
+          anthropicApiKey={settings.anthropicApiKey}
+          groqApiKey={settings.groqApiKey}
           onApiError={onApiError}
         />
       )}

@@ -32,6 +32,7 @@ function fromDb(row: Record<string, any>): AppSettings {
     // API keys are stored in localStorage only (no DB column needed)
     anthropicApiKey: localStorage.getItem('anthropic_api_key') ?? undefined,
     geminiApiKey: localStorage.getItem('gemini_api_key') ?? undefined,
+    groqApiKey: localStorage.getItem('groq_api_key') ?? undefined,
   };
 }
 
@@ -129,6 +130,11 @@ export function useSettings(userId: string | null) {
       const key = updates.geminiApiKey;
       if (key) localStorage.setItem('gemini_api_key', key);
       else localStorage.removeItem('gemini_api_key');
+    }
+    if ('groqApiKey' in updates) {
+      const key = updates.groqApiKey;
+      if (key) localStorage.setItem('groq_api_key', key);
+      else localStorage.removeItem('groq_api_key');
     }
     const updated = { ...settingsRef.current, ...updates };
     settingsRef.current = updated;

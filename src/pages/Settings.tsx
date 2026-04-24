@@ -32,6 +32,8 @@ export default function Settings({
   const [showApiKey, setShowApiKey] = useState(false);
   const [geminiKeyInput, setGeminiKeyInput] = useState(settings.geminiApiKey ?? '');
   const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [groqKeyInput, setGroqKeyInput] = useState(settings.groqApiKey ?? '');
+  const [showGroqKey, setShowGroqKey] = useState(false);
 
   // Sync when settings load from Supabase after mount
   useEffect(() => {
@@ -41,6 +43,10 @@ export default function Settings({
   useEffect(() => {
     setGeminiKeyInput(settings.geminiApiKey ?? '');
   }, [settings.geminiApiKey]);
+
+  useEffect(() => {
+    setGroqKeyInput(settings.groqApiKey ?? '');
+  }, [settings.groqApiKey]);
 
   const daysUntilExam = settings.examDate
     ? Math.ceil((new Date(settings.examDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
@@ -365,6 +371,49 @@ export default function Settings({
               aistudio.google.com/apikey
             </a>
             {' '}— gratis, ohne Kreditkarte.
+          </p>
+        </div>
+
+        {/* Groq key — free fallback when Gemini is overloaded */}
+        <div className="pt-4 border-t border-[#2d3148]">
+          <h3 className="font-semibold text-white flex items-center gap-2">⚡ Groq Fallback <span className="text-xs font-normal text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded-full">kostenlos</span></h3>
+          <p className="text-xs text-[#6b7280] mt-1 mb-3">
+            Wenn Gemini überlastet ist, springt Groq automatisch ein — komplett gratis, keine Kreditkarte nötig.
+            Reihenfolge: Gemini → Claude → Groq.
+          </p>
+          <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-1.5">
+            Groq API Key
+          </label>
+          <div className="flex gap-2">
+            <div className="flex-1 flex items-center bg-[#252840] border border-[#2d3148] rounded-xl overflow-hidden focus-within:border-green-500">
+              <input
+                type={showGroqKey ? 'text' : 'password'}
+                value={groqKeyInput}
+                onChange={e => setGroqKeyInput(e.target.value)}
+                placeholder="gsk_…"
+                className="flex-1 bg-transparent px-3 py-2 text-white text-sm focus:outline-none font-mono"
+              />
+              <button onClick={() => setShowGroqKey(s => !s)} className="px-3 text-[#6b7280] hover:text-white text-xs transition-colors">
+                {showGroqKey ? '🙈' : '👁'}
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                const key = groqKeyInput.trim();
+                onUpdateSettings({ groqApiKey: key || undefined });
+                showToast(key ? 'Groq-Schlüssel gespeichert ✓' : 'Groq-Schlüssel entfernt', key ? 'success' : 'info');
+              }}
+              className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-white text-sm font-semibold transition-colors shrink-0"
+            >
+              Speichern
+            </button>
+          </div>
+          <p className="text-xs text-[#6b7280] mt-1.5">
+            Kostenlosen Key bekommst du unter{' '}
+            <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-green-400 hover:underline">
+              console.groq.com/keys
+            </a>
+            {' '}— Account erstellen, fertig.
           </p>
         </div>
       </div>

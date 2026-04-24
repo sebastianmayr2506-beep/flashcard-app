@@ -76,6 +76,7 @@ export interface AppSettings {
   };
   anthropicApiKey?: string;           // stored client-side for AI merge feature
   geminiApiKey?: string;              // stored client-side for AI card revision (Google AI Studio)
+  groqApiKey?: string;               // stored client-side for Groq fallback (free, no credit card)
   studyOrder?: 'new-first' | 'review-first' | 'mixed'; // stored client-side
 }
 

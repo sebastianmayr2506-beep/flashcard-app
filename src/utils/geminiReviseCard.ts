@@ -2,10 +2,12 @@
 // "improve this card based on my feedback" style edits.
 // Uses Google AI Studio's generateContent endpoint with structured JSON output.
 
-import { callGeminiWithRetry } from './geminiModels';
+import { callAIWithFallback } from './geminiModels';
+import type { AIKeys } from './geminiModels';
 
 export interface GeminiReviseInput {
-  apiKey: string;
+  apiKey: string;       // Gemini key (primary)
+  fallbackKeys?: Omit<AIKeys, 'gemini'>; // anthropic + groq fallbacks
   front: string;
   back: string;
   feedback: string;
@@ -65,10 +67,9 @@ Bitte überarbeite die Karte entsprechend und gib das Ergebnis als JSON mit den 
     },
   };
 
-  const { data, model } = await callGeminiWithRetry(input.apiKey, body);
-  console.log('[geminiRevise] using model:', model);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const text: string = ((data as any)?.candidates?.[0]?.content?.parts?.[0]?.text as string) ?? '';
+  const keys: AIKeys = { gemini: input.apiKey, ...input.fallbackKeys };
+  const { text, provider } = await callAIWithFallback(keys, body, userMessage);
+  console.log('[geminiRevise] provider:', provider);
   if (!text) throw new Error('Gemini hat keine Antwort zurückgegeben');
   const parsed = JSON.parse(text);
   return {

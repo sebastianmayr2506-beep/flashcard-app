@@ -8,6 +8,8 @@ interface Props {
   onSave: (id: string, data: Partial<Flashcard>) => void;
   onClose: () => void;
   geminiApiKey?: string;
+  anthropicApiKey?: string;
+  groqApiKey?: string;
   onApiError?: (message: string) => void;
 }
 
@@ -15,7 +17,7 @@ interface Props {
  * Lightweight inline editor for fixing front/back text during a study or
  * exam session without losing session state. Saves via updateCard.
  */
-export default function QuickEditModal({ card, onSave, onClose, geminiApiKey, onApiError }: Props) {
+export default function QuickEditModal({ card, onSave, onClose, geminiApiKey, anthropicApiKey, groqApiKey, onApiError }: Props) {
   const [front, setFront] = useState(card.front);
   const [back, setBack] = useState(card.back);
   const [frontImage, setFrontImage] = useState<CardImage | undefined>(card.frontImage);
@@ -48,7 +50,8 @@ export default function QuickEditModal({ card, onSave, onClose, geminiApiKey, on
     setAiLoading(true);
     try {
       const result = await reviseCardWithGemini({
-        apiKey: geminiApiKey,
+        apiKey: geminiApiKey ?? '',
+        fallbackKeys: { anthropic: anthropicApiKey, groq: groqApiKey },
         front,
         back,
         feedback: aiFeedback.trim(),

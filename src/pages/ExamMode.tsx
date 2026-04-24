@@ -553,6 +553,8 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
             }}
             onClose={() => setEditingCard(null)}
             geminiApiKey={settings.geminiApiKey}
+            anthropicApiKey={settings.anthropicApiKey}
+            groqApiKey={settings.groqApiKey}
             onApiError={onApiError}
           />
         )}

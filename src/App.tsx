@@ -132,9 +132,10 @@ export default function App() {
 
     const newSnapshot = {
       date: today,
-      totalCards: hasSnapToday
-        ? Math.max(snap.totalCards, doneSoFar + plan.totalToday)
-        : doneSoFar + plan.totalToday,
+      // Always = done + currently-remaining, no Math.max ratchet.
+      // The old ratchet made the number grow and never shrink, which diverged
+      // from reality once cards were pushed to tomorrow via "Schwer" ratings.
+      totalCards: doneSoFar + plan.totalToday,
       newCardsDone: newDoneToday,
       totalDone: doneSoFar,
     };

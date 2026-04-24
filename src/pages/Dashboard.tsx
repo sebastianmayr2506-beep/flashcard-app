@@ -81,11 +81,16 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
     !unflagNotif.dismissed;
 
   // Progress bar for today's goal.
-  // Prefer snapshot total (set at session-start and accounts for all planned work).
-  // If no snapshot yet, compute it as ratedToday + remaining planned — so the bar
-  // already reflects reviews done before the user pressed "Jetzt lernen".
-  const snapshotTotal = snap?.date === today ? snap.totalCards : ratedToday + plan.totalToday;
-  const progressTotal = Math.max(snapshotTotal, ratedToday);
+  //
+  // Denominator = what the user *actually* has to do today:
+  //   erledigt (ratedToday) + offen (plan.totalToday)
+  //
+  // This always balances by construction — so the bar matches the two counter
+  // tiles above it. A stale snapshot.totalCards is deliberately NOT used here:
+  // it used to ratchet up (via Math.max) and never shrank when cards rated
+  // "Schwer" got pushed to tomorrow, producing totals like "36 von 61" when
+  // the reality was "36 von 48". See chat thread "Progress bar 61 Bug".
+  const progressTotal = ratedToday + plan.totalToday;
   const progressPct = progressTotal > 0 ? Math.min(100, Math.round((ratedToday / progressTotal) * 100)) : 0;
 
   return (

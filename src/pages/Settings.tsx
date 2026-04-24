@@ -477,7 +477,7 @@ function TagManager({ title, icon, items, color, onAdd, onRemove, placeholder }:
           </span>
         ))}
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row gap-2">
         <input
           type="text"
           value={input}
@@ -489,7 +489,7 @@ function TagManager({ title, icon, items, color, onAdd, onRemove, placeholder }:
         <button
           onClick={handleAdd}
           disabled={!input.trim()}
-          className={`px-4 py-2 rounded-xl text-white text-sm font-medium transition-colors disabled:opacity-40 ${c.btn}`}
+          className={`w-full sm:w-auto px-4 py-2 rounded-xl text-white text-sm font-medium transition-colors disabled:opacity-40 shrink-0 ${c.btn}`}
         >
           + Hinzufügen
         </button>

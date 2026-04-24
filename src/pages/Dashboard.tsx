@@ -117,6 +117,10 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
           color={stats.due.length > 0 ? 'text-indigo-400' : 'text-white'}
           bg={stats.due.length > 0 ? 'bg-indigo-500/10 border-indigo-500/30 pulse-glow' : 'bg-[#1e2130] border-[#2d3148]'}
           onClick={() => onNavigate('study')}
+          breakdown={stats.due.length > 0 ? [
+            { icon: '🔄', label: 'Wdh.', value: plan.reviewCards.length, color: 'text-amber-300' },
+            { icon: '✨', label: 'Neu',  value: plan.newCards.length,    color: 'text-purple-300' },
+          ] : undefined}
         />
         <StatCard value={stats.srsGroups.beherrscht} label="Beherrscht" icon="✅" color="text-green-400" bg="bg-[#1e2130] border-[#2d3148]" />
         <StatCard value={`${settings.studyStreak}🔥`} label="Lerntage in Folge" icon="" color="text-amber-400" bg="bg-[#1e2130] border-[#2d3148]" />
@@ -399,8 +403,9 @@ function DailyGoalCard({ plan, ratedToday, progressPct, progressTotal, onStart }
 interface StatCardProps {
   value: number | string; label: string; icon: string;
   color: string; bg: string; onClick?: () => void;
+  breakdown?: Array<{ icon: string; label: string; value: number; color?: string }>;
 }
-function StatCard({ value, label, icon, color, bg, onClick }: StatCardProps) {
+function StatCard({ value, label, icon, color, bg, onClick, breakdown }: StatCardProps) {
   return (
     <div
       className={`${bg} border rounded-2xl p-4 transition-all duration-200 ${onClick ? 'cursor-pointer hover:scale-[1.02]' : ''}`}
@@ -413,6 +418,21 @@ function StatCard({ value, label, icon, color, bg, onClick }: StatCardProps) {
         </div>
         {icon && <span className="text-2xl">{icon}</span>}
       </div>
+      {breakdown && breakdown.length > 0 && (
+        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/5">
+          {breakdown.map((b, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-1.5 text-xs"
+              title={b.label}
+            >
+              <span>{b.icon}</span>
+              <span className={`font-semibold ${b.color ?? 'text-white/90'}`}>{b.value}</span>
+              <span className="text-[#6b7280] hidden sm:inline">{b.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

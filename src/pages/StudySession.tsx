@@ -467,101 +467,102 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
               )}
             </div>
             {/* Back */}
-            <div className="card-face card-back-face bg-[#1e2130] border border-indigo-500/40 rounded-3xl flex flex-col select-none relative" style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
-              <div className="absolute right-3 top-3 flex items-center gap-1 z-10">
-                {(() => {
-                  const liveCard = cards.find(c => c.id === currentCard.id) ?? currentCard;
-                  const isDup = liveCard.customTags.includes('duplikat');
-                  return (
+            <div className="card-face card-back-face bg-[#1e2130] border border-indigo-500/40 rounded-3xl flex flex-col select-none" style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
+              {/* Header row: label left, action icons right — no overlap */}
+              <div className="shrink-0 flex items-center justify-between px-3 pt-3 pb-2 border-b border-[#2d3148]/60" onClick={e => e.stopPropagation()}>
+                <span className="text-xs font-semibold text-purple-400 uppercase tracking-widest pl-1">Antwort</span>
+                <div className="flex items-center gap-1">
+                  {(() => {
+                    const liveCard = cards.find(c => c.id === currentCard.id) ?? currentCard;
+                    const isDup = liveCard.customTags.includes('duplikat');
+                    return (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          onUpdateCard(currentCard.id, {
+                            customTags: isDup
+                              ? liveCard.customTags.filter(t => t !== 'duplikat')
+                              : [...liveCard.customTags, 'duplikat'],
+                          });
+                        }}
+                        title={isDup ? 'Duplikat-Tag entfernen' : 'Als Duplikat markieren'}
+                        className={`text-xs px-2 py-1.5 rounded-lg border transition-colors ${
+                          isDup
+                            ? 'bg-orange-500/20 border-orange-500/40 text-orange-400'
+                            : 'text-[#6b7280] hover:text-orange-400 border-transparent hover:bg-[#252840]'
+                        }`}
+                      >
+                        {isDup ? '🔁 Duplikat' : '🔁'}
+                      </button>
+                    );
+                  })()}
+                  {(() => {
+                    const liveCard = cards.find(c => c.id === currentCard.id) ?? currentCard;
+                    const isFlagged = !!liveCard.flagged;
+                    return (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          onUpdateCard(currentCard.id, { flagged: !isFlagged });
+                        }}
+                        title={isFlagged ? 'Flagge entfernen' : 'Als schwierig flaggen'}
+                        className={`text-base px-2 py-1.5 rounded-lg border transition-colors ${
+                          isFlagged
+                            ? 'bg-red-500/20 border-red-500/40 text-red-400'
+                            : 'text-[#6b7280] hover:text-red-400 border-transparent hover:bg-[#252840]'
+                        }`}
+                      >
+                        🚩
+                      </button>
+                    );
+                  })()}
+                  {onSplitCard && (
                     <button
-                      onClick={e => {
-                        e.stopPropagation();
-                        onUpdateCard(currentCard.id, {
-                          customTags: isDup
-                            ? liveCard.customTags.filter(t => t !== 'duplikat')
-                            : [...liveCard.customTags, 'duplikat'],
-                        });
-                      }}
-                      title={isDup ? 'Duplikat-Tag entfernen' : 'Als Duplikat markieren'}
-                      className={`text-xs px-2 py-1 rounded-lg border transition-colors ${
-                        isDup
-                          ? 'bg-orange-500/20 border-orange-500/40 text-orange-400'
-                          : 'text-[#6b7280] hover:text-orange-400 border-transparent hover:bg-[#252840]'
+                      onClick={e => { e.stopPropagation(); handleSplitCurrent(); }}
+                      disabled={splitInProgress}
+                      className={`text-base px-2 py-1.5 rounded-lg border transition-colors ${
+                        splitInProgress
+                          ? 'border-indigo-500/40 text-indigo-400 bg-indigo-500/10 animate-pulse cursor-wait'
+                          : 'text-[#6b7280] hover:text-indigo-400 border-transparent hover:bg-[#252840]'
                       }`}
+                      title="Karte mit KI trennen"
                     >
-                      {isDup ? '🔁 Duplikat' : '🔁'}
+                      ✂️
                     </button>
-                  );
-                })()}
-                {(() => {
-                  const liveCard = cards.find(c => c.id === currentCard.id) ?? currentCard;
-                  const isFlagged = !!liveCard.flagged;
-                  return (
-                    <button
-                      onClick={e => {
-                        e.stopPropagation();
-                        onUpdateCard(currentCard.id, { flagged: !isFlagged });
-                      }}
-                      title={isFlagged ? 'Flagge entfernen' : 'Als schwierig flaggen'}
-                      className={`text-base px-2 py-1 rounded-lg border transition-colors ${
-                        isFlagged
-                          ? 'bg-red-500/20 border-red-500/40 text-red-400'
-                          : 'text-[#6b7280] hover:text-red-400 border-transparent hover:bg-[#252840]'
-                      }`}
-                    >
-                      🚩
-                    </button>
-                  );
-                })()}
-                {onSplitCard && (
+                  )}
                   <button
-                    onClick={e => { e.stopPropagation(); handleSplitCurrent(); }}
-                    disabled={splitInProgress}
-                    className={`text-base px-2 py-1 rounded-lg border transition-colors ${
-                      splitInProgress
-                        ? 'border-indigo-500/40 text-indigo-400 bg-indigo-500/10 animate-pulse cursor-wait'
-                        : 'text-[#6b7280] hover:text-indigo-400 border-transparent hover:bg-[#252840]'
-                    }`}
-                    title="Karte mit KI trennen"
+                    onClick={e => { e.stopPropagation(); setEditingCard(currentCard); }}
+                    className="text-[#6b7280] hover:text-indigo-400 text-base transition-colors px-2 py-1.5 rounded-lg hover:bg-[#252840]"
+                    title="Karte bearbeiten"
                   >
-                    ✂️
+                    ✏️
                   </button>
-                )}
-                <button
-                  onClick={e => { e.stopPropagation(); setEditingCard(currentCard); }}
-                  className="text-[#6b7280] hover:text-indigo-400 text-base transition-colors px-2 py-1 rounded-lg hover:bg-[#252840]"
-                  title="Karte bearbeiten"
-                >
-                  ✏️
-                </button>
-                {confirmDeleteId === currentCard.id ? (
-                  <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                    <span className="text-xs text-red-400 font-medium whitespace-nowrap">Löschen?</span>
+                  {confirmDeleteId === currentCard.id ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-red-400 font-medium whitespace-nowrap">Löschen?</span>
+                      <button
+                        onClick={e => { e.stopPropagation(); handleDeleteCurrent(); }}
+                        className="text-xs px-2 py-1 rounded-lg bg-red-500/20 border border-red-500/40 text-red-400 hover:bg-red-500/30 transition-colors font-semibold"
+                      >
+                        Ja
+                      </button>
+                      <button
+                        onClick={e => { e.stopPropagation(); setConfirmDeleteId(null); }}
+                        className="text-xs px-2 py-1 rounded-lg bg-[#252840] border border-[#2d3148] text-[#9ca3af] hover:text-white transition-colors"
+                      >
+                        Nein
+                      </button>
+                    </div>
+                  ) : (
                     <button
-                      onClick={e => { e.stopPropagation(); handleDeleteCurrent(); }}
-                      className="text-xs px-2 py-1 rounded-lg bg-red-500/20 border border-red-500/40 text-red-400 hover:bg-red-500/30 transition-colors font-semibold"
+                      onClick={e => { e.stopPropagation(); setConfirmDeleteId(currentCard.id); }}
+                      className="text-[#6b7280] hover:text-red-400 text-base transition-colors px-2 py-1.5 rounded-lg hover:bg-[#252840]"
+                      title="Karte löschen"
                     >
-                      Ja
+                      🗑️
                     </button>
-                    <button
-                      onClick={e => { e.stopPropagation(); setConfirmDeleteId(null); }}
-                      className="text-xs px-2 py-1 rounded-lg bg-[#252840] border border-[#2d3148] text-[#9ca3af] hover:text-white transition-colors"
-                    >
-                      Nein
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={e => { e.stopPropagation(); setConfirmDeleteId(currentCard.id); }}
-                    className="text-[#6b7280] hover:text-red-400 text-base transition-colors px-2 py-1 rounded-lg hover:bg-[#252840]"
-                    title="Karte löschen"
-                  >
-                    🗑️
-                  </button>
-                )}
-              </div>
-              <div className="shrink-0 pt-5 pb-2 text-center">
-                <span className="text-xs font-semibold text-purple-400 uppercase tracking-widest">Antwort</span>
+                  )}
+                </div>
               </div>
               <div className="flex-1 overflow-y-auto px-6 md:px-10 pb-6 flex flex-col items-start gap-3">
                 {backImg && <img src={backImg} alt="" onClick={e => { e.stopPropagation(); setZoomedImg(backImg); }} className="max-h-40 max-w-full object-contain rounded-xl cursor-zoom-in" />}

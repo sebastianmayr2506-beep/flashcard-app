@@ -193,18 +193,6 @@ export async function callAIWithFallback(
     }
   }
 
-  if (keys.anthropic?.trim()) {
-    tried.push('Claude');
-    try {
-      const text = await tryClaude(keys.anthropic, promptText);
-      console.log('[AI fallback] using Claude');
-      return { text, provider: 'claude' };
-    } catch (err) {
-      errors.push(`Claude: ${err instanceof Error ? err.message : err}`);
-      console.warn('[AI fallback] Claude fehlgeschlagen:', errors.at(-1));
-    }
-  }
-
   if (keys.groq?.trim()) {
     tried.push('Groq');
     try {
@@ -214,6 +202,18 @@ export async function callAIWithFallback(
     } catch (err) {
       errors.push(`Groq: ${err instanceof Error ? err.message : err}`);
       console.warn('[AI fallback] Groq fehlgeschlagen:', errors.at(-1));
+    }
+  }
+
+  if (keys.anthropic?.trim()) {
+    tried.push('Claude');
+    try {
+      const text = await tryClaude(keys.anthropic, promptText);
+      console.log('[AI fallback] using Claude');
+      return { text, provider: 'claude' };
+    } catch (err) {
+      errors.push(`Claude: ${err instanceof Error ? err.message : err}`);
+      console.warn('[AI fallback] Claude fehlgeschlagen:', errors.at(-1));
     }
   }
 

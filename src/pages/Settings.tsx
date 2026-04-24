@@ -379,7 +379,7 @@ export default function Settings({
           <h3 className="font-semibold text-white flex items-center gap-2">⚡ Groq Fallback <span className="text-xs font-normal text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded-full">kostenlos</span></h3>
           <p className="text-xs text-[#6b7280] mt-1 mb-3">
             Wenn Gemini überlastet ist, springt Groq automatisch ein — komplett gratis, keine Kreditkarte nötig.
-            Reihenfolge: Gemini → Claude → Groq.
+            Reihenfolge: Gemini → Groq → Claude.
           </p>
           <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-1.5">
             Groq API Key

@@ -18,10 +18,10 @@ export interface MCHintResult {
 }
 
 const MODEL_CANDIDATES = [
-  'gemini-2.5-flash',
   'gemini-2.0-flash',
-  'gemini-flash-latest',
-  'gemini-1.5-flash',
+  'gemini-2.0-flash-lite',
+  'gemini-1.5-flash-latest',
+  'gemini-1.5-flash-001',
 ];
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -75,8 +75,6 @@ Gib NUR gültiges JSON zurück.`;
           type: { type: 'string', enum: ['single', 'multiple'] },
           options: {
             type: 'array',
-            minItems: 4,
-            maxItems: 4,
             items: {
               type: 'object',
               properties: {

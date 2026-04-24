@@ -31,10 +31,10 @@ WICHTIG: Der Nutzer möchte NUR die Antwort (back) geändert haben. Die Frage (f
 
 /** Gemini models ordered by preference (newest/best first). */
 const MODEL_CANDIDATES = [
-  'gemini-2.5-flash',
   'gemini-2.0-flash',
-  'gemini-flash-latest',
-  'gemini-1.5-flash',
+  'gemini-2.0-flash-lite',
+  'gemini-1.5-flash-latest',
+  'gemini-1.5-flash-001',
 ];
 
 async function callGemini(model: string, apiKey: string, body: unknown): Promise<Response> {

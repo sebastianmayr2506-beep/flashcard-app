@@ -5,6 +5,8 @@ import DifficultyBadge from '../components/DifficultyBadge';
 import MarkdownText from '../components/MarkdownText';
 import { LinkedCardsPanel } from '../components/LinkedCards';
 import QuickEditModal from '../components/QuickEditModal';
+import { generateMCHint } from '../utils/geminiMCHint';
+import type { MCHintResult } from '../utils/geminiMCHint';
 
 export interface DailyPlanSession {
   reviewCards: Flashcard[];
@@ -30,6 +32,12 @@ interface Props {
 
 type SessionState = 'setup' | 'studying' | 'summary';
 type StudyOrder = 'new-first' | 'review-first' | 'mixed';
+
+/** MC hint state — null means idle; cardId auto-invalidates when card changes */
+type MCHintState =
+  | { cardId: string; status: 'loading' }
+  | { cardId: string; status: 'ready';     result: MCHintResult; selected: string[] }
+  | { cardId: string; status: 'submitted'; result: MCHintResult; selected: string[]; isCorrect: boolean };
 
 interface RatingCount {
   nochmal: number; schwer: number; gut: number; einfach: number;
@@ -57,6 +65,7 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [splitInProgress, setSplitInProgress] = useState(false);
+  const [mcHint, setMcHint] = useState<MCHintState | null>(null);
 
   // Cards available for setup
   const availableCards = useMemo(() => {
@@ -149,6 +158,19 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     });
   };
 
+  const handleRequestMCHint = async () => {
+    if (!currentCard || !settings.geminiApiKey) return;
+    const cardId = currentCard.id;
+    setMcHint({ cardId, status: 'loading' });
+    try {
+      const result = await generateMCHint(settings.geminiApiKey, currentCard.front, currentCard.back);
+      setMcHint({ cardId, status: 'ready', result, selected: [] });
+    } catch (err) {
+      setMcHint(null);
+      onApiError?.(err instanceof Error ? err.message : 'MC-Tipp konnte nicht generiert werden');
+    }
+  };
+
   const handleRate = (rating: RatingValue) => {
     const card = sessionCards[currentIdx];
     setConfirmDeleteId(null);
@@ -172,6 +194,8 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   };
 
   const currentCard = sessionCards[currentIdx];
+  // Auto-invalidate MC hint when the card changes
+  const effectiveMcHint = mcHint?.cardId === currentCard?.id ? mcHint : null;
 
   const imgSrc = (img: Flashcard['frontImage']) => img
     ? (img.type === 'base64' ? `data:${img.mimeType ?? 'image/png'};base64,${img.data}` : img.data)
@@ -459,8 +483,54 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                 <p className="text-lg md:text-xl font-medium text-white text-left leading-relaxed w-full">
                   <MarkdownText text={currentCard.front} />
                 </p>
+
+                {/* MC Hint section — only if Gemini key is configured */}
+                {settings.geminiApiKey && (
+                  <div className="w-full mt-1 border-t border-[#2d3148]/60 pt-3" onClick={e => e.stopPropagation()}>
+                    {!effectiveMcHint && (
+                      <button
+                        onClick={handleRequestMCHint}
+                        className="flex items-center gap-2 text-xs text-[#6b7280] hover:text-indigo-400 transition-colors py-1 group"
+                      >
+                        <span className="text-sm group-hover:scale-110 transition-transform">💡</span>
+                        <span>Tipp als MC-Frage generieren</span>
+                      </button>
+                    )}
+                    {effectiveMcHint?.status === 'loading' && (
+                      <div className="flex items-center gap-2 text-xs text-indigo-400 animate-pulse">
+                        <span className="inline-block w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                        <span>Generiere Tipp…</span>
+                      </div>
+                    )}
+                    {(effectiveMcHint?.status === 'ready' || effectiveMcHint?.status === 'submitted') && (
+                      <MCHintWidget
+                        hint={effectiveMcHint.result}
+                        selected={effectiveMcHint.selected}
+                        submitted={effectiveMcHint.status === 'submitted'}
+                        isCorrect={effectiveMcHint.status === 'submitted' ? effectiveMcHint.isCorrect : false}
+                        onToggle={(id) => {
+                          if (effectiveMcHint.status !== 'ready') return;
+                          const { result, selected } = effectiveMcHint;
+                          const next = result.type === 'single'
+                            ? [id]
+                            : selected.includes(id) ? selected.filter(s => s !== id) : [...selected, id];
+                          setMcHint({ cardId: currentCard.id, status: 'ready', result, selected: next });
+                        }}
+                        onSubmit={() => {
+                          if (effectiveMcHint.status !== 'ready') return;
+                          const { result, selected } = effectiveMcHint;
+                          const correctIds = result.options.filter(o => o.correct).map(o => o.id);
+                          const isCorrect =
+                            selected.length === correctIds.length &&
+                            selected.every(id => correctIds.includes(id));
+                          setMcHint({ cardId: currentCard.id, status: 'submitted', result, selected, isCorrect });
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
               </div>
-              {!isFlipped && (
+              {!isFlipped && !effectiveMcHint && (
                 <div className="shrink-0 pb-4 text-center">
                   <p className="text-xs text-[#6b7280] animate-pulse">Klicke zum Umdrehen</p>
                 </div>
@@ -639,6 +709,103 @@ function RatingSummaryCard({ label, count, color, bg }: { label: string; count: 
     <div className={`${bg} border rounded-xl p-3 text-center`}>
       <p className={`text-2xl font-bold ${color}`}>{count}</p>
       <p className="text-xs text-[#9ca3af] mt-0.5">{label}</p>
+    </div>
+  );
+}
+
+interface MCHintWidgetProps {
+  hint: MCHintResult;
+  selected: string[];
+  submitted: boolean;
+  isCorrect: boolean;
+  onToggle: (id: string) => void;
+  onSubmit: () => void;
+}
+
+function MCHintWidget({ hint, selected, submitted, isCorrect, onToggle, onSubmit }: MCHintWidgetProps) {
+  return (
+    <div className="w-full space-y-2.5">
+      {/* Question + type badge */}
+      <div className="flex items-start gap-2">
+        <span className="text-sm">💡</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-white leading-snug">{hint.question}</p>
+          <span className={`inline-block mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide ${
+            hint.type === 'single'
+              ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
+              : 'bg-violet-500/15 text-violet-400 border border-violet-500/30'
+          }`}>
+            {hint.type === 'single' ? 'Single Choice – 1 Antwort' : 'Multiple Choice – mehrere Antworten'}
+          </span>
+        </div>
+      </div>
+
+      {/* Options */}
+      <div className="space-y-1.5">
+        {hint.options.map(opt => {
+          const isSelected = selected.includes(opt.id);
+          const showResult = submitted;
+          let optStyle = '';
+          if (showResult) {
+            if (opt.correct && isSelected)  optStyle = 'bg-green-500/15 border-green-500/50 text-green-300';
+            else if (opt.correct && !isSelected) optStyle = 'bg-green-500/10 border-green-500/30 text-green-400/70';
+            else if (!opt.correct && isSelected) optStyle = 'bg-red-500/15 border-red-500/50 text-red-300';
+            else optStyle = 'bg-[#1a1d27] border-[#2d3148] text-[#6b7280]';
+          } else {
+            optStyle = isSelected
+              ? 'bg-indigo-500/15 border-indigo-500/50 text-white'
+              : 'bg-[#1a1d27] border-[#2d3148] text-[#9ca3af] hover:border-indigo-500/40 hover:text-white';
+          }
+
+          return (
+            <button
+              key={opt.id}
+              disabled={submitted}
+              onClick={() => onToggle(opt.id)}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl border text-left transition-all text-sm ${optStyle} ${submitted ? 'cursor-default' : 'cursor-pointer'}`}
+            >
+              {/* Indicator */}
+              <span className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-bold transition-all ${
+                showResult
+                  ? opt.correct ? 'border-green-500 bg-green-500/20 text-green-400' : isSelected ? 'border-red-500 bg-red-500/20 text-red-400' : 'border-[#2d3148] text-transparent'
+                  : isSelected ? 'border-indigo-400 bg-indigo-500/20 text-indigo-300' : 'border-[#2d3148] text-transparent'
+              }`}>
+                {showResult
+                  ? (opt.correct ? '✓' : isSelected ? '✗' : '')
+                  : (isSelected ? (hint.type === 'single' ? '●' : '✓') : '')}
+              </span>
+              <span className="font-semibold text-xs uppercase mr-1 shrink-0 opacity-60">{opt.id})</span>
+              <span className="leading-snug">{opt.text}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Submit button or result */}
+      {!submitted ? (
+        <button
+          disabled={selected.length === 0}
+          onClick={onSubmit}
+          className="w-full py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 text-sm font-semibold transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          Auswahl prüfen
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-semibold ${
+            isCorrect
+              ? 'bg-green-500/10 border-green-500/30 text-green-400'
+              : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+          }`}>
+            <span>{isCorrect ? '✓ Richtig!' : '✗ Nicht ganz —'}</span>
+            {!isCorrect && <span className="font-normal text-xs">schau dir die grünen Optionen an</span>}
+          </div>
+          {hint.explanation && (
+            <p className="text-xs text-[#9ca3af] leading-relaxed px-1">{hint.explanation}</p>
+          )}
+          <p className="text-[10px] text-[#6b7280] px-1 italic">Kein Einfluss auf SRS — jetzt normal aufdecken & bewerten</p>
+        </div>
+      )}
     </div>
   );
 }

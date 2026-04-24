@@ -80,16 +80,26 @@ Bitte überarbeite die Karte entsprechend und gib das Ergebnis als JSON mit den 
     },
   };
 
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
   // Try models in order until one works (some are only available on certain tiers).
+  let lastStatus = 0;
   let lastError: string = '';
   for (const model of MODEL_CANDIDATES) {
     try {
       const res = await callGemini(model, input.apiKey, body);
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
-        lastError = `${res.status} ${errText}`;
-        // 404/400 → try next model; other errors (e.g. 401 bad key) → abort
+        lastStatus = res.status;
+        lastError = errText;
+        // 404/400 → model not found/bad request → try next model silently
         if (res.status === 404 || res.status === 400) continue;
+        // 429/503 → overloaded or rate-limited → wait briefly, then try next model
+        if (res.status === 429 || res.status === 503) {
+          await delay(1500);
+          continue;
+        }
+        // 401/403 → bad API key → abort immediately, no point retrying
         throw new Error(`Gemini API Fehler ${res.status}: ${errText}`);
       }
 
@@ -109,6 +119,14 @@ Bitte überarbeite die Karte entsprechend und gib das Ergebnis als JSON mit den 
       lastError = err instanceof Error ? err.message : String(err);
       continue;
     }
+  }
+
+  // All models failed — give a helpful German error message
+  if (lastStatus === 503) {
+    throw new Error('Gemini ist gerade überlastet (503). Bitte in ein paar Sekunden nochmal versuchen.');
+  }
+  if (lastStatus === 429) {
+    throw new Error('Gemini-Kontingent erschöpft (429). Bitte kurz warten und nochmal versuchen.');
   }
   throw new Error(`Kein Gemini-Modell erreichbar. Letzter Fehler: ${lastError}`);
 }

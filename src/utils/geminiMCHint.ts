@@ -29,27 +29,36 @@ export async function generateMCHint(
     throw new Error('Kein AI-Schlüssel konfiguriert. Bitte Gemini, Claude oder Groq in den Einstellungen hinterlegen.');
   }
 
-  const prompt = `Du bist ein Lernassistent. Du bekommst eine Karteikarte und sollst eine Lernhilfe als Multiple-Choice-Frage erstellen.
+  const prompt = `You are a learning assistant. Generate a multiple-choice hint question from the flashcard below.
 
-### Karte – Frage:
+### Card – Question:
 ${front}
 
-### Karte – Antwort:
+### Card – Answer:
 ${back}
 
-AUFGABE:
-Erstelle eine MC-Frage, die dem Lernenden hilft, auf die Antwort zu kommen — ohne sie direkt zu verraten.
+TASK: Create a MC question that helps the learner recall the answer without revealing it directly.
 
-REGELN:
-1. Entscheide selbst ob "single" oder "multiple":
-   - "single": wenn die Antwort auf genau EINEN zentralen Punkt hinausläuft
-   - "multiple": wenn die Antwort mehrere gleichwertige Punkte/Aspekte enthält (dann 2–3 korrekte Optionen)
-2. Immer genau 4 Optionen (id: "a", "b", "c", "d")
-3. Alle Optionen kurz und prägnant — max. 1–2 Sätze
-4. Die Ablenkoptionen (Distraktoren) sollen plausibel aber klar falsch sein
-5. Die Erklärung (explanation) fasst kurz zusammen warum die richtigen Antworten korrekt sind — auf Deutsch
+RULES:
+1. Choose "single" if there is exactly ONE correct answer, "multiple" if 2–3 answers are correct.
+2. Always exactly 4 options with ids "a", "b", "c", "d".
+3. Mark each option with correct: true or correct: false.
+4. Write question, options and explanation in GERMAN.
 
-Gib NUR gültiges JSON zurück.`;
+REQUIRED JSON FORMAT (use EXACTLY these English field names):
+{
+  "question": "Die Frage auf Deutsch",
+  "type": "single",
+  "options": [
+    {"id": "a", "text": "Option A", "correct": true},
+    {"id": "b", "text": "Option B", "correct": false},
+    {"id": "c", "text": "Option C", "correct": false},
+    {"id": "d", "text": "Option D", "correct": false}
+  ],
+  "explanation": "Kurze Erklärung auf Deutsch"
+}
+
+Return ONLY the JSON object, no other text.`;
 
   // No responseSchema — just JSON mode. Schemas are inconsistently supported
   // across Gemini models and cause "invalid structure" errors.
@@ -74,12 +83,43 @@ Gib NUR gültiges JSON zurück.`;
     throw new Error('KI hat kein gültiges JSON zurückgegeben');
   }
 
-  // Normalise: some models wrap in a top-level key
-  if (!parsed.question && parsed.mc_question) parsed = parsed.mc_question;
-  if (!parsed.question && parsed.quiz)        parsed = parsed.quiz;
+  // Unwrap top-level wrapper keys some models use
+  const wrapper = parsed.mc_question ?? parsed.quiz ?? parsed.mc ?? parsed.result ?? parsed.data;
+  if (wrapper && typeof wrapper === 'object') parsed = wrapper;
+
+  // Normalize German field names → English
+  if (!parsed.question)     parsed.question     = parsed.frage      ?? parsed.fragestellung ?? parsed.titel ?? '';
+  if (!parsed.type)         parsed.type         = parsed.typ        ?? parsed.fragetyp      ?? 'single';
+  if (!parsed.explanation)  parsed.explanation  = parsed.erklaerung ?? parsed.erklärung     ?? parsed.begruendung ?? '';
+
+  // Normalize options: object {a:"text",...} → array [{id,text,correct}]
+  if (!Array.isArray(parsed.options)) {
+    const raw = parsed.options ?? parsed.optionen ?? parsed.antworten ?? parsed.choices ?? {};
+    if (typeof raw === 'object' && !Array.isArray(raw)) {
+      // Try to find which option is marked as correct
+      const correctKey: string =
+        parsed.correct_answer ?? parsed.richtige_antwort ?? parsed.correct ?? parsed.answer ?? '';
+      parsed.options = Object.entries(raw).map(([id, text]) => ({
+        id,
+        text: String(text),
+        correct: correctKey
+          ? id.toLowerCase() === String(correctKey).toLowerCase().replace(/[^a-d]/g, '')
+          : false,
+      }));
+    }
+  }
+
+  // Normalize each option's fields (some models use different names)
+  if (Array.isArray(parsed.options)) {
+    parsed.options = parsed.options.map((o: Record<string, unknown>, i: number) => ({
+      id:      String(o.id      ?? o.buchstabe ?? String.fromCharCode(97 + i)),
+      text:    String(o.text    ?? o.antwort   ?? o.content ?? o.value ?? ''),
+      correct: Boolean(o.correct ?? o.korrekt  ?? o.richtig ?? false),
+    }));
+  }
 
   if (!parsed.question || !Array.isArray(parsed.options) || parsed.options.length < 2) {
-    console.error('[MC hint] unexpected structure:', JSON.stringify(parsed).slice(0, 300));
+    console.error('[MC hint] unexpected structure:', JSON.stringify(parsed).slice(0, 400));
     throw new Error('KI hat eine unerwartete Struktur zurückgegeben — bitte nochmal versuchen');
   }
 

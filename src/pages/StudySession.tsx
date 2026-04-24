@@ -5,7 +5,7 @@ import DifficultyBadge from '../components/DifficultyBadge';
 import MarkdownText from '../components/MarkdownText';
 import { LinkedCardsPanel } from '../components/LinkedCards';
 import QuickEditModal from '../components/QuickEditModal';
-import { generateMCHint } from '../utils/geminiMCHint';
+import { generateMCHintBundle } from '../utils/geminiMCHint';
 import type { MCHintResult } from '../utils/geminiMCHint';
 
 export interface DailyPlanSession {
@@ -33,11 +33,16 @@ interface Props {
 type SessionState = 'setup' | 'studying' | 'summary';
 type StudyOrder = 'new-first' | 'review-first' | 'mixed';
 
-/** MC hint state — null means idle; cardId auto-invalidates when card changes */
+/** One learner answer attempt — tracks what was picked and whether it was right. */
+interface MCAnswer { selected: string[]; isCorrect: boolean }
+
+/** MC hint state — bundle of up to 3 questions, stepped through one by one.
+ *  Null means idle; cardId auto-invalidates when card changes. */
 type MCHintState =
   | { cardId: string; status: 'loading' }
-  | { cardId: string; status: 'ready';     result: MCHintResult; selected: string[] }
-  | { cardId: string; status: 'submitted'; result: MCHintResult; selected: string[]; isCorrect: boolean };
+  | { cardId: string; status: 'ready';     questions: MCHintResult[]; index: number; answers: MCAnswer[]; selected: string[] }
+  | { cardId: string; status: 'submitted'; questions: MCHintResult[]; index: number; answers: MCAnswer[]; selected: string[]; isCorrect: boolean }
+  | { cardId: string; status: 'finished';  questions: MCHintResult[]; answers: MCAnswer[] };
 
 interface RatingCount {
   nochmal: number; schwer: number; gut: number; einfach: number;
@@ -163,12 +168,13 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     const cardId = currentCard.id;
     setMcHint({ cardId, status: 'loading' });
     try {
-      const result = await generateMCHint(
+      const bundle = await generateMCHintBundle(
         { gemini: settings.geminiApiKey, anthropic: settings.anthropicApiKey, groq: settings.groqApiKey },
         currentCard.front,
         currentCard.back,
+        3,
       );
-      setMcHint({ cardId, status: 'ready', result, selected: [] });
+      setMcHint({ cardId, status: 'ready', questions: bundle.questions, index: 0, answers: [], selected: [] });
     } catch (err) {
       setMcHint(null);
       onApiError?.(err instanceof Error ? err.message : 'MC-Tipp konnte nicht generiert werden');
@@ -508,27 +514,50 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                     )}
                     {(effectiveMcHint?.status === 'ready' || effectiveMcHint?.status === 'submitted') && (
                       <MCHintWidget
-                        hint={effectiveMcHint.result}
+                        hint={effectiveMcHint.questions[effectiveMcHint.index]}
+                        progress={{ current: effectiveMcHint.index + 1, total: effectiveMcHint.questions.length }}
                         selected={effectiveMcHint.selected}
                         submitted={effectiveMcHint.status === 'submitted'}
                         isCorrect={effectiveMcHint.status === 'submitted' ? effectiveMcHint.isCorrect : false}
+                        isLast={effectiveMcHint.index + 1 >= effectiveMcHint.questions.length}
                         onToggle={(id) => {
                           if (effectiveMcHint.status !== 'ready') return;
-                          const { result, selected } = effectiveMcHint;
-                          const next = result.type === 'single'
+                          const q = effectiveMcHint.questions[effectiveMcHint.index];
+                          const { selected } = effectiveMcHint;
+                          const next = q.type === 'single'
                             ? [id]
                             : selected.includes(id) ? selected.filter(s => s !== id) : [...selected, id];
-                          setMcHint({ cardId: currentCard.id, status: 'ready', result, selected: next });
+                          setMcHint({ ...effectiveMcHint, selected: next });
                         }}
                         onSubmit={() => {
                           if (effectiveMcHint.status !== 'ready') return;
-                          const { result, selected } = effectiveMcHint;
-                          const correctIds = result.options.filter(o => o.correct).map(o => o.id);
+                          const q = effectiveMcHint.questions[effectiveMcHint.index];
+                          const { selected } = effectiveMcHint;
+                          const correctIds = q.options.filter(o => o.correct).map(o => o.id);
                           const isCorrect =
                             selected.length === correctIds.length &&
                             selected.every(id => correctIds.includes(id));
-                          setMcHint({ cardId: currentCard.id, status: 'submitted', result, selected, isCorrect });
+                          setMcHint({ ...effectiveMcHint, status: 'submitted', isCorrect });
                         }}
+                        onNext={() => {
+                          if (effectiveMcHint.status !== 'submitted') return;
+                          const q = effectiveMcHint.questions[effectiveMcHint.index];
+                          const newAnswer: MCAnswer = { selected: effectiveMcHint.selected, isCorrect: effectiveMcHint.isCorrect };
+                          const allAnswers = [...effectiveMcHint.answers, newAnswer];
+                          const nextIdx = effectiveMcHint.index + 1;
+                          if (nextIdx >= effectiveMcHint.questions.length) {
+                            setMcHint({ cardId: currentCard.id, status: 'finished', questions: effectiveMcHint.questions, answers: allAnswers });
+                          } else {
+                            setMcHint({ cardId: currentCard.id, status: 'ready', questions: effectiveMcHint.questions, index: nextIdx, answers: allAnswers, selected: [] });
+                          }
+                        }}
+                      />
+                    )}
+                    {effectiveMcHint?.status === 'finished' && (
+                      <MCHintSummary
+                        questions={effectiveMcHint.questions}
+                        answers={effectiveMcHint.answers}
+                        onReset={() => setMcHint(null)}
                       />
                     )}
                   </div>
@@ -721,28 +750,51 @@ function RatingSummaryCard({ label, count, color, bg }: { label: string; count: 
 
 interface MCHintWidgetProps {
   hint: MCHintResult;
+  progress: { current: number; total: number };
   selected: string[];
   submitted: boolean;
   isCorrect: boolean;
+  isLast: boolean;
   onToggle: (id: string) => void;
   onSubmit: () => void;
+  onNext: () => void;
 }
 
-function MCHintWidget({ hint, selected, submitted, isCorrect, onToggle, onSubmit }: MCHintWidgetProps) {
+function MCHintWidget({ hint, progress, selected, submitted, isCorrect, isLast, onToggle, onSubmit, onNext }: MCHintWidgetProps) {
   return (
     <div className="w-full space-y-2.5">
-      {/* Question + type badge */}
+      {/* Progress bar */}
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-widest shrink-0">
+          Frage {progress.current}/{progress.total}
+        </span>
+        <div className="flex-1 h-1 bg-[#2d3148] rounded-full overflow-hidden">
+          <div
+            className="h-full bg-indigo-500 transition-all duration-300"
+            style={{ width: `${(progress.current / progress.total) * 100}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Question + type badge + topic badge */}
       <div className="flex items-start gap-2">
         <span className="text-sm">💡</span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-white leading-snug">{hint.question}</p>
-          <span className={`inline-block mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide ${
-            hint.type === 'single'
-              ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
-              : 'bg-violet-500/15 text-violet-400 border border-violet-500/30'
-          }`}>
-            {hint.type === 'single' ? 'Single Choice – 1 Antwort' : 'Multiple Choice – mehrere Antworten'}
-          </span>
+          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+            <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide ${
+              hint.type === 'single'
+                ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
+                : 'bg-violet-500/15 text-violet-400 border border-violet-500/30'
+            }`}>
+              {hint.type === 'single' ? 'Single Choice – 1 Antwort' : 'Multiple Choice – mehrere Antworten'}
+            </span>
+            {hint.topic && (
+              <span className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide bg-sky-500/15 text-sky-400 border border-sky-500/30">
+                {hint.topic}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -809,9 +861,108 @@ function MCHintWidget({ hint, selected, submitted, isCorrect, onToggle, onSubmit
           {hint.explanation && (
             <p className="text-xs text-[#9ca3af] leading-relaxed px-1">{hint.explanation}</p>
           )}
-          <p className="text-[10px] text-[#6b7280] px-1 italic">Kein Einfluss auf SRS — jetzt normal aufdecken & bewerten</p>
+          <button
+            onClick={onNext}
+            className="w-full py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 text-sm font-semibold transition-all flex items-center justify-center gap-2"
+          >
+            {isLast ? (
+              <>
+                <span>Auswertung ansehen</span>
+                <span>📊</span>
+              </>
+            ) : (
+              <>
+                <span>Nächste Frage</span>
+                <span>→</span>
+              </>
+            )}
+          </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Summary widget shown after the last question ──────────────────────────
+interface MCHintSummaryProps {
+  questions: MCHintResult[];
+  answers: MCAnswer[];
+  onReset: () => void;
+}
+
+function MCHintSummary({ questions, answers, onReset }: MCHintSummaryProps) {
+  const correctCount = answers.filter(a => a.isCorrect).length;
+  const total = questions.length;
+  const gaps = questions
+    .map((q, i) => ({ q, a: answers[i] }))
+    .filter(x => x.a && !x.a.isCorrect);
+
+  const scoreColor =
+    correctCount === total ? 'text-green-400 border-green-500/40 bg-green-500/10' :
+    correctCount >= Math.ceil(total / 2) ? 'text-amber-400 border-amber-500/40 bg-amber-500/10' :
+    'text-red-400 border-red-500/40 bg-red-500/10';
+
+  return (
+    <div className="w-full space-y-3">
+      {/* Score header */}
+      <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl border ${scoreColor}`}>
+        <div className="flex items-center gap-2">
+          <span className="text-lg">
+            {correctCount === total ? '🎉' : correctCount >= Math.ceil(total / 2) ? '👍' : '📚'}
+          </span>
+          <div>
+            <p className="text-sm font-bold">
+              {correctCount} / {total} richtig
+            </p>
+            <p className="text-[10px] uppercase tracking-widest opacity-70">
+              {correctCount === total ? 'Alles sitzt!' : correctCount >= Math.ceil(total / 2) ? 'Solide — ein paar Lücken' : 'Jetzt ist Lernen angesagt'}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={onReset}
+          className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white transition-all"
+        >
+          Schließen
+        </button>
+      </div>
+
+      {/* Knowledge gaps */}
+      {gaps.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-widest px-1">
+            Wissenslücken ({gaps.length})
+          </p>
+          {gaps.map(({ q, a }, i) => {
+            const correctTexts = q.options.filter(o => o.correct).map(o => `${o.id}) ${o.text}`);
+            const pickedTexts = q.options.filter(o => a.selected.includes(o.id)).map(o => `${o.id}) ${o.text}`);
+            return (
+              <div key={i} className="p-3 rounded-xl bg-red-500/5 border border-red-500/20 space-y-1.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide bg-sky-500/15 text-sky-400 border border-sky-500/30">
+                    {q.topic || 'Allgemein'}
+                  </span>
+                  <span className="text-[10px] text-red-400/80 uppercase tracking-wider">✗ falsch</span>
+                </div>
+                <p className="text-xs text-white/90 leading-snug">{q.question}</p>
+                <div className="text-[11px] space-y-0.5">
+                  <p className="text-red-300/90"><span className="opacity-60">Du: </span>{pickedTexts.join(', ') || '—'}</p>
+                  <p className="text-green-300/90"><span className="opacity-60">Richtig: </span>{correctTexts.join(', ')}</p>
+                </div>
+                {q.explanation && (
+                  <p className="text-[11px] text-[#9ca3af] leading-relaxed pt-0.5 border-t border-white/5 mt-1">
+                    {q.explanation}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <p className="text-[10px] text-[#6b7280] px-1 italic">
+        Kein Einfluss auf SRS — jetzt normal aufdecken & bewerten
+      </p>
     </div>
   );
 }

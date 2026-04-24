@@ -1,5 +1,6 @@
-// Gemini-powered MC hint — generates a scaffolded multiple/single-choice
-// question from a flashcard's front+back to help the learner recall.
+// AI-powered MC hint — generates a *bundle* of 3 multiple/single-choice
+// questions from a flashcard's front+back to help the learner recall
+// different aspects of the answer.
 // This NEVER feeds into SRS — it's a pure learning aid.
 
 import { callAIWithFallback } from './geminiModels';
@@ -18,25 +19,29 @@ export interface MCHintResult {
   options: MCOption[];
   /** Short German explanation shown after the learner submits. */
   explanation: string;
+  /** Short label of the sub-aspect this question tests (e.g. "Definition", "Anwendung"). */
+  topic: string;
 }
 
-// ─── Normalizer ──────────────────────────────────────────────────────────────
+export interface MCHintBundle {
+  questions: MCHintResult[];
+}
+
+// ─── Normalizer (single question) ────────────────────────────────────────────
 // Handles all field-name variants that different AI providers return:
-//   - English (standard):  question / type / options / explanation
-//   - German (Groq/Llama): frage / typ / optionen / erklärung / antworten
+//   - English (standard):  question / type / options / explanation / topic
+//   - German (Groq/Llama): frage / typ / optionen / erklärung / antworten / thema
 //   - Object-style options: { a: "text", b: "text", ... }  →  array
 //   - Correct answers from antworten: ["b"]  array
-//   - Wrapped objects: { mc_question: {...} }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function normalizeMCHint(raw: any): MCHintResult | null {
+function normalizeSingle(raw: any): MCHintResult | null {
   if (!raw || typeof raw !== 'object') return null;
 
   // Unwrap common wrapper keys
-  const wrappers = ['mc_question', 'quiz', 'question', 'result', 'data', 'hint'];
+  const wrappers = ['mc_question', 'quiz', 'result', 'data', 'hint'];
   for (const w of wrappers) {
     if (raw[w] && typeof raw[w] === 'object' && !Array.isArray(raw[w])) {
-      // Only unwrap if the nested object looks like our target (has question/frage/options/optionen)
       const inner = raw[w];
       if (inner.question || inner.frage || inner.options || inner.optionen) {
         raw = inner;
@@ -45,18 +50,15 @@ function normalizeMCHint(raw: any): MCHintResult | null {
     }
   }
 
-  // Resolve question string
   const question: string =
     raw.question ?? raw.frage ?? raw.Question ?? raw.Frage ?? '';
   if (!question) return null;
 
-  // Resolve type
   const rawType = (raw.type ?? raw.typ ?? raw.Type ?? raw.Typ ?? 'single')
     .toString()
     .toLowerCase();
   const type: 'single' | 'multiple' = rawType === 'multiple' ? 'multiple' : 'single';
 
-  // Resolve explanation
   const explanation: string =
     raw.explanation ??
     raw.erklärung ??
@@ -65,9 +67,10 @@ function normalizeMCHint(raw: any): MCHintResult | null {
     raw.Explanation ??
     '';
 
-  // Collect correct answer ids from antworten / answers / correct_answers arrays
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const answerIds: Set<string> = new Set<string>();
+  const topic: string =
+    raw.topic ?? raw.thema ?? raw.Topic ?? raw.Thema ?? raw.aspect ?? raw.aspekt ?? 'Allgemein';
+
+  const answerIds = new Set<string>();
   const answerSource =
     raw.antworten ?? raw.answers ?? raw.correct_answers ?? raw.correctAnswers ?? null;
   if (Array.isArray(answerSource)) {
@@ -76,19 +79,16 @@ function normalizeMCHint(raw: any): MCHintResult | null {
     }
   }
 
-  // Resolve options
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let rawOptions: any = raw.options ?? raw.optionen ?? raw.Options ?? raw.Optionen ?? null;
+  const rawOptions: any = raw.options ?? raw.optionen ?? raw.Options ?? raw.Optionen ?? null;
   const options: MCOption[] = [];
 
   if (Array.isArray(rawOptions)) {
-    // Standard array format: [{id,text,correct}] or [{id,text}] (correct from antworten)
     for (const o of rawOptions) {
       if (!o || typeof o !== 'object') continue;
       const id = String(o.id ?? o.Id ?? '').toLowerCase().trim();
       const text = String(o.text ?? o.Text ?? o.label ?? o.Label ?? '');
       if (!id || !text) continue;
-      // Prefer explicit correct field; fall back to answerIds lookup
       const correct: boolean =
         typeof o.correct === 'boolean'
           ? o.correct
@@ -100,7 +100,6 @@ function normalizeMCHint(raw: any): MCHintResult | null {
       options.push({ id, text, correct });
     }
   } else if (rawOptions && typeof rawOptions === 'object') {
-    // Object format: { a: "text", b: "text", ... }
     for (const [k, v] of Object.entries(rawOptions)) {
       const id = k.toLowerCase().trim();
       const text = typeof v === 'string' ? v : String(v);
@@ -108,40 +107,76 @@ function normalizeMCHint(raw: any): MCHintResult | null {
       const correct = answerIds.size > 0 ? answerIds.has(id) : false;
       options.push({ id, text, correct });
     }
-    // Sort by id so a,b,c,d are in order
     options.sort((a, b) => a.id.localeCompare(b.id));
   }
 
   if (options.length < 2) return null;
 
   // Guarantee at least one correct answer is marked
-  const hasCorrect = options.some(o => o.correct);
-  if (!hasCorrect) {
-    // If we still have answerIds, try marking again (ids may not have matched perfectly)
-    // Otherwise fall back: mark first option as correct so UI doesn't break
+  if (!options.some(o => o.correct)) {
     if (answerIds.size > 0) {
-      for (const o of options) {
-        if (answerIds.has(o.id)) o.correct = true;
-      }
+      for (const o of options) if (answerIds.has(o.id)) o.correct = true;
     }
-    if (!options.some(o => o.correct)) {
-      options[0].correct = true;
+    if (!options.some(o => o.correct)) options[0].correct = true;
+  }
+
+  return { question, type, options, explanation, topic };
+}
+
+// ─── Normalizer (bundle) ─────────────────────────────────────────────────────
+// Extracts an array of questions from whatever shape the AI returns.
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeBundle(raw: any): MCHintBundle | null {
+  if (!raw) return null;
+
+  // Possible shapes:
+  //   { questions: [...] }    ← target
+  //   { fragen: [...] }       ← German
+  //   [ ... ]                 ← bare array
+  //   { ... }                 ← single question → wrap as bundle of 1
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let list: any[] | null = null;
+
+  if (Array.isArray(raw)) {
+    list = raw;
+  } else if (typeof raw === 'object') {
+    const candidates = [
+      raw.questions, raw.fragen, raw.Questions, raw.Fragen,
+      raw.items, raw.quiz, raw.mc_questions,
+    ];
+    for (const c of candidates) {
+      if (Array.isArray(c)) { list = c; break; }
     }
   }
 
-  return { question, type, options, explanation };
+  if (list) {
+    const questions = list
+      .map(q => normalizeSingle(q))
+      .filter((q): q is MCHintResult => q !== null);
+    if (questions.length === 0) return null;
+    return { questions };
+  }
+
+  // Fallback: maybe it's a single question
+  const single = normalizeSingle(raw);
+  if (single) return { questions: [single] };
+  return null;
 }
 
-export async function generateMCHint(
+// ─── Public entry point ──────────────────────────────────────────────────────
+
+export async function generateMCHintBundle(
   keys: AIKeys,
   front: string,
   back: string,
-): Promise<MCHintResult> {
+  count: number = 3,
+): Promise<MCHintBundle> {
   if (!keys.gemini?.trim() && !keys.anthropic?.trim() && !keys.groq?.trim()) {
     throw new Error('Kein AI-Schlüssel konfiguriert. Bitte Gemini, Claude oder Groq in den Einstellungen hinterlegen.');
   }
 
-  const prompt = `You are a learning assistant. Generate a multiple-choice hint question from the flashcard below.
+  const prompt = `You are a learning assistant. Generate ${count} multiple-choice hint questions from the flashcard below, each testing a DIFFERENT aspect of the answer.
 
 ### Card – Question:
 ${front}
@@ -149,36 +184,42 @@ ${front}
 ### Card – Answer:
 ${back}
 
-TASK: Create a MC question that helps the learner recall the answer without revealing it directly.
+TASK: Create ${count} MC questions that together help the learner recall the full answer. Each question must focus on a DIFFERENT sub-aspect (e.g. definition, application, delimitation, examples, exceptions).
 
 RULES:
-1. Choose "single" if there is exactly ONE correct answer, "multiple" if 2–3 answers are correct.
-2. Always exactly 4 options with ids "a", "b", "c", "d".
-3. Mark each option with correct: true or correct: false.
-4. Write question, options and explanation in GERMAN.
+1. Each question has its own "topic" field — a short German label (1-3 words) naming the sub-aspect tested (e.g. "Definition", "Anwendung", "Abgrenzung", "Beispiel", "Ausnahme").
+2. Mix question types: at least ${count >= 2 ? '1 question should be "multiple"' : '"single"'} (2–3 correct answers) and the rest "single" (exactly 1 correct).
+3. Always exactly 4 options per question, with ids "a", "b", "c", "d".
+4. Mark each option with correct: true or correct: false.
+5. Do NOT repeat the same question or near-duplicates. Each question must test something distinct.
+6. Write question, options, topic and explanation in GERMAN.
 
 REQUIRED JSON FORMAT (use EXACTLY these English field names):
 {
-  "question": "Die Frage auf Deutsch",
-  "type": "single",
-  "options": [
-    {"id": "a", "text": "Option A", "correct": true},
-    {"id": "b", "text": "Option B", "correct": false},
-    {"id": "c", "text": "Option C", "correct": false},
-    {"id": "d", "text": "Option D", "correct": false}
-  ],
-  "explanation": "Kurze Erklärung auf Deutsch"
+  "questions": [
+    {
+      "topic": "Definition",
+      "question": "Die Frage auf Deutsch",
+      "type": "single",
+      "options": [
+        {"id": "a", "text": "Option A", "correct": true},
+        {"id": "b", "text": "Option B", "correct": false},
+        {"id": "c", "text": "Option C", "correct": false},
+        {"id": "d", "text": "Option D", "correct": false}
+      ],
+      "explanation": "Kurze Erklärung auf Deutsch"
+    }
+    // … ${count} questions total
+  ]
 }
 
 Return ONLY the JSON object, no other text.`;
 
-  // No responseSchema — just JSON mode. Schemas are inconsistently supported
-  // across Gemini models and cause "invalid structure" errors.
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
       responseMimeType: 'application/json',
-      temperature: 0.5,
+      temperature: 0.7,  // a bit higher for variety across questions
     },
   };
 
@@ -195,10 +236,20 @@ Return ONLY the JSON object, no other text.`;
     throw new Error('KI hat kein gültiges JSON zurückgegeben');
   }
 
-  const result = normalizeMCHint(raw);
-  if (!result) {
-    console.error('[MC hint] could not normalize:', JSON.stringify(raw).slice(0, 400));
+  const bundle = normalizeBundle(raw);
+  if (!bundle || bundle.questions.length === 0) {
+    console.error('[MC hint] could not normalize bundle:', JSON.stringify(raw).slice(0, 500));
     throw new Error('KI hat eine unerwartete Struktur zurückgegeben — bitte nochmal versuchen');
   }
-  return result;
+  return bundle;
+}
+
+// Convenience wrapper for callers that only need one question (legacy).
+export async function generateMCHint(
+  keys: AIKeys,
+  front: string,
+  back: string,
+): Promise<MCHintResult> {
+  const bundle = await generateMCHintBundle(keys, front, back, 1);
+  return bundle.questions[0];
 }

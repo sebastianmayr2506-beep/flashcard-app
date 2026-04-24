@@ -2,7 +2,7 @@
 // question from a flashcard's front+back to help the learner recall.
 // This NEVER feeds into SRS — it's a pure learning aid.
 
-import { resolveGeminiModel, invalidateGeminiModelCache } from './geminiModels';
+import { callGeminiWithRetry } from './geminiModels';
 
 export interface MCOption {
   id: string;    // 'a' | 'b' | 'c' | 'd'
@@ -17,15 +17,6 @@ export interface MCHintResult {
   options: MCOption[];
   /** Short German explanation shown after the learner submits. */
   explanation: string;
-}
-
-async function callGemini(model: string, apiKey: string, body: unknown): Promise<Response> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  return fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
 }
 
 export async function generateMCHint(
@@ -86,29 +77,13 @@ Gib NUR gültiges JSON zurück.`;
     },
   };
 
-  // Resolve a valid model dynamically — retry once if cache is stale
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const model = await resolveGeminiModel(apiKey);
-    const res = await callGemini(model, apiKey, body);
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      if ((res.status === 404 || res.status === 400) && attempt === 0) {
-        // Cached model might be wrong — invalidate and try once more
-        invalidateGeminiModelCache(apiKey);
-        continue;
-      }
-      if (res.status === 503) throw new Error('Gemini ist gerade überlastet. Bitte kurz warten und nochmal versuchen.');
-      if (res.status === 429) throw new Error('Gemini-Kontingent erschöpft. Bitte kurz warten.');
-      throw new Error(`Gemini API Fehler ${res.status}: ${errText}`);
-    }
-    const data = await res.json();
-    const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-    if (!text) throw new Error('Keine Antwort von Gemini erhalten');
-    const parsed = JSON.parse(text) as MCHintResult;
-    if (!parsed.question || !Array.isArray(parsed.options) || parsed.options.length < 2) {
-      throw new Error('Ungültige MC-Struktur von Gemini');
-    }
-    return parsed;
+  const { data } = await callGeminiWithRetry(apiKey, body);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const text: string = ((data as any)?.candidates?.[0]?.content?.parts?.[0]?.text as string) ?? '';
+  if (!text) throw new Error('Keine Antwort von Gemini erhalten');
+  const parsed = JSON.parse(text) as MCHintResult;
+  if (!parsed.question || !Array.isArray(parsed.options) || parsed.options.length < 2) {
+    throw new Error('Ungültige MC-Struktur von Gemini');
   }
-  throw new Error('MC-Tipp konnte nicht generiert werden');
+  return parsed;
 }

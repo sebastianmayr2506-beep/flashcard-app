@@ -2,7 +2,7 @@
 // "improve this card based on my feedback" style edits.
 // Uses Google AI Studio's generateContent endpoint with structured JSON output.
 
-import { resolveGeminiModel, invalidateGeminiModelCache } from './geminiModels';
+import { callGeminiWithRetry } from './geminiModels';
 
 export interface GeminiReviseInput {
   apiKey: string;
@@ -30,15 +30,6 @@ REGELN:
 const SYSTEM_INSTRUCTION_BACK_ONLY = `${SYSTEM_INSTRUCTION}
 
 WICHTIG: Der Nutzer möchte NUR die Antwort (back) geändert haben. Die Frage (front) bleibt UNVERÄNDERT — gib sie wörtlich so zurück wie sie war.`;
-
-async function callGemini(model: string, apiKey: string, body: unknown): Promise<Response> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  return fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
 
 export async function reviseCardWithGemini(input: GeminiReviseInput): Promise<GeminiReviseResult> {
   if (!input.apiKey.trim()) throw new Error('Kein Gemini API-Schlüssel hinterlegt');
@@ -74,29 +65,14 @@ Bitte überarbeite die Karte entsprechend und gib das Ergebnis als JSON mit den 
     },
   };
 
-  // Resolve a valid model dynamically — retry once if cached model is stale
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const model = await resolveGeminiModel(input.apiKey);
-    const res = await callGemini(model, input.apiKey, body);
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      if ((res.status === 404 || res.status === 400) && attempt === 0) {
-        invalidateGeminiModelCache(input.apiKey);
-        continue;
-      }
-      if (res.status === 503) throw new Error('Gemini ist gerade überlastet. Bitte kurz warten und nochmal versuchen.');
-      if (res.status === 429) throw new Error('Gemini-Kontingent erschöpft. Bitte kurz warten.');
-      throw new Error(`Gemini API Fehler ${res.status}: ${errText}`);
-    }
-    const data = await res.json();
-    console.log('[geminiRevise] using model:', model);
-    const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-    if (!text) throw new Error('Gemini hat keine Antwort zurückgegeben');
-    const parsed = JSON.parse(text);
-    return {
-      front: String(parsed.front ?? input.front),
-      back: String(parsed.back ?? input.back),
-    };
-  }
-  throw new Error('Kein Gemini-Modell erreichbar');
+  const { data, model } = await callGeminiWithRetry(input.apiKey, body);
+  console.log('[geminiRevise] using model:', model);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const text: string = ((data as any)?.candidates?.[0]?.content?.parts?.[0]?.text as string) ?? '';
+  if (!text) throw new Error('Gemini hat keine Antwort zurückgegeben');
+  const parsed = JSON.parse(text);
+  return {
+    front: String(parsed.front ?? input.front),
+    back: String(parsed.back ?? input.back),
+  };
 }

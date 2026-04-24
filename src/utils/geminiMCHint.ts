@@ -51,40 +51,40 @@ REGELN:
 
 Gib NUR gültiges JSON zurück.`;
 
+  // No responseSchema — just JSON mode. Schemas are inconsistently supported
+  // across Gemini models and cause "invalid structure" errors.
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
       responseMimeType: 'application/json',
-      responseSchema: {
-        type: 'object',
-        properties: {
-          question: { type: 'string' },
-          type: { type: 'string', enum: ['single', 'multiple'] },
-          options: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                id:      { type: 'string' },
-                text:    { type: 'string' },
-                correct: { type: 'boolean' },
-              },
-              required: ['id', 'text', 'correct'],
-            },
-          },
-          explanation: { type: 'string' },
-        },
-        required: ['question', 'type', 'options', 'explanation'],
-      },
       temperature: 0.5,
     },
   };
 
   const { text } = await callAIWithFallback(keys, body, prompt);
-  if (!text) throw new Error('Keine Antwort von Gemini erhalten');
-  const parsed = JSON.parse(text) as MCHintResult;
-  if (!parsed.question || !Array.isArray(parsed.options) || parsed.options.length < 2) {
-    throw new Error('Ungültige MC-Struktur von Gemini');
+  if (!text) throw new Error('Keine Antwort erhalten');
+
+  // Strip accidental markdown fences (```json … ```)
+  const cleaned = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/,'').trim();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let parsed: any;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    throw new Error('KI hat kein gültiges JSON zurückgegeben');
   }
-  return parsed;
+
+  // Normalise: some models wrap in a top-level key
+  if (!parsed.question && parsed.mc_question) parsed = parsed.mc_question;
+  if (!parsed.question && parsed.quiz)        parsed = parsed.quiz;
+
+  if (!parsed.question || !Array.isArray(parsed.options) || parsed.options.length < 2) {
+    console.error('[MC hint] unexpected structure:', JSON.stringify(parsed).slice(0, 300));
+    throw new Error('KI hat eine unerwartete Struktur zurückgegeben — bitte nochmal versuchen');
+  }
+
+  // Ensure type is valid
+  if (parsed.type !== 'single' && parsed.type !== 'multiple') parsed.type = 'single';
+
+  return parsed as MCHintResult;
 }

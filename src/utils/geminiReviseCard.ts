@@ -2,6 +2,8 @@
 // "improve this card based on my feedback" style edits.
 // Uses Google AI Studio's generateContent endpoint with structured JSON output.
 
+import { resolveGeminiModel, invalidateGeminiModelCache } from './geminiModels';
+
 export interface GeminiReviseInput {
   apiKey: string;
   front: string;
@@ -28,14 +30,6 @@ REGELN:
 const SYSTEM_INSTRUCTION_BACK_ONLY = `${SYSTEM_INSTRUCTION}
 
 WICHTIG: Der Nutzer möchte NUR die Antwort (back) geändert haben. Die Frage (front) bleibt UNVERÄNDERT — gib sie wörtlich so zurück wie sie war.`;
-
-/** Gemini models ordered by preference (newest/best first). */
-const MODEL_CANDIDATES = [
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-lite',
-  'gemini-1.5-flash-latest',
-  'gemini-1.5-flash-001',
-];
 
 async function callGemini(model: string, apiKey: string, body: unknown): Promise<Response> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -80,53 +74,29 @@ Bitte überarbeite die Karte entsprechend und gib das Ergebnis als JSON mit den 
     },
   };
 
-  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-  // Try models in order until one works (some are only available on certain tiers).
-  let lastStatus = 0;
-  let lastError: string = '';
-  for (const model of MODEL_CANDIDATES) {
-    try {
-      const res = await callGemini(model, input.apiKey, body);
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        lastStatus = res.status;
-        lastError = errText;
-        // 404/400 → model not found/bad request → try next model silently
-        if (res.status === 404 || res.status === 400) continue;
-        // 429/503 → overloaded or rate-limited → wait briefly, then try next model
-        if (res.status === 429 || res.status === 503) {
-          await delay(1500);
-          continue;
-        }
-        // 401/403 → bad API key → abort immediately, no point retrying
-        throw new Error(`Gemini API Fehler ${res.status}: ${errText}`);
+  // Resolve a valid model dynamically — retry once if cached model is stale
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const model = await resolveGeminiModel(input.apiKey);
+    const res = await callGemini(model, input.apiKey, body);
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      if ((res.status === 404 || res.status === 400) && attempt === 0) {
+        invalidateGeminiModelCache(input.apiKey);
+        continue;
       }
-
-      const data = await res.json();
-      console.log('[geminiRevise] using model:', model);
-      const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-      if (!text) throw new Error('Gemini hat keine Antwort zurückgegeben');
-
-      const parsed = JSON.parse(text);
-      return {
-        front: String(parsed.front ?? input.front),
-        back: String(parsed.back ?? input.back),
-      };
-    } catch (err) {
-      // Only retry on model-specific failures; rethrow auth/parse errors
-      if (err instanceof Error && /Gemini API Fehler/.test(err.message)) throw err;
-      lastError = err instanceof Error ? err.message : String(err);
-      continue;
+      if (res.status === 503) throw new Error('Gemini ist gerade überlastet. Bitte kurz warten und nochmal versuchen.');
+      if (res.status === 429) throw new Error('Gemini-Kontingent erschöpft. Bitte kurz warten.');
+      throw new Error(`Gemini API Fehler ${res.status}: ${errText}`);
     }
+    const data = await res.json();
+    console.log('[geminiRevise] using model:', model);
+    const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    if (!text) throw new Error('Gemini hat keine Antwort zurückgegeben');
+    const parsed = JSON.parse(text);
+    return {
+      front: String(parsed.front ?? input.front),
+      back: String(parsed.back ?? input.back),
+    };
   }
-
-  // All models failed — give a helpful German error message
-  if (lastStatus === 503) {
-    throw new Error('Gemini ist gerade überlastet (503). Bitte in ein paar Sekunden nochmal versuchen.');
-  }
-  if (lastStatus === 429) {
-    throw new Error('Gemini-Kontingent erschöpft (429). Bitte kurz warten und nochmal versuchen.');
-  }
-  throw new Error(`Kein Gemini-Modell erreichbar. Letzter Fehler: ${lastError}`);
+  throw new Error('Kein Gemini-Modell erreichbar');
 }

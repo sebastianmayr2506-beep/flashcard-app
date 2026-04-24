@@ -2,6 +2,8 @@
 // question from a flashcard's front+back to help the learner recall.
 // This NEVER feeds into SRS — it's a pure learning aid.
 
+import { resolveGeminiModel, invalidateGeminiModelCache } from './geminiModels';
+
 export interface MCOption {
   id: string;    // 'a' | 'b' | 'c' | 'd'
   text: string;
@@ -16,15 +18,6 @@ export interface MCHintResult {
   /** Short German explanation shown after the learner submits. */
   explanation: string;
 }
-
-const MODEL_CANDIDATES = [
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-lite',
-  'gemini-1.5-flash-latest',
-  'gemini-1.5-flash-001',
-];
-
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function callGemini(model: string, apiKey: string, body: unknown): Promise<Response> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -93,36 +86,29 @@ Gib NUR gültiges JSON zurück.`;
     },
   };
 
-  let lastStatus = 0;
-  let lastError = '';
-
-  for (const model of MODEL_CANDIDATES) {
-    try {
-      const res = await callGemini(model, apiKey, body);
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        lastStatus = res.status;
-        lastError = errText;
-        if (res.status === 404 || res.status === 400) continue;
-        if (res.status === 429 || res.status === 503) { await delay(1500); continue; }
-        throw new Error(`Gemini API Fehler ${res.status}: ${errText}`);
+  // Resolve a valid model dynamically — retry once if cache is stale
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const model = await resolveGeminiModel(apiKey);
+    const res = await callGemini(model, apiKey, body);
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      if ((res.status === 404 || res.status === 400) && attempt === 0) {
+        // Cached model might be wrong — invalidate and try once more
+        invalidateGeminiModelCache(apiKey);
+        continue;
       }
-      const data = await res.json();
-      const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-      if (!text) throw new Error('Keine Antwort von Gemini erhalten');
-      const parsed = JSON.parse(text) as MCHintResult;
-      if (!parsed.question || !Array.isArray(parsed.options) || parsed.options.length < 2) {
-        throw new Error('Ungültige MC-Struktur von Gemini');
-      }
-      return parsed;
-    } catch (err) {
-      if (err instanceof Error && /Gemini API Fehler/.test(err.message)) throw err;
-      lastError = err instanceof Error ? err.message : String(err);
-      continue;
+      if (res.status === 503) throw new Error('Gemini ist gerade überlastet. Bitte kurz warten und nochmal versuchen.');
+      if (res.status === 429) throw new Error('Gemini-Kontingent erschöpft. Bitte kurz warten.');
+      throw new Error(`Gemini API Fehler ${res.status}: ${errText}`);
     }
+    const data = await res.json();
+    const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    if (!text) throw new Error('Keine Antwort von Gemini erhalten');
+    const parsed = JSON.parse(text) as MCHintResult;
+    if (!parsed.question || !Array.isArray(parsed.options) || parsed.options.length < 2) {
+      throw new Error('Ungültige MC-Struktur von Gemini');
+    }
+    return parsed;
   }
-
-  if (lastStatus === 503) throw new Error('Gemini ist gerade überlastet. Bitte kurz warten und nochmal versuchen.');
-  if (lastStatus === 429) throw new Error('Gemini-Kontingent erschöpft. Bitte kurz warten.');
-  throw new Error(`MC-Tipp konnte nicht generiert werden: ${lastError}`);
+  throw new Error('MC-Tipp konnte nicht generiert werden');
 }

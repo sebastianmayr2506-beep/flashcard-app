@@ -239,6 +239,7 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     micFinalRef.current = aiCheck.text ? aiCheck.text.trimEnd() + ' ' : '';
     const handle = createRecognizer({
       lang: 'de-DE',
+      keepAlive: true, // mobile browsers auto-end on silence; restart silently
       onResult: (chunk, isFinal) => {
         if (isFinal) {
           micFinalRef.current += chunk + ' ';

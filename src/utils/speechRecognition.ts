@@ -48,6 +48,16 @@ export interface RecognizerOptions {
   onEnd?: () => void;
   /** Called on errors like "no-speech", "not-allowed" (mic blocked), etc. */
   onError?: (code: string, message?: string) => void;
+  /**
+   * Keep the recognizer alive across the browser's auto-end events.
+   *
+   * Mobile browsers (Android Chrome, iOS Safari) end the session after a few
+   * seconds of silence even with continuous=true. With keepAlive=true we
+   * silently restart on `onend`/`no-speech` so the user can pause mid-sentence
+   * without having to tap the mic button again. The handle's stop() flips a
+   * "manual" flag so an explicit user-stop does NOT trigger a restart.
+   */
+  keepAlive?: boolean;
 }
 
 export interface RecognizerHandle {
@@ -69,6 +79,25 @@ export function createRecognizer(opts: RecognizerOptions): RecognizerHandle | nu
   rec.continuous = true;       // keep listening until user stops
   rec.interimResults = true;   // show partial transcripts live
 
+  // Used by keepAlive logic to distinguish user-initiated stops from
+  // browser-initiated auto-ends (silence timeout, "no-speech", etc.).
+  let manualStop = false;
+  // Defensive throttle: if something keeps killing the session immediately
+  // (e.g. permission revoked) we don't want to spin in a restart loop.
+  let restartAttempts = 0;
+  let lastRestartAt = 0;
+
+  const tryRestart = () => {
+    if (!opts.keepAlive || manualStop) return false;
+    const now = Date.now();
+    if (now - lastRestartAt > 5000) restartAttempts = 0; // reset window
+    if (restartAttempts >= 5) return false; // give up if 5 restarts within 5s
+    restartAttempts++;
+    lastRestartAt = now;
+    try { rec.start(); return true; }
+    catch { return false; }
+  };
+
   rec.onresult = (e) => {
     // Walk new results since resultIndex; pass each chunk up.
     for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -77,11 +106,25 @@ export function createRecognizer(opts: RecognizerOptions): RecognizerHandle | nu
       opts.onResult(transcript, result.isFinal);
     }
   };
-  rec.onend = () => opts.onEnd?.();
-  rec.onerror = (e) => opts.onError?.(e.error, e.message);
+  rec.onend = () => {
+    // Mobile auto-end after silence: silently restart if the caller asked us to.
+    if (tryRestart()) return;
+    opts.onEnd?.();
+  };
+  rec.onerror = (e) => {
+    // "no-speech" and "aborted" on mobile are normal silence/auto-end signals.
+    // Don't bubble them up if keepAlive will recover — only surface fatal errors.
+    if (opts.keepAlive && !manualStop && (e.error === 'no-speech' || e.error === 'aborted')) {
+      // onend will fire next and tryRestart will pick up. Swallow the error.
+      return;
+    }
+    opts.onError?.(e.error, e.message);
+  };
 
   return {
     start: () => {
+      manualStop = false;
+      restartAttempts = 0;
       try { rec.start(); }
       catch (err) {
         // start() throws if already started — surface as error
@@ -89,6 +132,7 @@ export function createRecognizer(opts: RecognizerOptions): RecognizerHandle | nu
       }
     },
     stop: () => {
+      manualStop = true;
       try { rec.stop(); } catch { /* ignore */ }
     },
   };

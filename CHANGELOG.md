@@ -7,6 +7,25 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-04-25 — KI Prüfung: mic auto-stop on mobile fixed
+
+**Symptom:** On Android Chrome / iOS Safari the mic recording would end on
+its own as soon as the user paused speaking, even if they wanted to continue.
+
+**Root cause:** Web Speech API on mobile ends the session after a short silence
+window even with `continuous=true` — that's a platform-level behavior, not a
+config we can disable.
+
+**Fix:** Added `keepAlive` option to `createRecognizer`. When set, the wrapper
+silently restarts the recognizer on `onend` / `no-speech` / `aborted`, unless
+the user explicitly tapped the stop button (tracked via `manualStop` flag).
+Throttled to max 5 restarts per 5s window so a permission-revoke can't loop.
+StudySession passes `keepAlive: true` for the KI-Prüfung mic.
+
+**Files:** `src/utils/speechRecognition.ts`, `src/pages/StudySession.tsx`
+
+---
+
 ## 2026-04-25 — Dashboard "Neu heute" stale-closure fix
 
 **Symptom:** Dashboard kept showing nearly the full daily new-card quota (e.g.

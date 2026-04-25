@@ -144,6 +144,38 @@ export function useSettings(userId: string | null) {
     });
   }, [userId]);
 
+  // Functional updater — for read-modify-write where the caller must see the
+  // freshest snapshot (e.g. handleRate incrementing newCardsDone). Avoids the
+  // stale-closure race where multiple rapid rates each read the same `prev`
+  // from a captured closure and overwrite each other.
+  const updateSettingsFn = useCallback((updater: (prev: AppSettings) => Partial<AppSettings>) => {
+    if (!userId) return;
+    const prev = settingsRef.current;
+    const updates = updater(prev);
+    // Mirror the API-key side-effects from updateSettings (keep behavior consistent)
+    if ('anthropicApiKey' in updates) {
+      const key = updates.anthropicApiKey;
+      if (key) localStorage.setItem('anthropic_api_key', key);
+      else localStorage.removeItem('anthropic_api_key');
+    }
+    if ('geminiApiKey' in updates) {
+      const key = updates.geminiApiKey;
+      if (key) localStorage.setItem('gemini_api_key', key);
+      else localStorage.removeItem('gemini_api_key');
+    }
+    if ('groqApiKey' in updates) {
+      const key = updates.groqApiKey;
+      if (key) localStorage.setItem('groq_api_key', key);
+      else localStorage.removeItem('groq_api_key');
+    }
+    const updated = { ...prev, ...updates };
+    settingsRef.current = updated;
+    setSettings(updated);
+    supabase.from('user_settings').upsert(toDb(updated, userId), { onConflict: 'user_id' }).then(({ error }) => {
+      if (error) console.error('Failed to update settings (fn):', error);
+    });
+  }, [userId]);
+
   const addSubject = useCallback((subject: string) => {
     if (settingsRef.current.subjects.includes(subject)) return;
     updateSettings({ subjects: [...settingsRef.current.subjects, subject] });
@@ -171,5 +203,5 @@ export function useSettings(userId: string | null) {
     updateSettings({ customTags: settingsRef.current.customTags.filter(x => x !== tag) });
   }, [updateSettings]);
 
-  return { settings, updateSettings, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag };
+  return { settings, updateSettings, updateSettingsFn, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag };
 }

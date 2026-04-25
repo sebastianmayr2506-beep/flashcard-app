@@ -24,8 +24,19 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
   const today = new Date().toDateString();
   const snap = settings.dailyPlanSnapshot;
 
-  // How many new cards were already introduced today (drives the remaining-quota calc)
-  const newDoneToday = snap?.date === today ? (snap.newCardsDone ?? 0) : 0;
+  // How many new cards were already introduced today (drives the remaining-quota calc).
+  // Defensive reconciler — if the snapshot is behind reality (e.g. a write was lost
+  // due to an earlier stale-closure race, or the user rated cards on another device
+  // before sync caught up), fall back to counting cards that were just promoted out
+  // of "neu". A card is in its first SM-2 step when repetitions === 1 and interval >= 1
+  // (Schwer: interval=1, Gut/Einfach: interval=1+). updatedAt being today guarantees
+  // the rating happened today.
+  const newRatedTodayFromCards = cards.filter(c =>
+    c.repetitions === 1 && c.interval >= 1 &&
+    new Date(c.updatedAt).toDateString() === today,
+  ).length;
+  const snapNewDone = snap?.date === today ? (snap.newCardsDone ?? 0) : 0;
+  const newDoneToday = Math.max(snapNewDone, newRatedTodayFromCards);
 
   // Pass newDoneToday so the plan reflects remaining work, not the original full quota
   const plan = useMemo(

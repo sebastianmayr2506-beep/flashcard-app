@@ -39,7 +39,7 @@ export default function App() {
   const userId = user?.id ?? null;
 
   const { cards, loading: cardsLoading, loadError: cardsLoadError, addCard, updateCard, removeCard, rateCard, importCards } = useCards(userId);
-  const { settings, updateSettings, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag } = useSettings(userId);
+  const { settings, updateSettings, updateSettingsFn, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag } = useSettings(userId);
   const { sets, addSet, updateSet, removeSet } = useSets(userId);
   const { links, addLink, removeLink, replaceLinks } = useCardLinks(userId);
   const { flagAttempts, addAttempt, getDistinctCorrectDays } = useFlagAttempts(userId);
@@ -230,35 +230,37 @@ export default function App() {
     // Runs for every rating regardless of session type so the progress bar is always accurate.
     if (rating >= 1) {
       const today = new Date().toDateString();
-      const snap = settings.dailyPlanSnapshot;
-      const hasSnapToday = snap?.date === today;
-
-      if (hasSnapToday) {
-        updateSettings({
-          dailyPlanSnapshot: {
-            ...snap,
-            newCardsDone: wasNewCard ? snap.newCardsDone + 1 : snap.newCardsDone,
-            totalDone: snap.totalDone + 1,
-          },
-        });
-      } else {
+      // Functional updater — reads `prev` snapshot at apply time, not from a captured
+      // closure. This fixes the race where multiple rapid rates each saw the same
+      // stale `settings.dailyPlanSnapshot` and overwrote each other's increments,
+      // leaving "Neu heute" stuck at the value before the rapid burst.
+      updateSettingsFn(prev => {
+        const snap = prev.dailyPlanSnapshot;
+        if (snap?.date === today) {
+          return {
+            dailyPlanSnapshot: {
+              ...snap,
+              newCardsDone: wasNewCard ? snap.newCardsDone + 1 : snap.newCardsDone,
+              totalDone: snap.totalDone + 1,
+            },
+          };
+        }
         // Auto-create snapshot on first rating of the day — covers sessions that
         // started outside the daily-plan flow (e.g. study page, set detail, filters).
-        // Bootstrap from card state so prior rates today (pre-fix, or other entry paths)
-        // are reflected in the denominator.
+        // Bootstrap from card state so prior rates today are reflected in the denominator.
         const alreadyDone = getCardsRatedToday(cards);
-        const plan = calculateDailyPlan(cards, settings, 0);
-        updateSettings({
+        const plan = calculateDailyPlan(cards, prev, 0);
+        return {
           dailyPlanSnapshot: {
             date: today,
             totalCards: alreadyDone + plan.totalToday,
             newCardsDone: wasNewCard ? 1 : 0,
             totalDone: alreadyDone + 1,
           },
-        });
-      }
+        };
+      });
     }
-  }, [cards, rateCard, settings, updateSettings]);
+  }, [cards, rateCard, settings.examDate, updateSettingsFn]);
 
   const handleBulkAssignSet = useCallback((cardIds: string[], setId: string | undefined) => {
     cardIds.forEach(id => updateCard(id, { setId }));

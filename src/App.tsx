@@ -14,7 +14,7 @@ import { useFlagAttempts } from './hooks/useFlagAttempts';
 import { useToast } from './hooks/useToast';
 import { useAuth } from './hooks/useAuth';
 import { extractParentLinks } from './utils/import';
-import { calculateDailyPlan, getCardsRatedToday } from './utils/dailyGoal';
+import { calculateDailyPlan, getCardsRatedToday, getNewCardsDoneToday } from './utils/dailyGoal';
 
 import Sidebar from './components/Sidebar';
 import ToastContainer from './components/ToastContainer';
@@ -122,7 +122,9 @@ export default function App() {
     const snap = settings.dailyPlanSnapshot;
     const hasSnapToday = snap?.date === today;
 
-    const newDoneToday = hasSnapToday ? (snap.newCardsDone ?? 0) : 0;
+    // Reconciled via firstStudiedAt — same source of truth Dashboard uses,
+    // so the modal's "Neu" tile and the Dashboard's "Neu heute" can never diverge.
+    const newDoneToday = getNewCardsDoneToday(cards, settings);
     const plan = calculateDailyPlan(cards, settings, newDoneToday);
     if (plan.totalToday === 0) return;
 
@@ -248,13 +250,16 @@ export default function App() {
         // Auto-create snapshot on first rating of the day — covers sessions that
         // started outside the daily-plan flow (e.g. study page, set detail, filters).
         // Bootstrap from card state so prior rates today are reflected in the denominator.
+        // newCardsDone bootstraps from firstStudiedAt-reconciled count + current rating
+        // (rateCard's setCards is async, so the current promotion isn't yet in `cards`).
         const alreadyDone = getCardsRatedToday(cards);
         const plan = calculateDailyPlan(cards, prev, 0);
+        const newDoneFromCards = getNewCardsDoneToday(cards, prev);
         return {
           dailyPlanSnapshot: {
             date: today,
             totalCards: alreadyDone + plan.totalToday,
-            newCardsDone: wasNewCard ? 1 : 0,
+            newCardsDone: newDoneFromCards + (wasNewCard ? 1 : 0),
             totalDone: alreadyDone + 1,
           },
         };

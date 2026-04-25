@@ -49,6 +49,12 @@ export interface Flashcard {
   repetitions: number;    // number of successful reviews
   easeFactor: number;     // multiplier (default 2.5)
   nextReviewDate: string; // ISO date string
+  // Set ONCE the first time a card crosses rep=0 → rep≥1 (i.e. the first
+  // successful rating). Never updated after that, never touched by edits or
+  // merges. This is the authoritative "when did this card stop being new?"
+  // signal — used by the Dashboard reconciler so the "Neu heute" count is
+  // independent of the snapshot's reliability.
+  firstStudiedAt?: string;
 }
 
 export interface AppSettings {

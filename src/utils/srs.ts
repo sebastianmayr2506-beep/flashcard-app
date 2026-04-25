@@ -18,6 +18,12 @@ function capIntervalForExam(interval: number, daysUntilExam: number): number {
 export function applySM2(card: Flashcard, rating: RatingValue, daysUntilExam?: number): Partial<Flashcard> {
   let { interval, repetitions, easeFactor } = card;
 
+  // Detect the first-ever rep=0 → rep≥1 transition so we can stamp firstStudiedAt.
+  // We check `!card.firstStudiedAt` so the field is set ONCE per card lifetime —
+  // a future Nochmal-then-Schwer cycle won't move it. This is the signal the
+  // Dashboard reconciler trusts.
+  const isFirstPromotion = card.repetitions === 0 && rating >= 1 && !card.firstStudiedAt;
+
   if (rating >= 1) {
     // Success (Schwer / Gut / Einfach) — card is remembered, progress it.
     // Schwer grows the interval gently (*1.2); Gut/Einfach follow the ease factor.
@@ -52,12 +58,17 @@ export function applySM2(card: Flashcard, rating: RatingValue, daysUntilExam?: n
   nextReviewDate.setDate(nextReviewDate.getDate() + interval);
   nextReviewDate.setHours(0, 0, 0, 0);
 
+  const now = new Date().toISOString();
   return {
     interval,
     repetitions,
     easeFactor: Math.round(easeFactor * 100) / 100,
     nextReviewDate: nextReviewDate.toISOString(),
-    updatedAt: new Date().toISOString(),
+    updatedAt: now,
+    // Stamp firstStudiedAt only on the very first promotion. Otherwise leave
+    // it untouched (returning undefined would clobber an existing value via
+    // the partial-update spread in rateCard, so we explicitly preserve it).
+    firstStudiedAt: isFirstPromotion ? now : card.firstStudiedAt,
   };
 }
 

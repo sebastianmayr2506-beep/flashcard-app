@@ -227,3 +227,48 @@ export function getCardsRatedToday(cards: Flashcard[]): number {
     c.repetitions > 0 && new Date(c.updatedAt).toDateString() === today
   ).length;
 }
+
+/**
+ * How many "new" cards the user introduced today — the truthful count, not the
+ * snapshot's. Authoritative signal: `firstStudiedAt`, set ONCE in applySM2 on
+ * the first rep=0→rep≥1 transition. Edits/merges/sync don't touch it, so this
+ * cannot be inflated by anything other than a real rating.
+ *
+ * For backwards compatibility with cards that were rated before firstStudiedAt
+ * existed (i.e. earlier today, pre-migration), we fall back to a tighter
+ * heuristic that distinguishes ratings from edits: applySM2 sets
+ * `nextReviewDate = updatedAt-day + interval days`. An edit changes neither
+ * field, so the gap between updatedAt and nextReviewDate won't match `interval`
+ * unless a real rating just produced both.
+ *
+ * Final value reconciles snapshot ↔ card-state via Math.max so neither side
+ * can hide progress: if the snapshot is behind reality (race-eaten increment),
+ * the card-derived count covers; if cards are missing the field for any
+ * reason, the snapshot covers.
+ */
+export function getNewCardsDoneToday(cards: Flashcard[], settings: AppSettings): number {
+  const today = new Date().toDateString();
+  const snap = settings.dailyPlanSnapshot;
+  const snapValue = snap?.date === today ? (snap.newCardsDone ?? 0) : 0;
+
+  const fromCards = cards.filter(c => {
+    // Primary signal — the rating-only timestamp
+    if (c.firstStudiedAt && new Date(c.firstStudiedAt).toDateString() === today) {
+      return true;
+    }
+    // Fallback for pre-migration cards rated today: shape must match a fresh
+    // applySM2 result (excludes edits, where updatedAt got bumped but
+    // nextReviewDate / interval did not).
+    if (c.firstStudiedAt) return false; // post-migration cards: trust the field, no fallback
+    if (c.repetitions !== 1) return false;
+    if (c.interval < 1) return false;
+    const u = new Date(c.updatedAt);
+    if (u.toDateString() !== today) return false;
+    const uDay = new Date(u); uDay.setHours(0, 0, 0, 0);
+    const n = new Date(c.nextReviewDate); n.setHours(0, 0, 0, 0);
+    const days = Math.round((n.getTime() - uDay.getTime()) / 86400000);
+    return days === c.interval;
+  }).length;
+
+  return Math.max(snapValue, fromCards);
+}

@@ -26,6 +26,39 @@ StudySession passes `keepAlive: true` for the KI-Prüfung mic.
 
 ---
 
+## 2026-04-25 — Dedicated `firstStudiedAt` field — true "Neu heute" count
+
+**Symptom:** After removing the over-counting reconciler, Dashboard showed the
+honest snapshot value — but the snapshot itself was unreliable because earlier
+race-eaten increments (pre-stale-closure-fix) had under-counted real ratings.
+User had genuinely rated ~15 new cards but snapshot said 3, and we had no
+reliable way to recover the truth from card state because no field
+distinguished "rated today" from "edited today".
+
+**Fix — dedicated, rating-only timestamp:**
+1. New optional field `firstStudiedAt` on `Flashcard` — set ONCE inside
+   `applySM2` on the first rep=0→rep≥1 transition per card lifetime.
+   Cannot be moved by edits, merges, sync, or any path other than a real
+   rating, because applySM2 is the only place that produces it.
+2. Supabase: new column `cards.first_studied_at timestamptz NULL`. Migration
+   SQL: `ALTER TABLE cards ADD COLUMN first_studied_at timestamptz;` —
+   must be run BEFORE deploying or upserts will 400.
+3. New helper `getNewCardsDoneToday(cards, settings)` reconciles
+   `max(snapshot, cards-with-firstStudiedAt-today)`. For pre-migration cards
+   rated today (no field yet), a tighter fallback heuristic is used:
+   `nextReviewDate - updatedAt-day === interval` distinguishes ratings from
+   edits since edits don't touch nextReviewDate or interval.
+4. Dashboard and `handleStartDailySession` (Tagesplan modal) both call this
+   helper — single source of truth, no possibility of disagreement.
+5. `handleRate` bootstrap branch reconciles via the same helper.
+
+**Files:** `src/types/card.ts`, `src/utils/srs.ts`, `src/hooks/useCards.ts`,
+`src/utils/dailyGoal.ts`, `src/pages/Dashboard.tsx`, `src/App.tsx`
+
+**Migration:** SQL above must be run on Supabase before deploy.
+
+---
+
 ## 2026-04-25 — Dashboard reconciler removed (was over-counting)
 
 **Symptom:** Right after the stale-closure fix landed, Dashboard showed

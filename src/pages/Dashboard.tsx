@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import type { Flashcard, AppSettings } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
-import { calculateDailyPlan, getCardsRatedToday } from '../utils/dailyGoal';
+import { calculateDailyPlan, getCardsRatedToday, getNewCardsDoneToday } from '../utils/dailyGoal';
 import ProbabilityBadge from '../components/ProbabilityBadge';
 import SrsLevelGrid, { type SrsKey } from '../components/SrsLevelGrid';
 
@@ -24,19 +24,11 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
   const today = new Date().toDateString();
   const snap = settings.dailyPlanSnapshot;
 
-  // How many new cards were already introduced today (drives the remaining-quota calc).
-  //
-  // Single source of truth: dailyPlanSnapshot.newCardsDone, kept accurate by
-  // handleRate via updateSettingsFn (functional updater — no stale-closure race).
-  //
-  // We considered a fallback reconciler that counted cards with repetitions===1 &&
-  // updatedAt today, but it over-counts: `updatedAt` is bumped by ANY card change
-  // (edit, merge, set-assignment, sync), not just ratings. That made Dashboard show
-  // "0 Neu heute" while the same plan in the Tagesplan-modal correctly showed 12 —
-  // the reconciler had inflated newCardsDone past the daily quota. Dropped.
-  // If snapshot drift ever becomes a real problem we'll add a dedicated
-  // `lastReviewedAt` field set only inside applySM2.
-  const newDoneToday = snap?.date === today ? (snap.newCardsDone ?? 0) : 0;
+  // Reconciled count via the dedicated firstStudiedAt field — see getNewCardsDoneToday.
+  // This is the authoritative "new cards done today" number; both Dashboard and
+  // handleStartDailySession (the Tagesplan modal) read it through the same helper
+  // so they can never disagree.
+  const newDoneToday = getNewCardsDoneToday(cards, settings);
 
   // Pass newDoneToday so the plan reflects remaining work, not the original full quota
   const plan = useMemo(

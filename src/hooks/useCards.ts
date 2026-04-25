@@ -29,6 +29,7 @@ function fromDb(row: Record<string, any>): Flashcard {
     repetitions: row.repetitions ?? 0,
     easeFactor: row.ease_factor ?? 2.5,
     nextReviewDate: row.next_review_date,
+    firstStudiedAt: row.first_studied_at ?? undefined,
   };
 }
 
@@ -56,6 +57,7 @@ function toDb(card: Flashcard, userId: string) {
     repetitions: card.repetitions,
     ease_factor: card.easeFactor,
     next_review_date: card.nextReviewDate,
+    first_studied_at: card.firstStudiedAt ?? null,
   };
 }
 

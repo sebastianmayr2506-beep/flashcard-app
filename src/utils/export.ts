@@ -16,11 +16,27 @@ export function exportBackupJSON(cards: Flashcard[]): void {
  * Share export — strips personal SRS progress so recipients start fresh.
  * Keeps all content & exam-metadata (timesAsked, probabilityPercent, etc.)
  * but resets interval/repetitions/easeFactor/nextReviewDate to initial values.
+ *
+ * IMPORTANT: also strips `id` and `setId`. Card IDs are globally unique in
+ * Supabase (cards_pkey on id only), so reusing the exporter's IDs causes
+ * 409 conflicts on the recipient — their import appears to succeed locally
+ * but vanishes on refresh because the DB inserts silently fail. setId
+ * points to a CardSet on the exporter's account that doesn't exist for
+ * the recipient, so it would orphan the card.
  */
 export function exportShareJSON(cards: Flashcard[]): void {
   const date = new Date().toISOString().slice(0, 10);
   const filename = `karteikarten_teilen_${date}.json`;
-  const freshCards = cards.map(({ interval: _i, repetitions: _r, easeFactor: _e, nextReviewDate: _n, flagged: _f, ...rest }) => ({
+  const freshCards = cards.map(({
+    id: _id,
+    setId: _setId,
+    interval: _i,
+    repetitions: _r,
+    easeFactor: _e,
+    nextReviewDate: _n,
+    flagged: _f,
+    ...rest
+  }) => ({
     ...rest,
     interval: 0,
     repetitions: 0,

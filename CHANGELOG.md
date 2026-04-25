@@ -26,6 +26,30 @@ StudySession passes `keepAlive: true` for the KI-Prüfung mic.
 
 ---
 
+## 2026-04-25 — Dashboard reconciler removed (was over-counting)
+
+**Symptom:** Right after the stale-closure fix landed, Dashboard showed
+"0 Neu heute" while the Tagesplan modal (same plan computation, different
+caller) correctly showed "12 Neu" — i.e. Dashboard claimed all new cards were
+already done when 12 were still pending.
+
+**Root cause:** The defensive reconciler I added counted cards with
+`repetitions===1 && interval>=1 && updatedAt===today` as a lower bound for
+"new cards done today". But `updatedAt` is bumped by ANY card change — edits,
+merges, set-assignments, sync. So a routine card edit on a card that had ever
+been in "lernend" state inflated `newCardsDone` past the daily quota,
+zeroing out remaining-new.
+
+**Fix:** Removed the reconciler. The functional-updater fix in handleRate
+(updateSettingsFn) already addresses the actual race; the reconciler was
+unnecessary and net-negative. If snapshot drift ever returns we'll add a
+dedicated `lastReviewedAt` field set only inside `applySM2` — that's the only
+signal that's truly rating-only.
+
+**Files:** `src/pages/Dashboard.tsx`
+
+---
+
 ## 2026-04-25 — Dashboard "Neu heute" stale-closure fix
 
 **Symptom:** Dashboard kept showing nearly the full daily new-card quota (e.g.

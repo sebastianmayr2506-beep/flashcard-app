@@ -1,9 +1,17 @@
 import { useState, useEffect } from 'react';
-import type { Flashcard, Difficulty, AppSettings, CardImage, CardSet, CardLink } from '../types/card';
+import type { Flashcard, Difficulty, AppSettings, CardImage, CardSet, CardLink, SRSStatus } from '../types/card';
+import { getSRSStatus } from '../types/card';
 import ImageInput from '../components/ImageInput';
 import LinkedCards from '../components/LinkedCards';
 import ProbabilityBadge from '../components/ProbabilityBadge';
 import { reviseCardWithGemini } from '../utils/geminiReviseCard';
+
+export interface SRSOverride {
+  interval: number;
+  repetitions: number;
+  easeFactor: number;
+  nextReviewDate: string;
+}
 
 interface Props {
   card?: Flashcard;
@@ -11,7 +19,10 @@ interface Props {
   sets: CardSet[];
   allCards: Flashcard[];
   links: CardLink[];
-  onSave: (data: Omit<Flashcard, 'id' | 'createdAt' | 'updatedAt' | 'interval' | 'repetitions' | 'easeFactor' | 'nextReviewDate'>) => void;
+  onSave: (
+    data: Omit<Flashcard, 'id' | 'createdAt' | 'updatedAt' | 'interval' | 'repetitions' | 'easeFactor' | 'nextReviewDate'>,
+    srsOverride?: SRSOverride,
+  ) => void;
   onCancel: () => void;
   onAddLink: (cardId: string, linkedCardId: string, linkType: 'child' | 'related') => void;
   onRemoveLink: (linkId: string) => void;
@@ -24,6 +35,33 @@ const DIFFICULTIES: { value: Difficulty; label: string }[] = [
   { value: 'schwer',  label: 'Schwer' },
 ];
 
+const SRS_STAGES: { value: SRSStatus; label: string; emoji: string; description: string }[] = [
+  { value: 'neu',         label: 'Neu',         emoji: '✨', description: 'Heute fällig, von vorne' },
+  { value: 'lernend',     label: 'Lernend',     emoji: '🌱', description: 'Morgen wieder fällig' },
+  { value: 'wiederholen', label: 'Wiederholen', emoji: '🔄', description: 'In 7 Tagen wieder fällig' },
+  { value: 'beherrscht',  label: 'Beherrscht',  emoji: '🏆', description: 'In 30 Tagen wieder fällig' },
+];
+
+/** Maps a chosen SRS stage to concrete SM-2 field values. The numbers mimic
+ * what the algorithm would produce after real reviews, so the card slots
+ * naturally back into the rotation. easeFactor stays at the default since
+ * the user is overriding manually — there's no rating history to derive it from. */
+function srsStatusToFields(status: SRSStatus): SRSOverride {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const addDays = (d: number) => {
+    const dt = new Date(today);
+    dt.setDate(dt.getDate() + d);
+    return dt.toISOString();
+  };
+  switch (status) {
+    case 'neu':         return { interval: 0,  repetitions: 0, easeFactor: 2.5, nextReviewDate: today.toISOString() };
+    case 'lernend':     return { interval: 1,  repetitions: 1, easeFactor: 2.5, nextReviewDate: addDays(1) };
+    case 'wiederholen': return { interval: 7,  repetitions: 3, easeFactor: 2.5, nextReviewDate: addDays(7) };
+    case 'beherrscht':  return { interval: 30, repetitions: 5, easeFactor: 2.5, nextReviewDate: addDays(30) };
+  }
+}
+
 export default function CardEditor({ card, settings, sets, allCards, links, onSave, onCancel, onAddLink, onRemoveLink, onApiError }: Props) {
   const [front, setFront] = useState(card?.front ?? '');
   const [back, setBack] = useState(card?.back ?? '');
@@ -35,6 +73,11 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
   const [tagsInput, setTagsInput] = useState(card?.customTags.join(', ') ?? '');
   const [selectedSetId, setSelectedSetId] = useState<string>(card?.setId ?? '');
   const [flagged, setFlagged] = useState<boolean>(card?.flagged ?? false);
+  // SRS status override (only used when editing an existing card and the user
+  // actively picks a different stage than the current one). Saving without
+  // changing this leaves the SRS fields completely untouched.
+  const originalStatus: SRSStatus | null = card ? getSRSStatus(card) : null;
+  const [srsStatus, setSrsStatus] = useState<SRSStatus | null>(originalStatus);
   const [errors, setErrors] = useState<string[]>([]);
   // AI revision state
   const [aiOpen, setAiOpen] = useState(false);
@@ -77,6 +120,7 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
       setTagsInput(card.customTags.join(', '));
       setSelectedSetId(card.setId ?? '');
       setFlagged(card.flagged ?? false);
+      setSrsStatus(getSRSStatus(card));
     }
   }, [card]);
 
@@ -93,13 +137,18 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
     const errs = validate();
     if (errs.length > 0) { setErrors(errs); return; }
     const customTags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
+    // Only emit an SRS override if the user actively changed the status —
+    // otherwise we'd reset progress every time someone fixes a typo.
+    const srsOverride = (card && srsStatus && srsStatus !== originalStatus)
+      ? srsStatusToFields(srsStatus)
+      : undefined;
     onSave({
       front: front.trim(), back: back.trim(),
       frontImage, backImage,
       subjects, examiners, difficulty, customTags,
       setId: selectedSetId || undefined,
       flagged,
-    });
+    }, srsOverride);
   };
 
   const selectedSet = sets.find(s => s.id === selectedSetId);
@@ -292,6 +341,44 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
                 ))}
               </div>
             </div>
+            {card && srsStatus && (
+              <div>
+                <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-1.5">
+                  SRS-Status (Lernfortschritt)
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {SRS_STAGES.map(stage => {
+                    const selected = srsStatus === stage.value;
+                    const isOriginal = originalStatus === stage.value;
+                    return (
+                      <button
+                        key={stage.value}
+                        type="button"
+                        onClick={() => setSrsStatus(stage.value)}
+                        title={stage.description}
+                        className={`px-2 py-2 rounded-xl text-xs font-medium border transition-all flex flex-col items-center gap-0.5 ${
+                          selected
+                            ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
+                            : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'
+                        }`}
+                      >
+                        <span className="text-base leading-none">{stage.emoji}</span>
+                        <span>{stage.label}</span>
+                        {isOriginal && (
+                          <span className="text-[10px] text-[#6b7280]">aktuell</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {srsStatus !== originalStatus && (
+                  <p className="text-[11px] text-amber-300/80 mt-1.5">
+                    ⚠️ Beim Speichern wird der Lernfortschritt überschrieben:
+                    {' '}{SRS_STAGES.find(s => s.value === srsStatus)?.description}.
+                  </p>
+                )}
+              </div>
+            )}
             <div>
               <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-1.5">Tags (kommagetrennt)</label>
               <input

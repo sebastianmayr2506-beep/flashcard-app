@@ -96,10 +96,13 @@ export default function App() {
     showToast('Karte gelöscht', 'info');
   }, [removeCard, showToast]);
 
-  const handleSaveCard = useCallback((data: Omit<Flashcard, 'id' | 'createdAt' | 'updatedAt' | 'interval' | 'repetitions' | 'easeFactor' | 'nextReviewDate'>) => {
+  const handleSaveCard = useCallback((
+    data: Omit<Flashcard, 'id' | 'createdAt' | 'updatedAt' | 'interval' | 'repetitions' | 'easeFactor' | 'nextReviewDate'>,
+    srsOverride?: { interval: number; repetitions: number; easeFactor: number; nextReviewDate: string },
+  ) => {
     if (editingCard) {
-      updateCard(editingCard.id, data);
-      showToast('Karte aktualisiert ✓');
+      updateCard(editingCard.id, srsOverride ? { ...data, ...srsOverride } : data);
+      showToast(srsOverride ? 'Karte aktualisiert ✓ (SRS-Status zurückgesetzt)' : 'Karte aktualisiert ✓');
     } else {
       addCard(data);
       showToast('Karte erstellt ✓');
@@ -362,6 +365,23 @@ export default function App() {
     });
     const newCardId = created.id;
 
+    // ── SRS carry-over ───────────────────────────────────────────────────────
+    // Pick the "furthest along" source card (most repetitions, tie-break by
+    // longest interval) and inherit its SRS state. Without this, merging two
+    // already-studied cards would silently demote them back to "neu" and erase
+    // the user's learning progress for that topic.
+    const donor = [...mergeSources].sort(
+      (a, b) => b.repetitions - a.repetitions || b.interval - a.interval
+    )[0];
+    if (donor && (donor.repetitions > 0 || donor.interval > 0)) {
+      updateCard(newCardId, {
+        interval: donor.interval,
+        repetitions: donor.repetitions,
+        easeFactor: donor.easeFactor,
+        nextReviewDate: donor.nextReviewDate,
+      });
+    }
+
     // Reparent links: any link connecting a source card to an external card
     // gets migrated to the new merged card. source↔source links are dropped.
     const alreadyLinked = new Set<string>(); // prevent duplicate edges
@@ -383,7 +403,7 @@ export default function App() {
     showToast(`✅ ${mergeSources.length} Karten zusammengeführt`, 'success');
     setMergeSources(null);
     setMergeSuggestion(null);
-  }, [mergeSources, links, addCard, addLink, removeCard, showToast]);
+  }, [mergeSources, links, addCard, addLink, removeCard, updateCard, showToast]);
 
   // ── AI Split ─────────────────────────────────────────────────
   const handleSplitCard = useCallback(async (cardId: string, afterSplit?: (newCardIds: string[]) => void) => {

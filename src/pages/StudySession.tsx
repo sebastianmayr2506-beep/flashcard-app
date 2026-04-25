@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import type { Flashcard, AppSettings, RatingValue, CardSet, CardLink } from '../types/card';
 import { isDueToday, STUDY_RATINGS } from '../types/card';
 import DifficultyBadge from '../components/DifficultyBadge';
@@ -7,6 +7,10 @@ import { LinkedCardsPanel } from '../components/LinkedCards';
 import QuickEditModal from '../components/QuickEditModal';
 import { generateMCHintBundle } from '../utils/geminiMCHint';
 import type { MCHintResult } from '../utils/geminiMCHint';
+import { checkAnswerWithAI } from '../utils/aiAnswerCheck';
+import type { AnswerCheckResult } from '../utils/aiAnswerCheck';
+import { isSpeechRecognitionSupported, createRecognizer } from '../utils/speechRecognition';
+import type { RecognizerHandle } from '../utils/speechRecognition';
 
 export interface DailyPlanSession {
   reviewCards: Flashcard[];
@@ -44,6 +48,15 @@ type MCHintState =
   | { cardId: string; status: 'submitted'; questions: MCHintResult[]; index: number; answers: MCAnswer[]; selected: string[]; isCorrect: boolean }
   | { cardId: string; status: 'finished';  questions: MCHintResult[]; answers: MCAnswer[] };
 
+/** AI Prüfung — learner explains the answer in their own words (mic or text)
+ *  and the AI grades the explanation, suggests a rating. Pure learning aid;
+ *  the user still taps the actual rating button themselves. */
+type AICheckMode = 'text' | 'mic';
+type AICheckState =
+  | { cardId: string; status: 'input';   mode: AICheckMode; text: string; listening: boolean }
+  | { cardId: string; status: 'loading'; mode: AICheckMode; text: string }
+  | { cardId: string; status: 'result';  mode: AICheckMode; text: string; result: AnswerCheckResult };
+
 interface RatingCount {
   nochmal: number; schwer: number; gut: number; einfach: number;
 }
@@ -71,6 +84,10 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [splitInProgress, setSplitInProgress] = useState(false);
   const [mcHint, setMcHint] = useState<MCHintState | null>(null);
+  const [aiCheck, setAiCheck] = useState<AICheckState | null>(null);
+  const recognizerRef = useRef<RecognizerHandle | null>(null);
+  const micFinalRef = useRef(''); // accumulated final transcript across interim chunks
+  const speechSupported = useMemo(() => isSpeechRecognitionSupported(), []);
 
   // Cards available for setup
   const availableCards = useMemo(() => {
@@ -181,6 +198,117 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     }
   };
 
+  // ── AI Prüfung handlers ───────────────────────────────────────────────────
+  const stopRecognizer = () => {
+    recognizerRef.current?.stop();
+    recognizerRef.current = null;
+  };
+
+  const handleStartAICheck = () => {
+    if (!currentCard) return;
+    // Prefer mic if browser supports it — user can toggle to text instantly.
+    setAiCheck({
+      cardId: currentCard.id,
+      status: 'input',
+      mode: speechSupported ? 'mic' : 'text',
+      text: '',
+      listening: false,
+    });
+  };
+
+  const handleSetAICheckMode = (mode: AICheckMode) => {
+    if (!aiCheck || aiCheck.status !== 'input') return;
+    if (aiCheck.listening) stopRecognizer();
+    setAiCheck({ ...aiCheck, mode, listening: false });
+  };
+
+  const handleSetAICheckText = (text: string) => {
+    if (!aiCheck || aiCheck.status !== 'input') return;
+    setAiCheck({ ...aiCheck, text });
+  };
+
+  const handleToggleMic = () => {
+    if (!aiCheck || aiCheck.status !== 'input') return;
+    if (aiCheck.listening) {
+      stopRecognizer();
+      setAiCheck({ ...aiCheck, listening: false });
+      return;
+    }
+    // Start a fresh recognizer; seed the "final" buffer with whatever text
+    // the user already has so additional speech appends instead of replacing.
+    micFinalRef.current = aiCheck.text ? aiCheck.text.trimEnd() + ' ' : '';
+    const handle = createRecognizer({
+      lang: 'de-DE',
+      onResult: (chunk, isFinal) => {
+        if (isFinal) {
+          micFinalRef.current += chunk + ' ';
+          setAiCheck(prev => prev && prev.status === 'input'
+            ? { ...prev, text: micFinalRef.current.trim() }
+            : prev);
+        } else {
+          // interim — show as preview after the committed text
+          const preview = (micFinalRef.current + chunk).trim();
+          setAiCheck(prev => prev && prev.status === 'input'
+            ? { ...prev, text: preview }
+            : prev);
+        }
+      },
+      onEnd: () => {
+        recognizerRef.current = null;
+        setAiCheck(prev => prev && prev.status === 'input' ? { ...prev, listening: false } : prev);
+      },
+      onError: (code, message) => {
+        recognizerRef.current = null;
+        setAiCheck(prev => prev && prev.status === 'input' ? { ...prev, listening: false } : prev);
+        if (code === 'not-allowed' || code === 'service-not-allowed') {
+          onApiError?.('Mikrofon-Zugriff verweigert. Bitte erlaube den Zugriff in den Browser-Einstellungen — oder wechsle in den Text-Modus.');
+        } else if (code !== 'no-speech' && code !== 'aborted') {
+          onApiError?.(`Spracherkennung-Fehler: ${message ?? code}`);
+        }
+      },
+    });
+    if (!handle) {
+      onApiError?.('Spracherkennung wird in diesem Browser nicht unterstützt — bitte Text-Modus nutzen.');
+      return;
+    }
+    recognizerRef.current = handle;
+    handle.start();
+    setAiCheck({ ...aiCheck, listening: true });
+  };
+
+  const handleSubmitAICheck = async () => {
+    if (!currentCard || !aiCheck || aiCheck.status !== 'input') return;
+    if (aiCheck.listening) stopRecognizer();
+    const explanation = aiCheck.text.trim();
+    if (!explanation) {
+      onApiError?.('Bitte erst etwas eintippen oder einsprechen.');
+      return;
+    }
+    setAiCheck({ cardId: currentCard.id, status: 'loading', mode: aiCheck.mode, text: explanation });
+    try {
+      const result = await checkAnswerWithAI(
+        { gemini: settings.geminiApiKey, anthropic: settings.anthropicApiKey, groq: settings.groqApiKey },
+        currentCard.front,
+        currentCard.back,
+        explanation,
+      );
+      setAiCheck({ cardId: currentCard.id, status: 'result', mode: aiCheck.mode, text: explanation, result });
+    } catch (err) {
+      setAiCheck(null);
+      onApiError?.(err instanceof Error ? err.message : 'KI-Prüfung fehlgeschlagen');
+    }
+  };
+
+  const handleCloseAICheck = () => {
+    if (recognizerRef.current) stopRecognizer();
+    setAiCheck(null);
+  };
+
+  // Cleanup recognizer if the card changes or component unmounts mid-recording.
+  useEffect(() => {
+    return () => { if (recognizerRef.current) stopRecognizer(); };
+  }, []);
+
   const handleRate = (rating: RatingValue) => {
     const card = sessionCards[currentIdx];
     setConfirmDeleteId(null);
@@ -206,6 +334,14 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   const currentCard = sessionCards[currentIdx];
   // Auto-invalidate MC hint when the card changes
   const effectiveMcHint = mcHint?.cardId === currentCard?.id ? mcHint : null;
+  // Same for AI Prüfung — also stop any active recognizer when card changes
+  const effectiveAiCheck = aiCheck?.cardId === currentCard?.id ? aiCheck : null;
+  useEffect(() => {
+    if (aiCheck && aiCheck.cardId !== currentCard?.id) {
+      if (recognizerRef.current) stopRecognizer();
+      setAiCheck(null);
+    }
+  }, [currentCard?.id, aiCheck]);
 
   const imgSrc = (img: Flashcard['frontImage']) => img
     ? (img.type === 'base64' ? `data:${img.mimeType ?? 'image/png'};base64,${img.data}` : img.data)
@@ -558,6 +694,34 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                         answers={effectiveMcHint.answers}
                         onReset={() => setMcHint(null)}
                       />
+                    )}
+
+                    {/* AI Prüfung — separate from MC hint, shown below */}
+                    {!effectiveAiCheck && !effectiveMcHint && (
+                      <button
+                        onClick={handleStartAICheck}
+                        className="flex items-center gap-2 text-xs text-[#6b7280] hover:text-purple-400 transition-colors py-1 mt-1.5 group"
+                      >
+                        <span className="text-sm group-hover:scale-110 transition-transform">🎓</span>
+                        <span>KI Prüfung — Antwort selbst erklären</span>
+                      </button>
+                    )}
+                    {effectiveAiCheck && (
+                      <div className="mt-2">
+                        <AICheckWidget
+                          state={effectiveAiCheck}
+                          speechSupported={speechSupported}
+                          onSetMode={handleSetAICheckMode}
+                          onSetText={handleSetAICheckText}
+                          onToggleMic={handleToggleMic}
+                          onSubmit={handleSubmitAICheck}
+                          onClose={handleCloseAICheck}
+                          onPickRating={(r) => {
+                            handleCloseAICheck();
+                            handleRate(r);
+                          }}
+                        />
+                      </div>
                     )}
                   </div>
                 )}
@@ -962,6 +1126,273 @@ function MCHintSummary({ questions, answers, onReset }: MCHintSummaryProps) {
       <p className="text-[10px] text-[#6b7280] px-1 italic">
         Kein Einfluss auf SRS — jetzt normal aufdecken & bewerten
       </p>
+    </div>
+  );
+}
+
+// ─── AI Prüfung widget ─────────────────────────────────────────────────────
+interface AICheckWidgetProps {
+  state: AICheckState;
+  speechSupported: boolean;
+  onSetMode: (mode: AICheckMode) => void;
+  onSetText: (text: string) => void;
+  onToggleMic: () => void;
+  onSubmit: () => void;
+  onClose: () => void;
+  onPickRating: (r: RatingValue) => void;
+}
+
+function AICheckWidget({
+  state, speechSupported,
+  onSetMode, onSetText, onToggleMic, onSubmit, onClose, onPickRating,
+}: AICheckWidgetProps) {
+  const isInput = state.status === 'input';
+  const isLoading = state.status === 'loading';
+  const isResult = state.status === 'result';
+
+  return (
+    <div className="w-full space-y-2.5 p-3 rounded-2xl bg-[#15172a] border border-purple-500/30">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-base">🎓</span>
+          <p className="text-xs font-semibold text-purple-300 uppercase tracking-wider">KI Prüfung</p>
+        </div>
+        <button
+          onClick={onClose}
+          className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white transition-all"
+        >
+          Schließen
+        </button>
+      </div>
+
+      {isInput && (
+        <>
+          {/* Mode toggle */}
+          <div className="flex gap-1 text-xs">
+            <button
+              type="button"
+              onClick={() => onSetMode('mic')}
+              disabled={!speechSupported}
+              title={!speechSupported ? 'Dein Browser unterstützt keine Spracherkennung' : 'Antwort einsprechen'}
+              className={`flex-1 px-2.5 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
+                state.mode === 'mic'
+                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                  : 'text-[#9ca3af] hover:text-white border border-transparent'
+              } ${!speechSupported ? 'opacity-40 cursor-not-allowed' : ''}`}
+            >
+              🎤 Sprechen{!speechSupported && ' (n/a)'}
+            </button>
+            <button
+              type="button"
+              onClick={() => onSetMode('text')}
+              className={`flex-1 px-2.5 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
+                state.mode === 'text'
+                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                  : 'text-[#9ca3af] hover:text-white border border-transparent'
+              }`}
+            >
+              ⌨️ Tippen
+            </button>
+          </div>
+
+          <p className="text-[11px] text-[#9ca3af] leading-relaxed">
+            Erkläre die Antwort in eigenen Worten. Die KI prüft, ob du den Kern erfasst hast,
+            zeigt dir Lücken und schlägt eine Bewertung vor.
+          </p>
+
+          {/* Mic mode UI */}
+          {state.mode === 'mic' && speechSupported && (
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={onToggleMic}
+                className={`w-full py-3 rounded-xl border text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
+                  state.listening
+                    ? 'bg-red-500/15 border-red-500/40 text-red-300 animate-pulse'
+                    : 'bg-purple-500/10 border-purple-500/40 text-purple-300 hover:bg-purple-500/20'
+                }`}
+              >
+                {state.listening ? (
+                  <>
+                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-400" />
+                    Aufnahme läuft — klicken zum Stoppen
+                  </>
+                ) : (
+                  <>🎤 Aufnahme starten</>
+                )}
+              </button>
+              <textarea
+                value={state.text}
+                onChange={e => onSetText(e.target.value)}
+                placeholder={state.listening ? 'Sprich jetzt — Transkript erscheint hier live…' : 'Klicke auf "Aufnahme starten" oder tippe direkt hier…'}
+                rows={4}
+                className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
+              />
+            </div>
+          )}
+
+          {/* Text-only mode UI */}
+          {(state.mode === 'text' || !speechSupported) && (
+            <textarea
+              value={state.text}
+              onChange={e => onSetText(e.target.value)}
+              placeholder="Tippe deine Erklärung hier… (z.B. in der U-Bahn 🚇)"
+              rows={5}
+              autoFocus
+              className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
+            />
+          )}
+
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={!state.text.trim() || state.listening}
+            className="w-full py-2.5 rounded-xl bg-purple-500 hover:bg-purple-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+          >
+            ✨ Bewerten lassen
+          </button>
+        </>
+      )}
+
+      {isLoading && (
+        <div className="py-4 flex flex-col items-center gap-2">
+          <span className="inline-block w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs text-purple-300">KI prüft deine Erklärung…</p>
+          <p className="text-[10px] text-[#6b7280]">Das kann ein paar Sekunden dauern</p>
+        </div>
+      )}
+
+      {isResult && (
+        <AICheckResultView
+          result={state.result}
+          userText={state.text}
+          onPickRating={onPickRating}
+          onRetry={() => {
+            // Re-open input mode preserving the current text — user can adjust & resubmit
+            onSetMode(state.mode);
+            onSetText(state.text);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Result view (score, captured, missing, rating recommendation) ──────────
+interface AICheckResultViewProps {
+  result: AnswerCheckResult;
+  userText: string;
+  onPickRating: (r: RatingValue) => void;
+  onRetry: () => void;
+}
+
+function AICheckResultView({ result, userText, onPickRating }: AICheckResultViewProps) {
+  const scoreColor =
+    result.score >= 80 ? 'text-green-400 border-green-500/40 bg-green-500/10' :
+    result.score >= 50 ? 'text-amber-400 border-amber-500/40 bg-amber-500/10' :
+    'text-red-400 border-red-500/40 bg-red-500/10';
+
+  const scoreEmoji =
+    result.score >= 80 ? '🎉' :
+    result.score >= 50 ? '👍' :
+    '📚';
+
+  return (
+    <div className="space-y-3">
+      {/* Score header */}
+      <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border ${scoreColor}`}>
+        <span className="text-2xl">{scoreEmoji}</span>
+        <div className="flex-1">
+          <p className="text-sm font-bold">{result.score} / 100</p>
+          {result.reasoning && (
+            <p className="text-[11px] opacity-90 leading-snug mt-0.5">{result.reasoning}</p>
+          )}
+        </div>
+      </div>
+
+      {/* What you said (collapsed preview) */}
+      {userText && (
+        <details className="group">
+          <summary className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-widest cursor-pointer hover:text-[#9ca3af]">
+            Deine Erklärung anzeigen
+          </summary>
+          <p className="text-[11px] text-[#9ca3af] mt-1 px-2 py-1.5 rounded-lg bg-[#1e2130] border border-[#2d3148] leading-relaxed italic">
+            „{userText}"
+          </p>
+        </details>
+      )}
+
+      {/* Captured */}
+      {result.captured.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[10px] font-semibold text-green-400/80 uppercase tracking-widest px-1">
+            ✓ Du hattest
+          </p>
+          <ul className="space-y-0.5 px-1">
+            {result.captured.map((c, i) => (
+              <li key={i} className="text-[11px] text-green-300/90 leading-snug flex gap-1.5">
+                <span className="opacity-60 shrink-0">•</span>
+                <span>{c}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Missing */}
+      {result.missing.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[10px] font-semibold text-red-400/80 uppercase tracking-widest px-1">
+            ✗ Was gefehlt hat
+          </p>
+          <ul className="space-y-0.5 px-1">
+            {result.missing.map((m, i) => (
+              <li key={i} className="text-[11px] text-red-300/90 leading-snug flex gap-1.5">
+                <span className="opacity-60 shrink-0">•</span>
+                <span>{m}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Rating recommendation + buttons */}
+      <div className="space-y-1.5 pt-1 border-t border-white/5">
+        <p className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-widest px-1">
+          Empfehlung & Bewertung
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+          {STUDY_RATINGS.map(r => {
+            const isSuggested = r.value === result.suggestedRating;
+            return (
+              <button
+                key={r.value}
+                onClick={() => onPickRating(r.value)}
+                className={`relative py-2 rounded-xl border text-xs font-semibold transition-all ${r.bgColor} ${r.hoverColor}`}
+                style={{
+                  color: r.color,
+                  borderColor: isSuggested ? r.color : r.color + '40',
+                  boxShadow: isSuggested ? `0 0 0 1px ${r.color}` : undefined,
+                }}
+              >
+                {isSuggested && (
+                  <span
+                    className="absolute -top-2 left-1/2 -translate-x-1/2 text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                    style={{ backgroundColor: r.color, color: '#0f1117' }}
+                  >
+                    ✨ Empfehlung
+                  </span>
+                )}
+                {r.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-[#6b7280] italic px-1">
+          Du entscheidest — die Empfehlung ist nur ein Hinweis.
+        </p>
+      </div>
     </div>
   );
 }

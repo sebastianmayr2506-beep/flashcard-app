@@ -26,6 +26,42 @@ StudySession passes `keepAlive: true` for the KI-Prüfung mic.
 
 ---
 
+## 2026-04-25 — StudySession: multi-select examiners + daily-limit honoring
+
+**Symptom 1:** "Lern-Session" filter only let you pick ONE examiner. Inflexible
+when studying for multiple examiners at once.
+
+**Symptom 2:** With "Nur fällige Karten" on, the preview showed absurd counts
+like "1008 Neu" because all unseen cards have `nextReviewDate <= today` (their
+default), so `isDueToday` returned true for all of them. The preview was
+honest in a useless way — there's no way you'd do 1008 new cards.
+
+**Fix 1:** Examiners is now a `string[]` with chip-style multi-select (same
+pattern as CardEditor). Filter logic: card matches if ANY of its examiners is
+in the selected set. "Alle abwählen" button + count badge for clarity.
+
+**Fix 2:** When `onlyDue && !endlessMode`, cap unseen cards (rep=0 AND
+interval=0) to `dailyNewCardGoal − getNewCardsDoneToday()` — same quota as
+calculateDailyPlan applies. Reviews are unaffected.
+
+**Bonus consistency cleanup:** Aligned StudySession's "new vs review" split
+with calculateDailyPlan's definition: `rep=0 && interval=0` = new (truly
+unseen). Previously StudySession used just `rep=0` which incorrectly
+classified Nochmal'd cards as "new". Now they correctly land in the review
+bucket. Affects: `availableCards` cap, `startSession` queue split,
+`previewNew`/`previewReview` counts.
+
+**Why this can't break new-card counting:** `availableCards` is a read-only
+selection filter. The `firstStudiedAt` field, snapshot increments via
+`updateSettingsFn`, and `getNewCardsDoneToday` are untouched. Cards filtered
+out → never rated → no counter changes. Cards filtered in → rated via the
+normal `handleRate` pipeline → counter increments correctly. The cap shrinks
+naturally on next render as `getNewCardsDoneToday` grows.
+
+**Files:** `src/pages/StudySession.tsx`
+
+---
+
 ## 2026-04-25 — Dedicated `firstStudiedAt` field — true "Neu heute" count
 
 **Symptom:** After removing the over-counting reconciler, Dashboard showed the

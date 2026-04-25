@@ -5,6 +5,7 @@ import DifficultyBadge from '../components/DifficultyBadge';
 import MarkdownText from '../components/MarkdownText';
 import { LinkedCardsPanel } from '../components/LinkedCards';
 import QuickEditModal from '../components/QuickEditModal';
+import { getNewCardsDoneToday } from '../utils/dailyGoal';
 import { generateMCHintBundle } from '../utils/geminiMCHint';
 import type { MCHintResult } from '../utils/geminiMCHint';
 import { checkAnswerWithAI } from '../utils/aiAnswerCheck';
@@ -68,7 +69,7 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     () => (localStorage.getItem('study_order') as StudyOrder) ?? 'review-first'
   );
   const [filterSubject, setFilterSubject] = useState('');
-  const [filterExaminer, setFilterExaminer] = useState('');
+  const [filterExaminers, setFilterExaminers] = useState<string[]>([]);
   const [filterDifficulty, setFilterDifficulty] = useState('');
   const [filterSet, setFilterSet] = useState('');
   const [onlyDue, setOnlyDue] = useState(true);
@@ -94,15 +95,38 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     let result = preFilteredCards ?? cards;
     if (!preFilteredCards) {
       if (filterSubject) result = result.filter(c => c.subjects?.includes(filterSubject));
-      if (filterExaminer) result = result.filter(c => c.examiners?.includes(filterExaminer));
+      if (filterExaminers.length > 0) {
+        result = result.filter(c => c.examiners?.some(e => filterExaminers.includes(e)));
+      }
       if (filterDifficulty) result = result.filter(c => c.difficulty === filterDifficulty);
       if (filterSet) result = result.filter(c => c.setId === filterSet);
       if (!endlessMode && onlyDue) result = result.filter(isDueToday);
       if (filterKlassiker) result = result.filter(c => (c.probabilityPercent ?? 0) > 60);
+
+      // When "Nur fällige" is on (and Endlos is off), respect the daily new-card
+      // quota — same cap that calculateDailyPlan applies. Without this, all
+      // unseen cards (rep=0) read as "due today" because their nextReviewDate
+      // defaults to creation-day, leading to absurd counts like "1008 Neu"
+      // instead of the meaningful "remaining new cards for today".
+      //
+      // Read-only operation — does NOT touch firstStudiedAt, snapshot, or any
+      // counter. When the user rates a card here, the normal handleRate
+      // pipeline increments newCardsDone correctly and the cap shrinks by 1
+      // on the next render. Identical behavior to the Tagesplan flow.
+      if (!endlessMode && onlyDue) {
+        const remainingNew = Math.max(0, settings.dailyNewCardGoal - getNewCardsDoneToday(cards, settings));
+        // "Truly unseen" = same definition as calculateDailyPlan. Excludes
+        // Nochmal'd cards (rep=0, interval=1) — those are reviews, not new.
+        const isUnseen = (c: Flashcard) => c.repetitions === 0 && c.interval === 0;
+        const unseen = result.filter(isUnseen).slice(0, remainingNew);
+        const others = result.filter(c => !isUnseen(c));
+        result = [...unseen, ...others];
+      }
+
       if (sortByProbability) result = [...result].sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0));
     }
     return result;
-  }, [cards, preFilteredCards, filterSubject, filterExaminer, filterDifficulty, filterSet, onlyDue, endlessMode, filterKlassiker, sortByProbability]);
+  }, [cards, preFilteredCards, filterSubject, filterExaminers, filterDifficulty, filterSet, onlyDue, endlessMode, filterKlassiker, sortByProbability, settings]);
 
   const applyStudyOrder = (newCards: Flashcard[], reviewCards: Flashcard[]): Flashcard[] => {
     if (studyOrder === 'new-first') return [...newCards, ...reviewCards];
@@ -125,10 +149,14 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
       ordered = applyStudyOrder(sNew, sReview);
     } else {
       if (availableCards.length === 0) return;
-      const newCards = availableCards.filter(c => c.repetitions === 0).sort(() => Math.random() - 0.5);
+      // "Truly unseen" — rep=0 AND interval=0. Nochmal'd cards (rep=0, int=1)
+      // belong in the review bucket, same as calculateDailyPlan treats them.
+      const isUnseen = (c: Flashcard) => c.repetitions === 0 && c.interval === 0;
+      const newCards = availableCards.filter(isUnseen).sort(() => Math.random() - 0.5);
+      const reviewSource = availableCards.filter(c => !isUnseen(c));
       const reviewCards = sortByProbability
-        ? availableCards.filter(c => c.repetitions > 0).sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0))
-        : availableCards.filter(c => c.repetitions > 0).sort(() => Math.random() - 0.5);
+        ? reviewSource.sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0))
+        : reviewSource.sort(() => Math.random() - 0.5);
       ordered = applyStudyOrder(newCards, reviewCards);
     }
 
@@ -350,12 +378,14 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
 
   if (sessionState === 'setup') {
     // Compute new/review split for the preview
+    // "Truly unseen" — rep=0 AND interval=0, same as calculateDailyPlan.
+    // Nochmal'd cards (rep=0, interval=1) count as reviews here.
     const previewNew = isDailyMode
       ? dailyPlan!.newCards.length
-      : availableCards.filter(c => c.repetitions === 0).length;
+      : availableCards.filter(c => c.repetitions === 0 && c.interval === 0).length;
     const previewReview = isDailyMode
       ? dailyPlan!.reviewCards.length
-      : availableCards.filter(c => c.repetitions > 0).length;
+      : availableCards.filter(c => !(c.repetitions === 0 && c.interval === 0)).length;
     const previewTotal = isDailyMode ? dailyPlan!.totalPlanned : availableCards.length;
     const canStart = previewTotal > 0;
 
@@ -432,12 +462,44 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">Prüfer</label>
-                <select value={filterExaminer} onChange={e => setFilterExaminer(e.target.value)}
-                  className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none">
-                  <option value="">Alle Prüfer</option>
-                  {settings.examiners.map(e => <option key={e} value={e}>{e}</option>)}
-                </select>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider">
+                    Prüfer {filterExaminers.length > 0 && `(${filterExaminers.length})`}
+                  </label>
+                  {filterExaminers.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setFilterExaminers([])}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                    >
+                      Alle abwählen
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {settings.examiners.map(e => {
+                    const selected = filterExaminers.includes(e);
+                    return (
+                      <button
+                        key={e}
+                        type="button"
+                        onClick={() => setFilterExaminers(prev =>
+                          selected ? prev.filter(x => x !== e) : [...prev, e]
+                        )}
+                        className={`text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                          selected
+                            ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
+                            : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'
+                        }`}
+                      >
+                        {e}
+                      </button>
+                    );
+                  })}
+                </div>
+                {filterExaminers.length === 0 && (
+                  <p className="text-xs text-[#6b7280] mt-1.5">Nichts ausgewählt = alle Prüfer</p>
+                )}
               </div>
               <div>
                 <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">Schwierigkeit</label>
@@ -459,12 +521,17 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                   </select>
                 </div>
               )}
-              <label className="flex items-center gap-3 cursor-pointer">
+              <label className="flex items-start gap-3 cursor-pointer">
                 <div onClick={() => setOnlyDue(!onlyDue)}
-                  className={`w-10 h-6 rounded-full transition-colors relative ${onlyDue ? 'bg-indigo-500' : 'bg-[#2d3148]'}`}>
+                  className={`w-10 h-6 rounded-full transition-colors relative shrink-0 mt-0.5 ${onlyDue ? 'bg-indigo-500' : 'bg-[#2d3148]'}`}>
                   <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${onlyDue ? 'left-5' : 'left-1'}`} />
                 </div>
-                <span className="text-sm text-white">Nur fällige Karten</span>
+                <div>
+                  <span className="text-sm text-white">Nur fällige Karten (Tagesplan)</span>
+                  <p className="text-xs text-[#6b7280] mt-0.5">
+                    Neue Karten respektieren das Tageslimit ({settings.dailyNewCardGoal}/Tag), Wiederholungen wie geplant
+                  </p>
+                </div>
               </label>
               <label className="flex items-center gap-3 cursor-pointer">
                 <div onClick={() => setFilterKlassiker(!filterKlassiker)}

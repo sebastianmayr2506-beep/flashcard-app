@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { CardLink } from '../types/card';
 import { supabase } from '../lib/supabase';
 import { getLinks as getLocalLinks } from '../utils/storage';
+import { isExistingAccount } from '../utils/accountState';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function fromDb(row: Record<string, any>): CardLink {
@@ -45,16 +46,24 @@ export function useCardLinks(userId: string | null) {
       try {
         const alreadyMigrated = localStorage.getItem(migrationKey) === '1';
         if (!alreadyMigrated) {
-          const { data: existing } = await supabase
+          const { data: existing, error: existErr } = await supabase
             .from('card_links').select('id').eq('user_id', userId).limit(1);
 
-          if ((existing ?? []).length === 0) {
-            const localLinks = getLocalLinks();
-            if (localLinks.length > 0) {
-              await supabase.from('card_links').insert(localLinks.map(l => toDb(l, userId)));
+          if (!existErr && (existing ?? []).length === 0) {
+            // Resurrection guard — see useCards.ts for full explanation.
+            const accountExists = await isExistingAccount(userId);
+            if (accountExists === true) {
+              localStorage.setItem(migrationKey, '1');
+            } else if (accountExists === false) {
+              const localLinks = getLocalLinks();
+              if (localLinks.length > 0) {
+                await supabase.from('card_links').insert(localLinks.map(l => toDb(l, userId)));
+              }
+              localStorage.setItem(migrationKey, '1');
             }
+          } else if (!existErr) {
+            localStorage.setItem(migrationKey, '1');
           }
-          localStorage.setItem(migrationKey, '1');
         }
 
         const { data } = await supabase.from('card_links').select('*').eq('user_id', userId);
@@ -65,7 +74,43 @@ export function useCardLinks(userId: string | null) {
     };
 
     load();
-    return () => { cancelled = true; };
+
+    // Live-sync — links don't have an updated_at column, so INSERT/DELETE
+    // are the meaningful events. We still handle UPDATE defensively (no-op
+    // if id matches an existing link).
+    const channel = supabase
+      .channel(`card_links:${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'card_links', filter: `user_id=eq.${userId}` },
+        (payload) => {
+          if (cancelled) return;
+          if (payload.eventType === 'DELETE') {
+            const oldRow = payload.old as Record<string, unknown> | undefined;
+            const id = oldRow && typeof oldRow.id === 'string' ? oldRow.id : null;
+            if (!id) return;
+            setLinks(prev => prev.filter(l => l.id !== id));
+            return;
+          }
+          const newRow = payload.new as Record<string, unknown> | undefined;
+          if (!newRow || typeof newRow !== 'object') return;
+          const incoming = fromDb(newRow);
+          setLinks(prev => {
+            if (prev.some(l => l.id === incoming.id)) return prev; // already have it
+            return [...prev, incoming];
+          });
+        },
+      )
+      .subscribe();
+
+    const onFocus = () => { if (!cancelled) load(); };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [userId]);
 
   const refresh = useCallback(() => {

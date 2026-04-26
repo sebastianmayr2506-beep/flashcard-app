@@ -4,6 +4,7 @@ import type { Flashcard, RatingValue } from '../types/card';
 import { supabase } from '../lib/supabase';
 import { applySM2, createInitialSRS, getDaysUntilExam } from '../utils/srs';
 import { getCards as getLocalCards } from '../utils/storage';
+import { isExistingAccount } from '../utils/accountState';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function fromDb(row: Record<string, any>): Flashcard {
@@ -130,15 +131,30 @@ export function useCards(userId: string | null) {
           // Supabase is truly empty. A failed query must NOT trigger migration
           // (could duplicate existing data or corrupt state).
           if (!existErr && (existing ?? []).length === 0) {
-            const localCards = getLocalCards();
-            if (localCards.length > 0) {
-              for (let i = 0; i < localCards.length; i += 100) {
-                await supabase.from('cards').insert(
-                  localCards.slice(i, i + 100).map(c => toDb(c, userId))
-                );
+            // RESURRECTION GUARD: an empty `cards` table can mean two things:
+            //   (a) brand-new user → migration is correct
+            //   (b) existing user who deleted everything → migration would
+            //       resurrect zombie cards from this device's stale localStorage,
+            //       wiping out the user's intentional deletion (cross-device).
+            // We disambiguate by checking if the user has a `user_settings` row
+            // (created by useSettings on first-ever app open). Existence ⇒ not
+            // brand-new ⇒ skip migration. (Network error ⇒ skip too, fail-safe.)
+            const accountExists = await isExistingAccount(userId);
+            if (accountExists === true) {
+              console.info('[useCards] existing account with empty cards — skipping migration (deletion respected)');
+              localStorage.setItem(migrationKey, '1');
+            } else if (accountExists === false) {
+              const localCards = getLocalCards();
+              if (localCards.length > 0) {
+                for (let i = 0; i < localCards.length; i += 100) {
+                  await supabase.from('cards').insert(
+                    localCards.slice(i, i + 100).map(c => toDb(c, userId))
+                  );
+                }
               }
+              localStorage.setItem(migrationKey, '1');
             }
-            localStorage.setItem(migrationKey, '1');
+            // accountExists === null (network error) → don't set flag, retry next load
           } else if (!existErr) {
             // Supabase has data — migration not needed, mark as done
             localStorage.setItem(migrationKey, '1');
@@ -170,7 +186,57 @@ export function useCards(userId: string | null) {
     };
 
     load();
-    return () => { cancelled = true; };
+
+    // Live-sync: pick up cards changes from other devices in real time.
+    // INSERT  → add to state (idempotent: skip if id already present)
+    // UPDATE  → replace by id, but only if incoming updated_at > local
+    //          (prevents an own-echo from overwriting fresher optimistic state)
+    // DELETE  → remove by id from state
+    //
+    // Plus a window.focus refetch as a safety net: mobile Safari often
+    // suspends the realtime channel when the tab goes to background.
+    const channel = supabase
+      .channel(`cards:${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cards', filter: `user_id=eq.${userId}` },
+        (payload) => {
+          if (cancelled) return;
+          if (payload.eventType === 'DELETE') {
+            const oldRow = payload.old as Record<string, unknown> | undefined;
+            const id = oldRow && typeof oldRow.id === 'string' ? oldRow.id : null;
+            if (!id) return;
+            setCards(prev => prev.filter(c => c.id !== id));
+            return;
+          }
+          const newRow = payload.new as Record<string, unknown> | undefined;
+          if (!newRow || typeof newRow !== 'object') return;
+          const incoming = fromDb(newRow);
+          setCards(prev => {
+            const idx = prev.findIndex(c => c.id === incoming.id);
+            if (idx === -1) return [...prev, incoming]; // INSERT or unseen id
+            // UPDATE — only apply if strictly newer than what we have
+            const local = prev[idx];
+            if (local.updatedAt && incoming.updatedAt && incoming.updatedAt <= local.updatedAt) return prev;
+            const next = prev.slice();
+            next[idx] = incoming;
+            return next;
+          });
+        },
+      )
+      .subscribe();
+
+    const onFocus = () => {
+      // Re-fetch on tab focus (channel may have been suspended)
+      if (!cancelled) load();
+    };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [userId]);
 
   const refresh = useCallback(async () => {

@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { CardSet } from '../types/card';
 import { supabase } from '../lib/supabase';
 import { getSets as getLocalSets } from '../utils/storage';
+import { isExistingAccount } from '../utils/accountState';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function fromDb(row: Record<string, any>): CardSet {
@@ -52,16 +53,24 @@ export function useSets(userId: string | null) {
       try {
         const alreadyMigrated = localStorage.getItem(migrationKey) === '1';
         if (!alreadyMigrated) {
-          const { data: existing } = await supabase
+          const { data: existing, error: existErr } = await supabase
             .from('sets').select('id').eq('user_id', userId).limit(1);
 
-          if ((existing ?? []).length === 0) {
-            const localSets = getLocalSets();
-            if (localSets.length > 0) {
-              await supabase.from('sets').insert(localSets.map(toDb));
+          if (!existErr && (existing ?? []).length === 0) {
+            // Resurrection guard — see useCards.ts for full explanation.
+            const accountExists = await isExistingAccount(userId);
+            if (accountExists === true) {
+              localStorage.setItem(migrationKey, '1');
+            } else if (accountExists === false) {
+              const localSets = getLocalSets();
+              if (localSets.length > 0) {
+                await supabase.from('sets').insert(localSets.map(toDb));
+              }
+              localStorage.setItem(migrationKey, '1');
             }
+          } else if (!existErr) {
+            localStorage.setItem(migrationKey, '1');
           }
-          localStorage.setItem(migrationKey, '1');
         }
 
         const { data } = await supabase.from('sets').select('*').eq('user_id', userId);
@@ -72,7 +81,46 @@ export function useSets(userId: string | null) {
     };
 
     load();
-    return () => { cancelled = true; };
+
+    // Live-sync — INSERT/UPDATE/DELETE from other devices.
+    const channel = supabase
+      .channel(`sets:${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sets', filter: `user_id=eq.${userId}` },
+        (payload) => {
+          if (cancelled) return;
+          if (payload.eventType === 'DELETE') {
+            const oldRow = payload.old as Record<string, unknown> | undefined;
+            const id = oldRow && typeof oldRow.id === 'string' ? oldRow.id : null;
+            if (!id) return;
+            setSets(prev => prev.filter(s => s.id !== id));
+            return;
+          }
+          const newRow = payload.new as Record<string, unknown> | undefined;
+          if (!newRow || typeof newRow !== 'object') return;
+          const incoming = fromDb(newRow);
+          setSets(prev => {
+            const idx = prev.findIndex(s => s.id === incoming.id);
+            if (idx === -1) return [...prev, incoming];
+            const local = prev[idx];
+            if (local.updatedAt && incoming.updatedAt && incoming.updatedAt <= local.updatedAt) return prev;
+            const next = prev.slice();
+            next[idx] = incoming;
+            return next;
+          });
+        },
+      )
+      .subscribe();
+
+    const onFocus = () => { if (!cancelled) load(); };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [userId]);
 
   const refresh = useCallback(() => {

@@ -7,6 +7,68 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-04-26 — Cross-device live sync + resurrection-bug fix
+
+**Symptom (real user, "Verena"):** She deleted all cards on laptop and
+re-imported a smaller JSON (1074 cards). On laptop everything looked
+correct, but on iPad and phone she still saw ~3000 old cards. Reload didn't
+help — every reload of iPad just brought the cards "back from the dead".
+Only manual delete-and-import on each device individually got things in sync.
+
+**Two compounding root causes:**
+
+**1. No live sync for cards/sets/links.** Only `user_settings` had a
+`postgres_changes` subscription (added earlier). Cards/sets/links were
+loaded once on mount and then never refreshed automatically. Cross-device
+deletes/edits never propagated; the only way to "see" them was a hard
+remount, which mobile Safari rarely does.
+
+**2. The resurrection bug in the localStorage→Supabase migration.** The
+migration logic in `useCards.ts`, `useSets.ts`, `useCardLinks.ts` ran whenever:
+\`migrationFlag not set on this device\` AND \`Supabase table empty for this user\`.
+That second condition cannot distinguish "brand-new user" from "existing user
+who deleted everything". So on a device whose migration flag wasn't set yet,
+opening the app post-deletion would silently re-upload that device's stale
+localStorage cards to Supabase — undoing the user's deletion across all devices.
+
+**Fix:**
+
+1. **`src/utils/accountState.ts` (new)** — `isExistingAccount(userId)` checks
+   the `user_settings` table. Existence ⇒ user has used the app before
+   ⇒ never brand-new ⇒ migration must NOT run on empty tables (it would
+   resurrect deletions). Network errors return `null` → migration is also
+   skipped (fail-safe; better to skip than to resurrect).
+2. **All three migration hooks** (`useCards`, `useSets`, `useCardLinks`)
+   now gate the migration behind `isExistingAccount`. If the account exists
+   in `user_settings` but the data table is empty → mark migration done,
+   don't upload.
+3. **Live-sync subscriptions** added to all three hooks, mirroring the
+   `useSettings` pattern: postgres_changes channel + `window.focus` refetch.
+   - INSERT → add by id (idempotent if already present)
+   - UPDATE → replace by id, but only if `incoming.updatedAt > local.updatedAt`
+     (skips own-echoes; prevents stale events from clobbering newer optimistic state)
+   - DELETE → remove by id
+   - Card_links has no updated_at → INSERT/DELETE only.
+
+**Why this can't break SRS counting:** Live-sync is a strict superset of
+the existing one-shot load. The same `fromDb` mapper is used for incoming
+events; `firstStudiedAt`, `repetitions`, `interval` etc. flow through
+unchanged. Optimistic local writes are unchanged. The own-echo guard via
+`updatedAt` comparison ensures a Supabase round-trip doesn't overwrite a
+fresher local state.
+
+**Edge case:** During a brand-new user's very first login on a device with
+legacy localStorage data, there is a sub-second race where `useSettings`
+seeds the `user_settings` row in parallel with `useCards` checking
+`isExistingAccount`. If the seed completes first, migration is skipped on
+that device — recoverable via manual re-import. Acceptable trade-off for
+preventing silent resurrection across all subsequent multi-device scenarios.
+
+**Files:** `src/utils/accountState.ts` (new), `src/hooks/useCards.ts`,
+`src/hooks/useSets.ts`, `src/hooks/useCardLinks.ts`
+
+---
+
 ## 2026-04-26 — KI Prüfung: Nachbohren-Modus (examiner-style follow-ups)
 
 **Symptom:** Strict one-shot grading penalised the learner for not volunteering

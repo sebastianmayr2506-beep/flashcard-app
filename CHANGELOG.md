@@ -7,6 +7,63 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-04-26 — KI Prüfung: Nachbohren-Modus (examiner-style follow-ups)
+
+**Symptom:** Strict one-shot grading penalised the learner for not volunteering
+every aspect at once, even when they actually *knew* the missing point and
+would have answered it correctly if asked. A real oral examiner would just
+ask a follow-up — the AI didn't.
+
+**Fix — two-phase grading pipeline:**
+1. New `probeAnswerForGaps()` in `aiAnswerCheck.ts`: AI either grades directly
+   (if the first answer covers the core + important aspects, ≥80%) or returns
+   1–3 targeted, examiner-style follow-up questions ("Und gibt es da eine
+   Ausnahme bei …?"). Hard-capped at 3 follow-ups, prompt forbids revealing
+   the keyword itself.
+2. New `finalGradeWithProbes()`: takes original answer + all probe Q&As and
+   produces the final `AnswerCheckResult`. Prompt explicitly tells the model
+   that knowledge surfaced via follow-ups counts fully — but unanswered/
+   skipped probes still count as gaps.
+3. StudySession `AICheckState` extended with `probing` and `finalizing`
+   phases. Mic recognizer refactored to update either `text` (input) or
+   `currentText` (probing) via state-aware writers, so users can speak their
+   follow-up answers exactly like the original.
+4. UI: small toggle "🔍 Nachbohren / 🎯 Streng" in the input phase
+   (default: Nachbohren). Probing phase shows step indicator (n/N + dots),
+   the question, mic/text input, "Überspringen" and "Weiter" buttons.
+   Result view shows probe Q&A history collapsibly above captured/missing.
+
+**Why this can't break SRS:** The pipeline is identical from `handleRate`'s
+perspective — same `onPickRating` callback, same rating values. The only
+change is *what number the AI suggests*; the user still taps the rating
+themselves (KI Prüfung has always been advisory). Zero touch on `applySM2`,
+`updateSettingsFn`, counters, or any write path.
+
+**Files:** `src/utils/aiAnswerCheck.ts`, `src/pages/StudySession.tsx`
+
+---
+
+## 2026-04-26 — Nested bullet/numbered lists in MarkdownText
+
+**Symptom:** AI answers (e.g. KI Prüfung explanations) often use indented
+sub-bullets, but the renderer flattened them — every bullet rendered at the
+same `pl-4` regardless of source indent.
+
+**Root cause:** `MarkdownText.tsx` called `trimStart()` *before* matching the
+bullet/numbered regex, so leading whitespace (= the nesting signal) was gone
+by the time the level could be detected.
+
+**Fix:** New `getIndentLevel(rawLine)` helper counts leading whitespace before
+trimming (tab = 4 spaces, every 2 spaces = 1 level, capped at 4). Both bullet
+and numbered-list branches now use inline-style padding `paddingLeft: 16 +
+level*20px` (Tailwind can't generate dynamic class names). Bullet marker
+varies per level: `• ◦ ▪ ▫`. Pure-visual change — no other renderer paths or
+data flows touched.
+
+**Files:** `src/components/MarkdownText.tsx`
+
+---
+
 ## 2026-04-25 — KI Prüfung: mic auto-stop on mobile fixed
 
 **Symptom:** On Android Chrome / iOS Safari the mic recording would end on

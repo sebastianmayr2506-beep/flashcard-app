@@ -8,8 +8,8 @@ import QuickEditModal from '../components/QuickEditModal';
 import { getNewCardsDoneToday } from '../utils/dailyGoal';
 import { generateMCHintBundle } from '../utils/geminiMCHint';
 import type { MCHintResult } from '../utils/geminiMCHint';
-import { checkAnswerWithAI } from '../utils/aiAnswerCheck';
-import type { AnswerCheckResult } from '../utils/aiAnswerCheck';
+import { checkAnswerWithAI, probeAnswerForGaps, finalGradeWithProbes } from '../utils/aiAnswerCheck';
+import type { AnswerCheckResult, ProbeAnswer } from '../utils/aiAnswerCheck';
 import { isSpeechRecognitionSupported, createRecognizer } from '../utils/speechRecognition';
 import type { RecognizerHandle } from '../utils/speechRecognition';
 
@@ -51,12 +51,27 @@ type MCHintState =
 
 /** AI Prüfung — learner explains the answer in their own words (mic or text)
  *  and the AI grades the explanation, suggests a rating. Pure learning aid;
- *  the user still taps the actual rating button themselves. */
+ *  the user still taps the actual rating button themselves.
+ *
+ *  Two grading styles:
+ *  - 'strict' = one-shot grading (legacy behaviour)
+ *  - 'probe'  = examiner-style: AI asks 1–3 follow-ups for missing aspects
+ *               *before* finalising the grade — credits knowledge the learner
+ *               has but didn't volunteer in the first answer. */
 type AICheckMode = 'text' | 'mic';
+type AIProbeMode = 'strict' | 'probe';
 type AICheckState =
-  | { cardId: string; status: 'input';   mode: AICheckMode; text: string; listening: boolean }
-  | { cardId: string; status: 'loading'; mode: AICheckMode; text: string }
-  | { cardId: string; status: 'result';  mode: AICheckMode; text: string; result: AnswerCheckResult };
+  | { cardId: string; status: 'input';      mode: AICheckMode; text: string; listening: boolean; probeMode: AIProbeMode }
+  | { cardId: string; status: 'loading';    mode: AICheckMode; text: string; probeMode: AIProbeMode }
+  // Nachbohren phase: stepping through follow-up questions one at a time.
+  // `idx` points at the current unanswered follow-up. `answers[i]` matches
+  // `followUps[i]`; entries beyond `idx` are not yet collected.
+  | { cardId: string; status: 'probing';    mode: AICheckMode; originalText: string;
+      followUps: string[]; idx: number; answers: string[]; currentText: string; listening: boolean }
+  | { cardId: string; status: 'finalizing'; mode: AICheckMode; originalText: string;
+      followUps: string[]; answers: string[] }
+  | { cardId: string; status: 'result';     mode: AICheckMode; text: string; result: AnswerCheckResult;
+      probes?: ProbeAnswer[] };
 
 interface RatingCount {
   nochmal: number; schwer: number; gut: number; einfach: number;
@@ -235,12 +250,14 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   const handleStartAICheck = () => {
     if (!currentCard) return;
     // Prefer mic if browser supports it — user can toggle to text instantly.
+    // Default probing style: nachbohrend (probe). User can flip per-session.
     setAiCheck({
       cardId: currentCard.id,
       status: 'input',
       mode: speechSupported ? 'mic' : 'text',
       text: '',
       listening: false,
+      probeMode: 'probe',
     });
   };
 
@@ -250,45 +267,71 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     setAiCheck({ ...aiCheck, mode, listening: false });
   };
 
-  const handleSetAICheckText = (text: string) => {
+  const handleSetAICheckProbeMode = (probeMode: AIProbeMode) => {
     if (!aiCheck || aiCheck.status !== 'input') return;
-    setAiCheck({ ...aiCheck, text });
+    setAiCheck({ ...aiCheck, probeMode });
+  };
+
+  const handleSetAICheckText = (text: string) => {
+    if (!aiCheck) return;
+    if (aiCheck.status === 'input')   setAiCheck({ ...aiCheck, text });
+    else if (aiCheck.status === 'probing') setAiCheck({ ...aiCheck, currentText: text });
   };
 
   const handleToggleMic = () => {
-    if (!aiCheck || aiCheck.status !== 'input') return;
+    if (!aiCheck) return;
+    if (aiCheck.status !== 'input' && aiCheck.status !== 'probing') return;
+
     if (aiCheck.listening) {
       stopRecognizer();
-      setAiCheck({ ...aiCheck, listening: false });
+      // Cast: both 'input' and 'probing' have a `listening` flag.
+      setAiCheck(prev => {
+        if (!prev) return prev;
+        if (prev.status === 'input' || prev.status === 'probing') return { ...prev, listening: false };
+        return prev;
+      });
       return;
     }
     // Start a fresh recognizer; seed the "final" buffer with whatever text
     // the user already has so additional speech appends instead of replacing.
-    micFinalRef.current = aiCheck.text ? aiCheck.text.trimEnd() + ' ' : '';
+    const seedText = aiCheck.status === 'input' ? aiCheck.text : aiCheck.currentText;
+    micFinalRef.current = seedText ? seedText.trimEnd() + ' ' : '';
+
+    const writeText = (value: string) => {
+      setAiCheck(prev => {
+        if (!prev) return prev;
+        if (prev.status === 'input')   return { ...prev, text: value };
+        if (prev.status === 'probing') return { ...prev, currentText: value };
+        return prev;
+      });
+    };
+    const writeListening = (listening: boolean) => {
+      setAiCheck(prev => {
+        if (!prev) return prev;
+        if (prev.status === 'input' || prev.status === 'probing') return { ...prev, listening };
+        return prev;
+      });
+    };
+
     const handle = createRecognizer({
       lang: 'de-DE',
       keepAlive: true, // mobile browsers auto-end on silence; restart silently
       onResult: (chunk, isFinal) => {
         if (isFinal) {
           micFinalRef.current += chunk + ' ';
-          setAiCheck(prev => prev && prev.status === 'input'
-            ? { ...prev, text: micFinalRef.current.trim() }
-            : prev);
+          writeText(micFinalRef.current.trim());
         } else {
           // interim — show as preview after the committed text
-          const preview = (micFinalRef.current + chunk).trim();
-          setAiCheck(prev => prev && prev.status === 'input'
-            ? { ...prev, text: preview }
-            : prev);
+          writeText((micFinalRef.current + chunk).trim());
         }
       },
       onEnd: () => {
         recognizerRef.current = null;
-        setAiCheck(prev => prev && prev.status === 'input' ? { ...prev, listening: false } : prev);
+        writeListening(false);
       },
       onError: (code, message) => {
         recognizerRef.current = null;
-        setAiCheck(prev => prev && prev.status === 'input' ? { ...prev, listening: false } : prev);
+        writeListening(false);
         if (code === 'not-allowed' || code === 'service-not-allowed') {
           onApiError?.('Mikrofon-Zugriff verweigert. Bitte erlaube den Zugriff in den Browser-Einstellungen — oder wechsle in den Text-Modus.');
         } else if (code !== 'no-speech' && code !== 'aborted') {
@@ -302,7 +345,7 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     }
     recognizerRef.current = handle;
     handle.start();
-    setAiCheck({ ...aiCheck, listening: true });
+    writeListening(true);
   };
 
   const handleSubmitAICheck = async () => {
@@ -313,18 +356,104 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
       onApiError?.('Bitte erst etwas eintippen oder einsprechen.');
       return;
     }
-    setAiCheck({ cardId: currentCard.id, status: 'loading', mode: aiCheck.mode, text: explanation });
+    const cardId = currentCard.id;
+    const mode = aiCheck.mode;
+    const probeMode = aiCheck.probeMode;
+    setAiCheck({ cardId, status: 'loading', mode, text: explanation, probeMode });
+
+    const keys = { gemini: settings.geminiApiKey, anthropic: settings.anthropicApiKey, groq: settings.groqApiKey };
+
     try {
-      const result = await checkAnswerWithAI(
-        { gemini: settings.geminiApiKey, anthropic: settings.anthropicApiKey, groq: settings.groqApiKey },
-        currentCard.front,
-        currentCard.back,
-        explanation,
-      );
-      setAiCheck({ cardId: currentCard.id, status: 'result', mode: aiCheck.mode, text: explanation, result });
+      if (probeMode === 'strict') {
+        const result = await checkAnswerWithAI(keys, currentCard.front, currentCard.back, explanation);
+        setAiCheck({ cardId, status: 'result', mode, text: explanation, result });
+        return;
+      }
+
+      // Nachbohren: ask AI whether to probe or grade directly
+      const probeResult = await probeAnswerForGaps(keys, currentCard.front, currentCard.back, explanation);
+      if (probeResult.kind === 'graded') {
+        setAiCheck({ cardId, status: 'result', mode, text: explanation, result: probeResult.result });
+      } else {
+        setAiCheck({
+          cardId, status: 'probing', mode,
+          originalText: explanation,
+          followUps: probeResult.followUps,
+          idx: 0,
+          answers: [],
+          currentText: '',
+          listening: false,
+        });
+      }
     } catch (err) {
       setAiCheck(null);
       onApiError?.(err instanceof Error ? err.message : 'KI-Prüfung fehlgeschlagen');
+    }
+  };
+
+  // Finalize the probing phase: collect all probe answers, ask AI for the
+  // overall grade across original answer + probe Q&As.
+  const finalizeProbes = async (state: Extract<AICheckState, { status: 'probing' }>, lastAnswer: string) => {
+    if (!currentCard) return;
+    if (state.listening) stopRecognizer();
+
+    const allAnswers = [...state.answers, lastAnswer];
+    const cardId = currentCard.id;
+    setAiCheck({
+      cardId, status: 'finalizing', mode: state.mode,
+      originalText: state.originalText,
+      followUps: state.followUps,
+      answers: allAnswers,
+    });
+
+    const probes: ProbeAnswer[] = state.followUps.map((q, i) => ({
+      question: q,
+      answer: allAnswers[i] ?? '',
+    }));
+
+    try {
+      const result = await finalGradeWithProbes(
+        { gemini: settings.geminiApiKey, anthropic: settings.anthropicApiKey, groq: settings.groqApiKey },
+        currentCard.front,
+        currentCard.back,
+        state.originalText,
+        probes,
+      );
+      setAiCheck({
+        cardId, status: 'result', mode: state.mode,
+        text: state.originalText,
+        result,
+        probes,
+      });
+    } catch (err) {
+      setAiCheck(null);
+      onApiError?.(err instanceof Error ? err.message : 'KI-Prüfung fehlgeschlagen');
+    }
+  };
+
+  // Submit the answer to the current follow-up. Either advance to the next
+  // follow-up or kick off finalization.
+  const handleSubmitProbe = (skip = false) => {
+    if (!aiCheck || aiCheck.status !== 'probing') return;
+    if (aiCheck.listening) stopRecognizer();
+
+    const answer = skip ? '' : aiCheck.currentText.trim();
+    if (!skip && !answer) {
+      onApiError?.('Bitte erst antworten oder „Überspringen" wählen.');
+      return;
+    }
+
+    const isLast = aiCheck.idx + 1 >= aiCheck.followUps.length;
+    if (isLast) {
+      finalizeProbes(aiCheck, answer);
+    } else {
+      setAiCheck({
+        ...aiCheck,
+        idx: aiCheck.idx + 1,
+        answers: [...aiCheck.answers, answer],
+        currentText: '',
+        listening: false,
+      });
     }
   };
 
@@ -780,9 +909,12 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                           state={effectiveAiCheck}
                           speechSupported={speechSupported}
                           onSetMode={handleSetAICheckMode}
+                          onSetProbeMode={handleSetAICheckProbeMode}
                           onSetText={handleSetAICheckText}
                           onToggleMic={handleToggleMic}
                           onSubmit={handleSubmitAICheck}
+                          onSubmitProbe={() => handleSubmitProbe(false)}
+                          onSkipProbe={() => handleSubmitProbe(true)}
                           onClose={handleCloseAICheck}
                           onPickRating={(r) => {
                             handleCloseAICheck();
@@ -1203,19 +1335,24 @@ interface AICheckWidgetProps {
   state: AICheckState;
   speechSupported: boolean;
   onSetMode: (mode: AICheckMode) => void;
+  onSetProbeMode: (probeMode: AIProbeMode) => void;
   onSetText: (text: string) => void;
   onToggleMic: () => void;
   onSubmit: () => void;
+  onSubmitProbe: () => void;
+  onSkipProbe: () => void;
   onClose: () => void;
   onPickRating: (r: RatingValue) => void;
 }
 
 function AICheckWidget({
   state, speechSupported,
-  onSetMode, onSetText, onToggleMic, onSubmit, onClose, onPickRating,
+  onSetMode, onSetProbeMode, onSetText, onToggleMic, onSubmit, onSubmitProbe, onSkipProbe, onClose, onPickRating,
 }: AICheckWidgetProps) {
   const isInput = state.status === 'input';
   const isLoading = state.status === 'loading';
+  const isProbing = state.status === 'probing';
+  const isFinalizing = state.status === 'finalizing';
   const isResult = state.status === 'result';
 
   return (
@@ -1236,6 +1373,34 @@ function AICheckWidget({
 
       {isInput && (
         <>
+          {/* Probe-mode toggle: strict (one-shot) vs probe (Nachbohren) */}
+          <div className="flex gap-1 text-[11px] p-0.5 rounded-lg bg-[#1e2130] border border-[#2d3148]">
+            <button
+              type="button"
+              onClick={() => onSetProbeMode('probe')}
+              title="Bei Lücken stellt die KI Folgefragen — wie ein echter Prüfer"
+              className={`flex-1 px-2 py-1 rounded-md transition-colors ${
+                state.probeMode === 'probe'
+                  ? 'bg-purple-500/20 text-purple-200 font-semibold'
+                  : 'text-[#9ca3af] hover:text-white'
+              }`}
+            >
+              🔍 Nachbohren
+            </button>
+            <button
+              type="button"
+              onClick={() => onSetProbeMode('strict')}
+              title="Eine Antwort, sofortige Bewertung — keine Folgefragen"
+              className={`flex-1 px-2 py-1 rounded-md transition-colors ${
+                state.probeMode === 'strict'
+                  ? 'bg-purple-500/20 text-purple-200 font-semibold'
+                  : 'text-[#9ca3af] hover:text-white'
+              }`}
+            >
+              🎯 Streng
+            </button>
+          </div>
+
           {/* Mode toggle */}
           <div className="flex gap-1 text-xs">
             <button
@@ -1326,8 +1491,121 @@ function AICheckWidget({
       {isLoading && (
         <div className="py-4 flex flex-col items-center gap-2">
           <span className="inline-block w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
-          <p className="text-xs text-purple-300">KI prüft deine Erklärung…</p>
+          <p className="text-xs text-purple-300">
+            {state.probeMode === 'probe' ? 'KI denkt nach…' : 'KI prüft deine Erklärung…'}
+          </p>
           <p className="text-[10px] text-[#6b7280]">Das kann ein paar Sekunden dauern</p>
+        </div>
+      )}
+
+      {isProbing && (
+        <div className="space-y-2.5">
+          {/* Step indicator */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-purple-300/80">
+                Der Prüfer hakt nach
+              </span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-300 font-semibold">
+                {state.idx + 1} / {state.followUps.length}
+              </span>
+            </div>
+            <div className="flex gap-0.5">
+              {state.followUps.map((_, i) => (
+                <span
+                  key={i}
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    i < state.idx ? 'bg-green-400' :
+                    i === state.idx ? 'bg-purple-400' :
+                    'bg-[#2d3148]'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* The follow-up question */}
+          <div className="px-3 py-2.5 rounded-xl bg-purple-500/10 border border-purple-500/30">
+            <p className="text-[11px] font-semibold text-purple-300/80 uppercase tracking-wider mb-1">
+              Frage
+            </p>
+            <p className="text-sm text-white leading-snug">{state.followUps[state.idx]}</p>
+          </div>
+
+          {/* Mic mode UI for the follow-up */}
+          {state.mode === 'mic' && speechSupported && (
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={onToggleMic}
+                className={`w-full py-2.5 rounded-xl border text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
+                  state.listening
+                    ? 'bg-red-500/15 border-red-500/40 text-red-300 animate-pulse'
+                    : 'bg-purple-500/10 border-purple-500/40 text-purple-300 hover:bg-purple-500/20'
+                }`}
+              >
+                {state.listening ? (
+                  <>
+                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-400" />
+                    Aufnahme läuft — klicken zum Stoppen
+                  </>
+                ) : (
+                  <>🎤 Antwort einsprechen</>
+                )}
+              </button>
+              <textarea
+                value={state.currentText}
+                onChange={e => onSetText(e.target.value)}
+                placeholder={state.listening ? 'Sprich jetzt — Transkript erscheint hier live…' : 'Klicke auf "Antwort einsprechen" oder tippe direkt hier…'}
+                rows={3}
+                className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
+              />
+            </div>
+          )}
+
+          {/* Text-only mode UI */}
+          {(state.mode === 'text' || !speechSupported) && (
+            <textarea
+              value={state.currentText}
+              onChange={e => onSetText(e.target.value)}
+              placeholder="Tippe deine Antwort hier…"
+              rows={3}
+              autoFocus
+              className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
+            />
+          )}
+
+          {/* Action buttons */}
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={onSkipProbe}
+              className="px-3 py-2 rounded-xl text-xs text-[#9ca3af] hover:text-white border border-[#2d3148] hover:border-[#3d4168] transition-colors"
+              title="Diese Frage überspringen — fließt als ungelöst in die Bewertung ein"
+            >
+              Überspringen
+            </button>
+            <button
+              type="button"
+              onClick={onSubmitProbe}
+              disabled={!state.currentText.trim() || state.listening}
+              className="flex-1 py-2 rounded-xl bg-purple-500 hover:bg-purple-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold transition-colors"
+            >
+              {state.idx + 1 >= state.followUps.length ? '✨ Fertig — bewerten' : 'Weiter →'}
+            </button>
+          </div>
+
+          <p className="text-[10px] text-[#6b7280] leading-relaxed">
+            💡 Tipp: Wie in einer mündlichen Prüfung — Wissen, das hier kommt, zählt voll mit. Was du auch hier nicht weißt, fließt als Lücke in die Bewertung ein.
+          </p>
+        </div>
+      )}
+
+      {isFinalizing && (
+        <div className="py-4 flex flex-col items-center gap-2">
+          <span className="inline-block w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs text-purple-300">Prüfer fasst zusammen…</p>
+          <p className="text-[10px] text-[#6b7280]">Bewertung über alle Antworten kommt gleich</p>
         </div>
       )}
 
@@ -1335,6 +1613,7 @@ function AICheckWidget({
         <AICheckResultView
           result={state.result}
           userText={state.text}
+          probes={state.probes}
           onPickRating={onPickRating}
           onRetry={() => {
             // Re-open input mode preserving the current text — user can adjust & resubmit
@@ -1351,11 +1630,12 @@ function AICheckWidget({
 interface AICheckResultViewProps {
   result: AnswerCheckResult;
   userText: string;
+  probes?: ProbeAnswer[];
   onPickRating: (r: RatingValue) => void;
   onRetry: () => void;
 }
 
-function AICheckResultView({ result, userText, onPickRating }: AICheckResultViewProps) {
+function AICheckResultView({ result, userText, probes, onPickRating }: AICheckResultViewProps) {
   const scoreColor =
     result.score >= 80 ? 'text-green-400 border-green-500/40 bg-green-500/10' :
     result.score >= 50 ? 'text-amber-400 border-amber-500/40 bg-amber-500/10' :
@@ -1388,6 +1668,31 @@ function AICheckResultView({ result, userText, onPickRating }: AICheckResultView
           <p className="text-[11px] text-[#9ca3af] mt-1 px-2 py-1.5 rounded-lg bg-[#1e2130] border border-[#2d3148] leading-relaxed italic">
             „{userText}"
           </p>
+        </details>
+      )}
+
+      {/* Nachbohren — Q&A history (only shown if probing happened) */}
+      {probes && probes.length > 0 && (
+        <details className="group" open>
+          <summary className="text-[10px] font-semibold text-purple-300/80 uppercase tracking-widest cursor-pointer hover:text-purple-300">
+            🔍 Nachfragen ({probes.length})
+          </summary>
+          <div className="mt-1.5 space-y-1.5">
+            {probes.map((p, i) => {
+              const skipped = !p.answer.trim();
+              return (
+                <div key={i} className="px-2 py-1.5 rounded-lg bg-[#1e2130] border border-[#2d3148] space-y-1">
+                  <p className="text-[11px] text-purple-300/90 leading-snug">
+                    <span className="opacity-60 mr-1">F{i + 1}:</span>{p.question}
+                  </p>
+                  <p className={`text-[11px] leading-snug ${skipped ? 'text-[#6b7280] italic' : 'text-[#d1d5db]'}`}>
+                    <span className="opacity-60 mr-1">A:</span>
+                    {skipped ? '(übersprungen)' : `„${p.answer}"`}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
         </details>
       )}
 

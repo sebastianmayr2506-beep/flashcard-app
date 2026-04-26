@@ -1,4 +1,16 @@
-// Renders Markdown: ## headings, **bold**, *italic*, - bullets, | tables |
+// Renders Markdown: ## headings, **bold**, *italic*, - bullets (nested), | tables |
+
+const BULLET_MARKERS = ['•', '◦', '▪', '▫'];
+
+// Counts leading whitespace and returns nesting level.
+// Tab = 4 spaces, every 2 spaces = one level. Capped at 4.
+function getIndentLevel(rawLine: string): number {
+  const match = rawLine.match(/^[ \t]*/);
+  if (!match) return 0;
+  let spaces = 0;
+  for (const ch of match[0]) spaces += ch === '\t' ? 4 : 1;
+  return Math.min(Math.floor(spaces / 2), 4);
+}
 
 export default function MarkdownText({ text, className = '' }: { text: string; className?: string }) {
   const lines = text.split('\n');
@@ -94,22 +106,43 @@ export default function MarkdownText({ text, className = '' }: { text: string; c
         </span>
       );
     }
-    // Numbered list (1. item)
+    // Numbered list (1. item) — supports nesting via leading whitespace (2 spaces / 1 tab per level)
     else if (trimmed.match(/^\d+\. /)) {
+      const level = getIndentLevel(rawLine);
       const num = trimmed.match(/^(\d+)\. /)?.[1] ?? '';
       const content = trimmed.replace(/^\d+\. /, '');
       output.push(
-        <span key={i} className="block pl-6 relative mt-0.5">
-          <span className="absolute left-1 top-0 text-indigo-400 text-xs font-semibold">{num}.</span>
+        <span
+          key={i}
+          className="block relative mt-0.5"
+          style={{ paddingLeft: `${24 + level * 20}px` }}
+        >
+          <span
+            className="absolute top-0 text-indigo-400 text-xs font-semibold"
+            style={{ left: `${4 + level * 20}px` }}
+          >
+            {num}.
+          </span>
           {parseInline(content)}
         </span>
       );
     }
-    // Bullet list
+    // Bullet list — supports nesting via leading whitespace (2 spaces / 1 tab per level)
     else if (trimmed.match(/^[-*] /)) {
+      const level = getIndentLevel(rawLine);
+      const marker = BULLET_MARKERS[Math.min(level, BULLET_MARKERS.length - 1)];
       output.push(
-        <span key={i} className="block pl-4 relative mt-0.5">
-          <span className="absolute left-1 top-0 text-indigo-400">•</span>
+        <span
+          key={i}
+          className="block relative mt-0.5"
+          style={{ paddingLeft: `${16 + level * 20}px` }}
+        >
+          <span
+            className="absolute top-0 text-indigo-400"
+            style={{ left: `${4 + level * 20}px` }}
+          >
+            {marker}
+          </span>
           {parseInline(trimmed.slice(2))}
         </span>
       );

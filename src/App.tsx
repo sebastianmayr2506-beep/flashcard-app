@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import type { Flashcard, RatingValue, CardSet, FlagAttempt } from './types/card';
 import { isDueToday } from './types/card';
@@ -45,7 +45,28 @@ export default function App() {
   const { flagAttempts, addAttempt, getDistinctCorrectDays } = useFlagAttempts(userId);
   const { toasts, showToast, dismissToast } = useToast();
 
-  const [page, setPage] = useState<Page>('dashboard');
+  // Persist current page across reloads so refresh / unfolding-foldable /
+  // tab-restore lands the user back where they were instead of dumping them
+  // on the dashboard. Uses sessionStorage (per-tab) — closing the tab still
+  // ends the "session" naturally on next open.
+  const [page, setPage] = useState<Page>(() => {
+    try {
+      const saved = sessionStorage.getItem('app:currentPage');
+      const valid: Page[] = ['dashboard', 'library', 'new-card', 'edit-card', 'study', 'import-export', 'settings', 'sets', 'set-detail', 'exam'];
+      // edit-card and set-detail rely on transient state (editingCard, viewingSet)
+      // that we don't persist — fall back to their parent page if the transient
+      // state isn't available on rehydrate.
+      if (saved === 'edit-card') return 'library';
+      if (saved === 'set-detail') return 'sets';
+      if (saved && valid.includes(saved as Page)) return saved as Page;
+    } catch { /* sessionStorage unavailable — fine, use default */ }
+    return 'dashboard';
+  });
+
+  useEffect(() => {
+    try { sessionStorage.setItem('app:currentPage', page); }
+    catch { /* ignore quota / unavailable */ }
+  }, [page]);
   const [editingCard, setEditingCard] = useState<Flashcard | undefined>();
   const [viewingSet, setViewingSet] = useState<CardSet | undefined>();
   const [studyFilteredCards, setStudyFilteredCards] = useState<Flashcard[] | null>(null);

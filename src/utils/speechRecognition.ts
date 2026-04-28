@@ -74,11 +74,6 @@ export function createRecognizer(opts: RecognizerOptions): RecognizerHandle | nu
   const Ctor = getCtor();
   if (!Ctor) return null;
 
-  const rec = new Ctor();
-  rec.lang = opts.lang ?? 'de-DE';
-  rec.continuous = true;       // keep listening until user stops
-  rec.interimResults = true;   // show partial transcripts live
-
   // Used by keepAlive logic to distinguish user-initiated stops from
   // browser-initiated auto-ends (silence timeout, "no-speech", etc.).
   let manualStop = false;
@@ -86,6 +81,46 @@ export function createRecognizer(opts: RecognizerOptions): RecognizerHandle | nu
   // (e.g. permission revoked) we don't want to spin in a restart loop.
   let restartAttempts = 0;
   let lastRestartAt = 0;
+  // Holds the *current* recognizer. We replace it on every keepAlive restart
+  // because some mobile browsers (notably Samsung Internet on Galaxy phones
+  // — including foldables) keep the previous session's `e.results` buffer
+  // alive across rec.start() calls. Reusing the same instance causes every
+  // already-finalised chunk to be re-emitted on each restart, which then
+  // gets re-appended by the caller and produces the exponentially-growing
+  // "Liquiditätskrise Liquiditätskrise Liquiditätskrise…" duplication.
+  // A fresh instance per restart guarantees a clean results buffer.
+  let rec: SpeechRecognitionInstance | null = null;
+
+  const buildRecognizer = (): SpeechRecognitionInstance => {
+    const r = new Ctor();
+    r.lang = opts.lang ?? 'de-DE';
+    r.continuous = true;       // keep listening until user stops
+    r.interimResults = true;   // show partial transcripts live
+
+    r.onresult = (e) => {
+      // Walk new results since resultIndex; pass each chunk up.
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const result = e.results[i];
+        const transcript = result[0]?.transcript ?? '';
+        opts.onResult(transcript, result.isFinal);
+      }
+    };
+    r.onend = () => {
+      // Mobile auto-end after silence: silently restart if the caller asked us to.
+      if (tryRestart()) return;
+      opts.onEnd?.();
+    };
+    r.onerror = (e) => {
+      // "no-speech" and "aborted" on mobile are normal silence/auto-end signals.
+      // Don't bubble them up if keepAlive will recover — only surface fatal errors.
+      if (opts.keepAlive && !manualStop && (e.error === 'no-speech' || e.error === 'aborted')) {
+        // onend will fire next and tryRestart will pick up. Swallow the error.
+        return;
+      }
+      opts.onError?.(e.error, e.message);
+    };
+    return r;
+  };
 
   const tryRestart = () => {
     if (!opts.keepAlive || manualStop) return false;
@@ -94,46 +129,32 @@ export function createRecognizer(opts: RecognizerOptions): RecognizerHandle | nu
     if (restartAttempts >= 5) return false; // give up if 5 restarts within 5s
     restartAttempts++;
     lastRestartAt = now;
-    try { rec.start(); return true; }
-    catch { return false; }
-  };
-
-  rec.onresult = (e) => {
-    // Walk new results since resultIndex; pass each chunk up.
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const result = e.results[i];
-      const transcript = result[0]?.transcript ?? '';
-      opts.onResult(transcript, result.isFinal);
+    // CRITICAL: build a *fresh* recognizer for the restart — see comment on
+    // `let rec` above. Reusing the old instance leaks its results buffer.
+    try {
+      rec = buildRecognizer();
+      rec.start();
+      return true;
+    } catch {
+      return false;
     }
-  };
-  rec.onend = () => {
-    // Mobile auto-end after silence: silently restart if the caller asked us to.
-    if (tryRestart()) return;
-    opts.onEnd?.();
-  };
-  rec.onerror = (e) => {
-    // "no-speech" and "aborted" on mobile are normal silence/auto-end signals.
-    // Don't bubble them up if keepAlive will recover — only surface fatal errors.
-    if (opts.keepAlive && !manualStop && (e.error === 'no-speech' || e.error === 'aborted')) {
-      // onend will fire next and tryRestart will pick up. Swallow the error.
-      return;
-    }
-    opts.onError?.(e.error, e.message);
   };
 
   return {
     start: () => {
       manualStop = false;
       restartAttempts = 0;
-      try { rec.start(); }
-      catch (err) {
+      try {
+        rec = buildRecognizer();
+        rec.start();
+      } catch (err) {
         // start() throws if already started — surface as error
         opts.onError?.('start-failed', (err as Error).message);
       }
     },
     stop: () => {
       manualStop = true;
-      try { rec.stop(); } catch { /* ignore */ }
+      try { rec?.stop(); } catch { /* ignore */ }
     },
   };
 }

@@ -79,7 +79,43 @@ interface RatingCount {
 
 export default function StudySession({ cards, settings, sets, links, preFilteredCards, dailyPlan, onRate, onUpdateCard, onDeleteCard, onSplitCard, onSessionComplete, onNavigate, onApiError }: Props) {
   const isDailyMode = !!dailyPlan;
-  const [sessionState, setSessionState] = useState<SessionState>('setup');
+
+  // Restore in-progress study session from sessionStorage on mount.
+  // Reasons we want this: (a) refresh / accidental F5; (b) foldable Android
+  // phones reload the page on unfold (config change); (c) Safari tab eviction.
+  // We only restore the 'studying' phase — 'setup' isn't worth restoring,
+  // 'summary' is terminal. Card data is re-resolved from the live `cards`
+  // prop so post-restore card edits / sync updates are reflected. If any
+  // persisted card was deleted in the meantime, it's silently dropped.
+  const restoredSession = useMemo<{
+    sessionCards: Flashcard[];
+    currentIdx: number;
+    ratings: RatingCount;
+  } | null>(() => {
+    try {
+      const raw = sessionStorage.getItem('studySession:state');
+      if (!raw) return null;
+      const obj = JSON.parse(raw) as {
+        sessionState?: SessionState;
+        cardIds?: string[];
+        currentIdx?: number;
+        ratings?: RatingCount;
+      };
+      if (obj.sessionState !== 'studying' || !Array.isArray(obj.cardIds)) return null;
+      const resolved = obj.cardIds
+        .map(id => cards.find(c => c.id === id))
+        .filter((c): c is Flashcard => !!c);
+      if (resolved.length === 0) return null;
+      return {
+        sessionCards: resolved,
+        currentIdx: Math.min(Math.max(obj.currentIdx ?? 0, 0), resolved.length - 1),
+        ratings: obj.ratings ?? { nochmal: 0, schwer: 0, gut: 0, einfach: 0 },
+      };
+    } catch { return null; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally one-shot — only attempt restoration on first mount
+
+  const [sessionState, setSessionState] = useState<SessionState>(restoredSession ? 'studying' : 'setup');
   const [studyOrder, setStudyOrder] = useState<StudyOrder>(
     () => (localStorage.getItem('study_order') as StudyOrder) ?? 'review-first'
   );
@@ -91,10 +127,12 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   const [filterKlassiker, setFilterKlassiker] = useState(false);
   const [sortByProbability, setSortByProbability] = useState(false);
   const [endlessMode, setEndlessMode] = useState(false);
-  const [sessionCards, setSessionCards] = useState<Flashcard[]>([]);
-  const [currentIdx, setCurrentIdx] = useState(0);
+  const [sessionCards, setSessionCards] = useState<Flashcard[]>(restoredSession?.sessionCards ?? []);
+  const [currentIdx, setCurrentIdx] = useState(restoredSession?.currentIdx ?? 0);
   const [isFlipped, setIsFlipped] = useState(false);
-  const [ratings, setRatings] = useState<RatingCount>({ nochmal: 0, schwer: 0, gut: 0, einfach: 0 });
+  const [ratings, setRatings] = useState<RatingCount>(
+    restoredSession?.ratings ?? { nochmal: 0, schwer: 0, gut: 0, einfach: 0 }
+  );
   const [zoomedImg, setZoomedImg] = useState<string | null>(null);
   const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -466,6 +504,27 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   useEffect(() => {
     return () => { if (recognizerRef.current) stopRecognizer(); };
   }, []);
+
+  // Persist the in-progress 'studying' state to sessionStorage so a reload
+  // (refresh, foldable unfold, tab restore) can resume at the same card
+  // instead of dumping the user back on the dashboard. We persist only
+  // card IDs (full data is re-resolved from `cards` on restore — picks up
+  // any sync updates) plus position and rating counts.
+  useEffect(() => {
+    try {
+      if (sessionState === 'studying' && sessionCards.length > 0) {
+        sessionStorage.setItem('studySession:state', JSON.stringify({
+          sessionState,
+          cardIds: sessionCards.map(c => c.id),
+          currentIdx,
+          ratings,
+        }));
+      } else {
+        // setup or summary — clear; nothing useful to resume
+        sessionStorage.removeItem('studySession:state');
+      }
+    } catch { /* sessionStorage unavailable / quota — fail silently */ }
+  }, [sessionState, sessionCards, currentIdx, ratings]);
 
   const handleRate = (rating: RatingValue) => {
     const card = sessionCards[currentIdx];

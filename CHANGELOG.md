@@ -7,6 +7,56 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-04-26 — Reload-resilience + mic transcript duplication fix
+
+**Symptom 1 (foldable phone reload):** User unfolds Galaxy Z Fold mid study
+session → Chrome reloads on config change → app dumps user on dashboard,
+losing the current card and all rating progress. Same thing happens for any
+manual refresh.
+
+**Symptom 2 (mic duplication):** During the AI Prüfung mic recording, after
+a few seconds of speaking the transcript balloons into the same phrase
+repeated dozens of times ("…strategische Krise dann erfolgskrise und deine
+Liquiditätskrise" × 30+).
+
+**Root cause 1:** Nothing persisted UI navigation or active session state.
+`page` in `App.tsx` and the `studying`/`currentIdx`/`sessionCards`/`ratings`
+state in `StudySession.tsx` lived purely in React state — every reload
+started fresh from the default dashboard.
+
+**Root cause 2:** `createRecognizer`'s keepAlive logic restarted the *same*
+SpeechRecognition instance after silence-induced auto-end (`rec.start()` on
+the same `rec`). On Samsung Internet (and other mobile browsers), the
+`e.results` buffer is preserved across `start()` cycles, so every previously-
+finalised chunk is re-emitted on each restart. The caller (`StudySession`)
+appends every isFinal chunk to `micFinalRef.current` → duplicates compound
+exponentially with each silence pause.
+
+**Fix 1 (reload resilience):**
+- `App.tsx`: persist `page` to `sessionStorage` and rehydrate on init.
+  `edit-card`/`set-detail` fall back to their parent (`library`/`sets`)
+  because their transient state (`editingCard`, `viewingSet`) isn't persisted.
+- `StudySession.tsx`: persist `{ sessionState, cardIds, currentIdx, ratings }`
+  to `sessionStorage` whenever in `studying` phase; clear on `setup`/`summary`.
+  On mount, restore via lazy useState initialisers — card IDs are re-resolved
+  against the live `cards` prop, so post-restore edits / live-sync updates
+  are reflected. Deleted-mid-session cards are silently dropped.
+
+**Fix 2 (mic duplication):** `createRecognizer` now builds a *fresh*
+`SpeechRecognition` instance on every keepAlive restart instead of reusing
+the same one. Guarantees a clean results buffer per session. The
+`manualStop` flag and restart-attempt throttle remain at closure scope so
+behavior is otherwise unchanged.
+
+**Why neither can break SRS counting:** No write paths touched. Persistence
+is read-only on init (lazy state) and write-only to sessionStorage on
+change. Mic fix only affects local transcript text. `handleRate` →
+`applySM2` → counters pipeline is identical.
+
+**Files:** `src/App.tsx`, `src/pages/StudySession.tsx`, `src/utils/speechRecognition.ts`
+
+---
+
 ## 2026-04-26 — Cross-device live sync + resurrection-bug fix
 
 **Symptom (real user, "Verena"):** She deleted all cards on laptop and

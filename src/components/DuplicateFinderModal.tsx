@@ -70,7 +70,11 @@ export default function DuplicateFinderModal({ cards, onMergeCards, onClose }: P
     const ids = group.cards.filter(c => checked.has(c.id)).map(c => c.id);
     if (ids.length < 2) return;
     onMergeCards(ids);
-    onClose(); // The merge-preview modal opens — user can re-run the finder afterwards
+    // Don't close — the merge-preview modal opens on top (z-70 vs our z-60).
+    // When it confirms, the source cards get removed via live-sync; our
+    // `cards` prop updates → useMemo re-runs findDuplicateGroups → the
+    // just-merged group disappears, user sees the next group automatically.
+    // Same flow on cancel: nothing changed, duplicate finder still showing.
   };
 
   const totalGroups = groups.length;

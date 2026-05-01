@@ -7,6 +7,53 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-01 — Google Drive auto-backup (Variant A: on-app-open)
+
+**What:** New "☁️ Google Drive Backup" section in Settings. User connects
+their Google account once; thereafter, every time they open the app and
+≥18 hours have passed since the last backup, the full library JSON
+(cards + SRS state) is silently uploaded to a "Sebi AI Flashcard Backups"
+folder in their Drive. Manual "Jetzt sichern" button + "Trennen" + auto-
+toggle. Old backups (>30 days) are auto-cleaned to keep the folder tidy.
+
+**Architecture:** Variant A from the prior architectural discussion —
+browser-only OAuth via Google Identity Services (GIS). No server, no
+refresh-token storage, no Supabase Edge Function. Tradeoff: needs the
+app to be opened ≥1× per ~18h cycle for daily-ish backups. Acceptable
+for a study app users open daily anyway.
+
+**Scopes:** `drive.file` (only files this app creates — not the user's
+whole Drive) + `email` (so we can show "verbunden als foo@bar.com").
+
+**Files:**
+- `src/utils/googleDrive.ts` (new) — GIS loading, token client,
+  multipart upload, folder management, cleanup
+- `src/hooks/useGoogleDrive.ts` (new) — React state for connect/
+  disconnect/last-backup-at, persisted to localStorage; auto-backup
+  gate + re-entrancy guard
+- `src/utils/export.ts` — added `exportBackupString()` returning the
+  same JSON used by the manual download (no indent for upload size)
+- `src/pages/Settings.tsx` — new section, hidden if env not configured
+- `src/App.tsx` — wires the hook + triggers `maybeAutoBackup()` once
+  cards finish loading
+
+**Setup required (sysadmin / first deploy):**
+1. Google Cloud Console → new project → enable Drive API
+2. OAuth consent screen with `drive.file` + `email` scopes
+3. OAuth Client ID (Web app) with origin = deployment URL
+4. Set `VITE_GOOGLE_CLIENT_ID` env var (locally + Vercel)
+
+**Why this can't break SRS counting:** Pure read of `cards` →
+JSON.stringify → upload. No writes, no state mutations. Auto-backup is
+silent (no toast spam) but errors get logged to console; manual backup
+surfaces errors loudly.
+
+**Files:** `src/utils/googleDrive.ts` (new), `src/hooks/useGoogleDrive.ts`
+(new), `src/pages/Settings.tsx`, `src/App.tsx`, `src/utils/export.ts`,
+`.env.example`
+
+---
+
 ## 2026-05-01 — Duplicate finder (manual review, no auto-merge)
 
 **What:** New "🔍 Dubletten"-button on the Library page. Opens a modal

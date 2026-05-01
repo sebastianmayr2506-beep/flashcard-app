@@ -13,6 +13,7 @@ import { useCardLinks } from './hooks/useCardLinks';
 import { useFlagAttempts } from './hooks/useFlagAttempts';
 import { useToast } from './hooks/useToast';
 import { useAuth } from './hooks/useAuth';
+import { useGoogleDrive } from './hooks/useGoogleDrive';
 import { extractParentLinks } from './utils/import';
 import { calculateDailyPlan, getCardsRatedToday, getNewCardsDoneToday } from './utils/dailyGoal';
 
@@ -44,6 +45,21 @@ export default function App() {
   const { links, addLink, removeLink, replaceLinks } = useCardLinks(userId);
   const { flagAttempts, addAttempt, getDistinctCorrectDays } = useFlagAttempts(userId);
   const { toasts, showToast, dismissToast } = useToast();
+  const gdrive = useGoogleDrive(showToast);
+
+  // Auto-backup: once cards are loaded, ask the hook to upload if it's been
+  // long enough since the last successful backup. The hook itself no-ops if
+  // disconnected / disabled / not enough time elapsed / cards empty.
+  useEffect(() => {
+    if (cardsLoading) return;
+    if (!gdrive.connected || !gdrive.autoEnabled) return;
+    if (cards.length === 0) return;
+    gdrive.maybeAutoBackup(cards);
+    // Run once per cards-becomes-stable transition; we intentionally don't
+    // re-trigger when individual cards change — that would mean backing up
+    // every rating, and the 18h gate would catch it anyway, but pointless work.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardsLoading, gdrive.connected, gdrive.autoEnabled]);
 
   // Persist current page across reloads so refresh / unfolding-foldable /
   // tab-restore lands the user back where they were instead of dumping them
@@ -842,6 +858,7 @@ export default function App() {
               updateSettings({ dailyPlanSnapshot: undefined });
             }}
             showToast={showToast}
+            gdrive={gdrive}
           />
         )}
       </main>

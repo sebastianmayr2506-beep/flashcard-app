@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { AppSettings, Flashcard } from '../types/card';
 import { calculatePaceMetrics } from '../utils/dailyGoal';
 import { supabase } from '../lib/supabase';
+import type { useGoogleDrive } from '../hooks/useGoogleDrive';
 
 const ADMIN_EMAIL = 'bastimayr@gmx.at';
 
@@ -18,11 +19,13 @@ interface Props {
   onResetAllSrs: (mode: 'all' | 'broken-only') => void;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
   userEmail?: string;
+  gdrive: ReturnType<typeof useGoogleDrive>;
 }
 
 export default function Settings({
   settings, cards, onUpdateSettings, onAddSubject, onRemoveSubject,
   onAddExaminer, onRemoveExaminer, onAddTag, onRemoveTag, onResetAllSrs, showToast, userEmail,
+  gdrive,
 }: Props) {
   const [dailyGoalInput, setDailyGoalInput] = useState(String(settings.dailyNewCardGoal ?? 10));
   const [reviewCapInput, setReviewCapInput] = useState(
@@ -418,6 +421,9 @@ export default function Settings({
         </div>
       </div>
 
+      {/* Google Drive automatic backup */}
+      <GoogleDriveSection gdrive={gdrive} cards={cards} />
+
       <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5">
         <h3 className="font-semibold text-white mb-1 flex items-center gap-2">📊 Lernstatistik</h3>
         <p className="text-sm text-[#9ca3af]">Aktueller Streak: <span className="text-amber-400 font-semibold">{settings.studyStreak} Tag{settings.studyStreak !== 1 ? 'e' : ''} 🔥</span></p>
@@ -664,4 +670,158 @@ function TagManager({ title, icon, items, color, onAdd, onRemove, placeholder }:
       </div>
     </div>
   );
+}
+
+// ─── Google Drive backup section ───────────────────────────────────────────
+function GoogleDriveSection({
+  gdrive,
+  cards,
+}: {
+  gdrive: ReturnType<typeof useGoogleDrive>;
+  cards: Flashcard[];
+}) {
+  if (!gdrive.configured) {
+    // Don't surface this section at all if the env var isn't set —
+    // most users on a self-hosted variant won't have configured it.
+    return (
+      <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-2 opacity-60">
+        <h3 className="font-semibold text-white flex items-center gap-2">☁️ Google Drive Backup</h3>
+        <p className="text-xs text-[#9ca3af]">
+          Google-Client-ID nicht konfiguriert (<code className="text-[#6b7280]">VITE_GOOGLE_CLIENT_ID</code>).
+          Diese Funktion wird vom Admin aktiviert.
+        </p>
+      </div>
+    );
+  }
+
+  const last = gdrive.lastBackupAt
+    ? formatRelativeTime(gdrive.lastBackupAt)
+    : 'noch nie';
+
+  return (
+    <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-3">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h3 className="font-semibold text-white flex items-center gap-2">☁️ Google Drive Backup</h3>
+          <p className="text-xs text-[#9ca3af] mt-0.5">
+            Tägliches Backup deiner Bibliothek + SRS-Stand in deinem Google Drive
+          </p>
+        </div>
+        {gdrive.connected ? (
+          <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 border border-green-500/30">
+            Verbunden
+          </span>
+        ) : (
+          <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#252840] text-[#9ca3af] border border-[#2d3148]">
+            Nicht verbunden
+          </span>
+        )}
+      </div>
+
+      {gdrive.connected && (
+        <>
+          <div className="bg-[#252840] rounded-xl p-3 text-xs space-y-1">
+            {gdrive.email && (
+              <p>
+                <span className="text-[#6b7280]">Konto:</span>{' '}
+                <span className="text-white font-mono">{gdrive.email}</span>
+              </p>
+            )}
+            <p>
+              <span className="text-[#6b7280]">Letztes Backup:</span>{' '}
+              <span className="text-white">{last}</span>
+              {gdrive.lastBackupName && (
+                <span className="text-[#6b7280] ml-1">({gdrive.lastBackupName})</span>
+              )}
+            </p>
+            <p>
+              <span className="text-[#6b7280]">Karten:</span>{' '}
+              <span className="text-white">{cards.length}</span>
+            </p>
+          </div>
+
+          {/* Auto-toggle */}
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={gdrive.autoEnabled}
+              onChange={e => gdrive.setAutoEnabled(e.target.checked)}
+              className="accent-indigo-500 w-4 h-4"
+            />
+            <div>
+              <p className="text-sm text-white">Automatisch sichern</p>
+              <p className="text-[11px] text-[#9ca3af]">
+                Beim App-Start, höchstens 1× pro Tag · alte Backups (&gt;30 Tage) werden aufgeräumt
+              </p>
+            </div>
+          </label>
+
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => gdrive.backupNow(cards)}
+              disabled={gdrive.busy || cards.length === 0}
+              className="text-sm px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors flex items-center gap-2"
+            >
+              {gdrive.busy ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Sichere…
+                </>
+              ) : (
+                <>💾 Jetzt sichern</>
+              )}
+            </button>
+            <button
+              onClick={() => gdrive.disconnect()}
+              disabled={gdrive.busy}
+              className="text-sm px-4 py-2 rounded-xl border border-[#2d3148] hover:border-red-500/40 text-[#9ca3af] hover:text-red-400 transition-colors disabled:opacity-40"
+            >
+              Trennen
+            </button>
+          </div>
+        </>
+      )}
+
+      {!gdrive.connected && (
+        <>
+          <p className="text-xs text-[#9ca3af] leading-relaxed">
+            Klicke unten, um deinen Google-Account zu verbinden. Wir erhalten nur Zugriff auf
+            <strong className="text-white"> die Backup-Dateien, die wir selbst hochladen</strong> — nicht auf den Rest deines Drives.
+          </p>
+          <button
+            onClick={() => gdrive.connect()}
+            disabled={gdrive.connecting}
+            className="text-sm px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors flex items-center gap-2"
+          >
+            {gdrive.connecting ? (
+              <>
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Verbinde…
+              </>
+            ) : (
+              <>🔗 Mit Google Drive verbinden</>
+            )}
+          </button>
+        </>
+      )}
+
+      {gdrive.error && (
+        <p className="text-[11px] text-red-400 leading-relaxed">
+          ⚠️ {gdrive.error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function formatRelativeTime(epochMs: number): string {
+  const diffMs = Date.now() - epochMs;
+  const diffSec = Math.round(diffMs / 1000);
+  if (diffSec < 60) return 'gerade eben';
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `vor ${diffMin} Minute${diffMin !== 1 ? 'n' : ''}`;
+  const diffH = Math.round(diffMin / 60);
+  if (diffH < 24) return `vor ${diffH} Stunde${diffH !== 1 ? 'n' : ''}`;
+  const diffDay = Math.round(diffH / 24);
+  return `vor ${diffDay} Tag${diffDay !== 1 ? 'en' : ''}`;
 }

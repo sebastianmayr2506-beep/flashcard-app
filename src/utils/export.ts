@@ -9,7 +9,14 @@ export function exportJSON(cards: Flashcard[], filename = 'karteikarten_export.j
 export function exportBackupJSON(cards: Flashcard[]): void {
   const date = new Date().toISOString().slice(0, 10);
   const filename = `sebi_ai_backup_${date}.json`;
-  downloadFile(JSON.stringify(cards, null, 2), filename, 'application/json');
+  downloadFile(exportBackupString(cards), filename, 'application/json');
+}
+
+/** Same payload as exportBackupJSON but returned as a string instead of triggering a download.
+ *  Used by Google-Drive auto-backup. Compact (no indent) to keep upload size small. */
+export function exportBackupString(cards: Flashcard[]): string {
+  // No indent — backups can be ~10MB indented; compact halves that.
+  return JSON.stringify(cards);
 }
 
 /**

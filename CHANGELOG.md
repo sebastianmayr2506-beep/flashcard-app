@@ -7,6 +7,39 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-01 — Duplicate finder (manual review, no auto-merge)
+
+**What:** New "🔍 Dubletten"-button on the Library page. Opens a modal
+that scans all card fronts and groups likely-duplicate cards based on:
+- Exact match of the normalized front text → "Exakte Dublette"-bucket
+- Jaccard token similarity ≥ adjustable threshold (default 60%) → "ähnlich"-bucket
+
+**Why:** With 1000+ cards accumulated over months, manually finding
+duplicates by scrolling library is impossible. This surfaces them
+grouped so the user can review and decide. The existing AI-merge flow
+is invoked manually per group (never auto-merge — context matters).
+
+**Implementation:**
+- `src/utils/duplicateDetect.ts` (new) — token normalization with German
+  stop-word filter (Was/Wie/ist/eine/die/etc.), umlaut folding (ä→ae),
+  splits on non-alphanumeric (so "PESTEL-Analyse" → ["pestel","analyse"]).
+  Pairs scored via Jaccard, transitively grouped via union-find. O(n²)
+  comparisons but ~200ms for 1000 cards.
+- `src/components/DuplicateFinderModal.tsx` (new) — modal with threshold
+  slider, subject/examiner filters, expandable groups with per-card
+  checkboxes, "Mergen"-button per group that hands selected IDs to the
+  existing `onMergeCards` flow.
+- `src/pages/Library.tsx` — button + modal wired up via portal.
+
+**Why this can't break SRS counting:** Pure read-only operation. The
+finder never writes to cards, never calls applySM2, never touches
+counters. Merging is delegated to the existing flow which is unchanged.
+
+**Files:** `src/utils/duplicateDetect.ts` (new),
+`src/components/DuplicateFinderModal.tsx` (new), `src/pages/Library.tsx`
+
+---
+
 ## 2026-05-01 — Focus-refetch loading-flag bug + paste-text import
 
 **Symptom (Mac AND mobile):** Importing a JSON file or attaching an image

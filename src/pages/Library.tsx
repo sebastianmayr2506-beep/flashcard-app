@@ -7,6 +7,7 @@ import SRSBadge from '../components/SRSBadge';
 import MarkdownText from '../components/MarkdownText';
 import ProbabilityBadge from '../components/ProbabilityBadge';
 import { exportJSON } from '../utils/export';
+import DuplicateFinderModal from '../components/DuplicateFinderModal';
 
 interface Props {
   cards: Flashcard[];
@@ -60,6 +61,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
   // Selection mode
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showDuplicateFinder, setShowDuplicateFinder] = useState(false);
   const [bulkSetId, setBulkSetId] = useState('');
   const [showNewSetInput, setShowNewSetInput] = useState(false);
   const [newSetName, setNewSetName] = useState('');
@@ -294,6 +296,13 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
           <p className="text-[#9ca3af] text-sm mt-0.5">{filtered.length} von {cards.length} Karten</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowDuplicateFinder(true)}
+            className="text-sm font-medium px-3 py-2 rounded-xl border bg-[#1e2130] border-[#2d3148] text-[#9ca3af] hover:text-amber-400 hover:border-amber-500/30 transition-colors"
+            title="Karten mit ähnlichen Fragen gruppiert anzeigen — manueller Merge"
+          >
+            🔍 Dubletten
+          </button>
           <button
             onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
             className="p-2 rounded-lg bg-[#1e2130] border border-[#2d3148] text-[#9ca3af] hover:text-white transition-colors"
@@ -557,6 +566,15 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
 
       {previewCard && createPortal(
         <CardPreviewModal card={previewCard} onClose={() => setPreviewCard(null)} onEdit={onEdit} />,
+        document.body
+      )}
+
+      {showDuplicateFinder && createPortal(
+        <DuplicateFinderModal
+          cards={cards}
+          onMergeCards={onMergeCards}
+          onClose={() => setShowDuplicateFinder(false)}
+        />,
         document.body
       )}
       </div>

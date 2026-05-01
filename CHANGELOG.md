@@ -7,6 +7,95 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-01 — Focus-refetch loading-flag bug + paste-text import
+
+**Symptom (Mac AND mobile):** Importing a JSON file or attaching an image
+in the edit modal made the page show "Laden…" screen and silently lose
+the in-progress action — no console errors. User saw the screen rendered
+the loading spinner right after picking a file, then after a couple
+seconds returned to the page with the import never having happened.
+
+**Root cause:** The cross-device live-sync commit added a `window.focus`
+re-fetch as a safety net for suspended realtime channels. But the
+re-fetch called `load()`, which calls `setLoading(true)` as its first
+step. App.tsx gates the entire UI behind `cardsLoading === true` and
+renders a global loading screen — unmounting *every* page including any
+open file picker or edit modal. The file input lost its event handler
+binding and the picked file was discarded.
+
+This affected ANY workflow that briefly blurred the window: file pickers
+(both image upload and JSON import), tab switching, alt-tabbing — all
+triggered the focus event, all triggered the loading screen.
+
+**Fix:**
+1. `useCards.ts` — extracted a `refetch()` helper that fetches + applies
+   rows WITHOUT toggling the loading flag. The `onFocus` handler now
+   calls `refetch()` instead of `load()`. The UI tree stays mounted
+   during the refetch; cards just swap in place when the data returns.
+2. `load()` (with the loading toggle) is now used only for the initial
+   mount where the global loading screen is the correct UX.
+
+**Plus:** `src/pages/ImportExport.tsx` — added a paste-text JSON import
+alternative as a defensive workflow (also useful when receiving JSON via
+WhatsApp/Email and not wanting to save to a file first). Reuses the
+existing `processFiles` pipeline by wrapping pasted text in a synthetic
+File.
+
+**Why this can't break SRS counting:** `refetch()` uses the same
+`fromDb` mapper as `load()`. State writes are identical. Only the
+loading boolean isn't toggled — purely a UI rendering concern. Setting
+state during a refetch may briefly conflict with optimistic local
+writes if a card was rated in the same window, but the live-sync
+update-by-id+timestamp guard already handles that.
+
+**Files:** `src/hooks/useCards.ts`, `src/pages/ImportExport.tsx`
+
+---
+
+## 2026-04-26 — Mobile image upload no longer reloads & loses edit
+
+**Symptom (real user, mobile):** Editing a card during a study session,
+attaching a photo from camera/gallery → after picking and confirming the
+image, the page reloaded and the edit was lost. Repeatable on Android.
+
+**Root cause:** `ImageInput.tsx` used a plain `FileReader.readAsDataURL`
+on the raw file. Phone-camera photos (5–15 MP, 5–10 MB JPEG) became
+~10 MB base64 strings held simultaneously alongside the original
+ArrayBuffer and the Data-URL string — a 25–30 MB peak — then got pushed
+into React state forcing a re-render with the huge string. Mobile Safari
+(and Android Chrome under memory pressure) reload the tab when memory
+gets tight, especially right after returning from the native file picker
+where the tab was already backgrounded. With the tab reloaded, all
+QuickEditModal state was gone.
+
+**Fix:** New `src/utils/imageCompress.ts` resizes any incoming image to
+max 1600 px on the long edge and re-encodes as JPEG (quality 0.85) via
+canvas. Typical phone photo: 8 MB → <300 KB. Memory peak essentially
+disappears, mobile no longer reloads the tab, and Supabase storage gets
+massively lighter as a free bonus.
+
+Implementation details:
+- Files <500 KB AND of a "safe" mime type (jpeg/png/webp/gif) skip
+  compression (the fast path — pasted screenshots, small uploads).
+- Canvas decode failure (e.g. HEIC on Chrome) falls back to raw base64
+  via the original FileReader path so the user gets *something*.
+- `ImageInput` shows a small "Bild wird verarbeitet…" spinner during
+  compression (~200–800 ms typically; can be longer on slow devices).
+- Reload resilience from the prior commit still applies as a safety
+  net — even if a reload happens for unrelated reasons, the study
+  session resumes correctly. The unsaved modal edit itself is still
+  lost on reload, but the trigger we know about (image picking) no
+  longer causes one.
+
+**Why this can't break SRS counting:** Image data is only used for
+display + AI prompts. No write paths to SRS fields. Existing cards with
+already-stored larger base64 strings continue to work — the threshold
+check skips re-processing on load.
+
+**Files:** `src/utils/imageCompress.ts` (new), `src/components/ImageInput.tsx`
+
+---
+
 ## 2026-04-26 — Reload-resilience + mic transcript duplication fix
 
 **Symptom 1 (foldable phone reload):** User unfolds Galaxy Z Fold mid study

@@ -23,6 +23,13 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
   const [isDragging, setIsDragging] = useState(false);
   const [shareCodeInput, setShareCodeInput] = useState('');
   const [shareLoading, setShareLoading] = useState(false);
+  // Alternate import path: paste raw JSON into a textarea instead of using the
+  // file picker. Helps when something in the file-picker → onChange → import
+  // pipeline is causing a tab reload (root cause TBD), and as a fallback
+  // workflow when users receive a JSON via WhatsApp/Email and don't want to
+  // save it to a file first.
+  const [pasteText, setPasteText] = useState('');
+  const [pasteLoading, setPasteLoading] = useState(false);
 
   const handleExportCSV = () => {
     exportCSV(cards);
@@ -136,6 +143,25 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
     setIsDragging(false);
     const files = Array.from(e.dataTransfer.files);
     if (files.length > 0) await processFiles(files);
+  };
+
+  // Import via pasted JSON text — bypasses the file picker entirely.
+  // Reuses processFiles by wrapping the text in a synthetic File so the same
+  // dedupe/merge/replace/link-extraction logic applies.
+  const handlePasteImport = async () => {
+    const text = pasteText.trim();
+    if (!text) return;
+    setPasteLoading(true);
+    try {
+      // Quick sanity check — must parse as JSON before we touch the import path
+      try { JSON.parse(text); }
+      catch { showToast('Eingabe ist kein gültiges JSON', 'error'); return; }
+      const fakeFile = new File([text], 'pasted.json', { type: 'application/json' });
+      await processFiles([fakeFile]);
+      setPasteText('');
+    } finally {
+      setPasteLoading(false);
+    }
   };
 
   const handleShareImport = async () => {
@@ -280,6 +306,36 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
               className="px-4 py-2 rounded-xl bg-[#252840] hover:bg-[#2d3148] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm font-medium transition-colors"
             >
               CSV importieren
+            </button>
+          </div>
+        </div>
+
+        {/* Paste-text import — alternative path that avoids the file picker.
+            Use this if the file-picker import causes a reload, or if the JSON
+            arrived via WhatsApp / mail and you don't want to save it as a file. */}
+        <div className="bg-[#252840] rounded-xl p-4 space-y-2">
+          <p className="text-xs font-semibold text-[#9ca3af] uppercase tracking-wider">📋 JSON-Text einfügen</p>
+          <p className="text-xs text-[#6b7280]">
+            Alternative falls der Datei-Upload Probleme macht: JSON-Inhalt direkt einfügen.
+          </p>
+          <textarea
+            value={pasteText}
+            onChange={e => setPasteText(e.target.value)}
+            placeholder='[ { "id": "...", "front": "...", "back": "...", ... }, ... ]'
+            rows={5}
+            className="w-full text-xs font-mono bg-[#1e2130] border border-[#2d3148] rounded-lg px-3 py-2 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none resize-y"
+            disabled={pasteLoading}
+          />
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] text-[#6b7280]">
+              {pasteText ? `${pasteText.length.toLocaleString()} Zeichen` : ''}
+            </p>
+            <button
+              onClick={handlePasteImport}
+              disabled={!pasteText.trim() || pasteLoading}
+              className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+            >
+              {pasteLoading ? 'Importiere…' : 'Importieren'}
             </button>
           </div>
         </div>

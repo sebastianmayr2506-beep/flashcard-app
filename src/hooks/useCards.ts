@@ -118,6 +118,17 @@ export function useCards(userId: string | null) {
       return { rows: [], ok: false };
     };
 
+    // Re-fetch cards from Supabase WITHOUT toggling the loading flag.
+    // Used for window-focus refetches and live-sync recovery so the user
+    // doesn't get bumped to the App.tsx "Laden…" screen mid-operation
+    // (which unmounts the entire UI tree — including any open import or
+    // edit modal — and silently kills the file picker / pending edit).
+    const refetch = async () => {
+      const { rows, ok } = await fetchAllCardsWithRetry();
+      if (cancelled || !ok) return;
+      setCards(rows.map(r => fromDb(r as Record<string, unknown>)));
+    };
+
     const load = async () => {
       setLoading(true);
       setLoadError(null);
@@ -227,8 +238,12 @@ export function useCards(userId: string | null) {
       .subscribe();
 
     const onFocus = () => {
-      // Re-fetch on tab focus (channel may have been suspended)
-      if (!cancelled) load();
+      // Re-fetch on tab focus (channel may have been suspended). Use refetch,
+      // NOT load() — load() flips setLoading(true) which forces App.tsx into
+      // the "Laden…" screen, unmounting any open file picker / edit modal
+      // and silently killing in-progress imports or image uploads. The fast
+      // refetch only swaps cards state in place, leaving the UI tree intact.
+      if (!cancelled) refetch();
     };
     window.addEventListener('focus', onFocus);
 

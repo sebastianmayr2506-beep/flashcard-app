@@ -156,8 +156,6 @@ export default function App() {
 
   const handleStartDailySession = useCallback(() => {
     const today = new Date().toDateString();
-    const snap = settings.dailyPlanSnapshot;
-    const hasSnapToday = snap?.date === today;
 
     // Reconciled via firstStudiedAt — same source of truth Dashboard uses,
     // so the modal's "Neu" tile and the Dashboard's "Neu heute" can never diverge.
@@ -165,12 +163,13 @@ export default function App() {
     const plan = calculateDailyPlan(cards, settings, newDoneToday);
     if (plan.totalToday === 0) return;
 
-    // How many cards were already successfully rated today — either from the snapshot
-    // (accurate, set by handleRate) or bootstrapped from card state (covers the case
-    // where the user did reviews/new cards outside the daily-plan flow, so no snapshot exists yet).
-    const doneSoFar = hasSnapToday
-      ? (snap.totalDone ?? 0)
-      : getCardsRatedToday(cards);
+    // How many cards were already successfully rated today.
+    // Always re-derive from card state: getCardsRatedToday now uses the
+    // (nextReviewDate - updatedAt === interval) heuristic so it can't be
+    // inflated by edits/merges. Trusting snap.totalDone here would freeze
+    // a stale or buggy-bootstrapped value (e.g. from a pre-fix session
+    // earlier today). Card state is the truth.
+    const doneSoFar = getCardsRatedToday(cards);
 
     const newSnapshot = {
       date: today,

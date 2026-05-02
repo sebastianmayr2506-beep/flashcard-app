@@ -37,12 +37,17 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
     [cards, settings, newDoneToday],
   );
 
-  // Use snapshot totalDone when available (accurate: only counts rating >= 1, incl. Schwer).
-  // Always fall back to card-state count — covers the case where the user rated cards
-  // outside the daily-plan flow (no snapshot), so the progress bar still reflects real work.
-  const ratedToday = snap?.date === today
-    ? (snap.totalDone ?? getCardsRatedToday(cards))
-    : getCardsRatedToday(cards);
+  // Always derive ratedToday from card state — getCardsRatedToday now uses
+  // the (nextReviewDate - updatedAt === interval) heuristic so it can't be
+  // inflated by edits/merges/sync events.
+  //
+  // We deliberately do NOT use snap.totalDone here, even when fresh:
+  // session-start bootstraps it via getCardsRatedToday(cards), so a buggy
+  // bootstrap (pre-fix) would freeze a wrong number into the snapshot.
+  // Card-state is always the truth; the snapshot is just a (now redundant)
+  // performance cache. See "getCardsRatedToday over-counted merges/edits"
+  // entry in CHANGELOG.
+  const ratedToday = getCardsRatedToday(cards);
 
   const stats = useMemo(() => {
     const due = cards.filter(isDueToday);

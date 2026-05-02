@@ -526,57 +526,59 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
             />
           )}
           {!isFlipped ? (
-            <button
-              onClick={() => setIsFlipped(true)}
-              className="w-full py-4 rounded-2xl bg-[#1e2130] hover:bg-[#252840] border border-[#2d3148] hover:border-indigo-500/40 text-white font-semibold transition-all text-lg"
-            >
-              Antwort zeigen
-            </button>
+            // Question side — user has not yet seen the answer.
+            // Two options: reveal the answer manually, OR explain via KI Prüfung.
+            // The KI route gives an evaluation + gewusst/nicht-gewusst recommendation
+            // *without* ever showing the back (you'd just see the captured/missing
+            // breakdown). After picking, handleAnswer advances to next card.
+            aiCheckOpen ? (
+              <AICheckPanel
+                key={card.id}
+                front={card.front}
+                back={card.back}
+                apiKeys={{
+                  gemini: settings.geminiApiKey,
+                  anthropic: settings.anthropicApiKey,
+                  groq: settings.groqApiKey,
+                }}
+                outcome="binary"
+                binaryThreshold={60}
+                defaultProbeMode="probe"
+                onPickBinary={(gewusst) => handleAnswer(gewusst)}
+                onClose={() => setAiCheckOpen(false)}
+                onApiError={(msg) => onApiError?.(msg)}
+              />
+            ) : (
+              <div className="space-y-2.5">
+                <button
+                  onClick={() => setIsFlipped(true)}
+                  className="w-full py-4 rounded-2xl bg-[#1e2130] hover:bg-[#252840] border border-[#2d3148] hover:border-indigo-500/40 text-white font-semibold transition-all text-lg"
+                >
+                  Antwort zeigen
+                </button>
+                <button
+                  onClick={() => setAiCheckOpen(true)}
+                  className="w-full py-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-sm font-semibold transition-all flex items-center justify-center gap-2"
+                >
+                  🎓 KI Prüfung — Antwort selbst erklären
+                </button>
+              </div>
+            )
           ) : (
-            <>
-              {/* KI Prüfung — open panel inline OR show buttons */}
-              {aiCheckOpen ? (
-                <AICheckPanel
-                  key={card.id}
-                  front={card.front}
-                  back={card.back}
-                  apiKeys={{
-                    gemini: settings.geminiApiKey,
-                    anthropic: settings.anthropicApiKey,
-                    groq: settings.groqApiKey,
-                  }}
-                  outcome="binary"
-                  binaryThreshold={60}
-                  defaultProbeMode="probe"
-                  onPickBinary={(gewusst) => handleAnswer(gewusst)}
-                  onClose={() => setAiCheckOpen(false)}
-                  onApiError={(msg) => onApiError?.(msg)}
-                />
-              ) : (
-                <>
-                  <button
-                    onClick={() => setAiCheckOpen(true)}
-                    className="w-full mb-3 py-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-sm font-semibold transition-all flex items-center justify-center gap-2"
-                  >
-                    🎓 KI Prüfung — Antwort selbst erklären
-                  </button>
-                  <div className="grid grid-cols-2 gap-4">
-                    <button
-                      onClick={() => handleAnswer(false)}
-                      className="py-4 rounded-2xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 font-bold text-lg transition-all"
-                    >
-                      ❌ Nicht gewusst
-                    </button>
-                    <button
-                      onClick={() => handleAnswer(true)}
-                      className="py-4 rounded-2xl bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 font-bold text-lg transition-all"
-                    >
-                      ✅ Gewusst
-                    </button>
-                  </div>
-                </>
-              )}
-            </>
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                onClick={() => handleAnswer(false)}
+                className="py-4 rounded-2xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 font-bold text-lg transition-all"
+              >
+                ❌ Nicht gewusst
+              </button>
+              <button
+                onClick={() => handleAnswer(true)}
+                className="py-4 rounded-2xl bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 font-bold text-lg transition-all"
+              >
+                ✅ Gewusst
+              </button>
+            </div>
           )}
         </div>
 

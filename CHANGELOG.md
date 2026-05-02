@@ -7,6 +7,42 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-02 — getCardsRatedToday over-counted merges/edits as ratings
+
+**Symptom:** Dashboard "12 von 122 erledigt" with 10% progress despite the
+user not having rated a single card today. The user had merged ~12
+duplicates earlier (via the new Duplicate Finder), and those got counted
+as "rated today" → progress bar said "12 done", denominator inflated to
+ratedToday + plan.totalToday = 12 + 110 = 122.
+
+**Root cause:** `getCardsRatedToday(cards)` used the brittle pattern
+`c.repetitions > 0 && c.updatedAt-day === today`. But `updatedAt` is
+bumped by ANY card change — merges, edits, set-assignments, sync events,
+tag changes. The merged cards have donor.repetitions > 0 (carry-over)
+and updatedAt = today (just created via updateCard), so they all matched.
+
+This is the *exact same bug class* we already fixed for new-card counting
+in late April (see "Reconciler over-counting" CHANGELOG entry) — the
+same brittle heuristic was just left intact in another function.
+
+**Fix:** Apply the same disambiguation heuristic used by
+`getNewCardsDoneToday`:
+`(nextReviewDate-day - updatedAt-day) === interval`. `applySM2` sets both
+fields together (interval is the literal day-distance to nextReviewDate),
+while edits/merges touch updatedAt but leave interval and nextReviewDate
+untouched. The equation only holds for a fresh rating.
+
+**Why this can't break SRS counting (ironic given context):** Pure
+read-only filter on existing card state. No writes. Affects only the
+display value `ratedToday` on the Dashboard, which feeds the progress
+bar denominator (`progressTotal = ratedToday + plan.totalToday`) and
+numerator. With this fix, both sides drop the over-counted merge cards
+together, so the bar stays consistent.
+
+**Files:** `src/utils/dailyGoal.ts`
+
+---
+
 ## 2026-05-02 — KI Prüfung im Prüfungsmodus (binary mode)
 
 **What:** Die KI-Prüfung-Funktion gibt's jetzt auch im Prüfungsmodus, mit

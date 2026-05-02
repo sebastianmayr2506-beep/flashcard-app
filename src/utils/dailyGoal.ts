@@ -221,11 +221,26 @@ export function calculateDailyPlan(
 
 // Cards where the user successfully recalled something today (rating >= 1: Schwer/Gut/Einfach).
 // Only counts cards with repetitions > 0 — Nochmal resets to 0 and is excluded.
+//
+// CRITICAL: we cannot just check `updatedAt === today` because `updatedAt`
+// is bumped by ANY field change — edits, merges, set-assignments, sync,
+// tag changes. To distinguish a real rating from those, we use the same
+// heuristic as `getNewCardsDoneToday`: applySM2 sets
+// `nextReviewDate = updatedAt-day + interval days`. Edits/merges don't touch
+// nextReviewDate AND interval together, so the equation only holds when a
+// real rating just produced both. (See "Reconciler over-counting" entry in
+// CHANGELOG.md for the prior incarnation of this same bug class.)
 export function getCardsRatedToday(cards: Flashcard[]): number {
-  const today = new Date().toDateString();
-  return cards.filter(c =>
-    c.repetitions > 0 && new Date(c.updatedAt).toDateString() === today
-  ).length;
+  const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
+  const todayMs = todayMidnight.getTime();
+  return cards.filter(c => {
+    if (c.repetitions <= 0) return false;
+    const upd = new Date(c.updatedAt); upd.setHours(0, 0, 0, 0);
+    if (upd.getTime() !== todayMs) return false;
+    const next = new Date(c.nextReviewDate); next.setHours(0, 0, 0, 0);
+    const gapDays = Math.round((next.getTime() - upd.getTime()) / 86400000);
+    return gapDays === c.interval;
+  }).length;
 }
 
 /**

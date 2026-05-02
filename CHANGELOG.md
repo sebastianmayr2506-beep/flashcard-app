@@ -7,6 +7,45 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-02 — KI Prüfung im Prüfungsmodus (binary mode)
+
+**What:** Die KI-Prüfung-Funktion gibt's jetzt auch im Prüfungsmodus, mit
+binärer Bewertung (gewusst / nicht gewusst) statt SRS 4-Button. Threshold:
+**Score ≥ 60 / 100 → Empfehlung "Gewusst"**, sonst "Nicht gewusst".
+
+**Why 60:** in der Realität erreichen User die 100% kaum (immer fehlt ein
+Beispiel oder Detail), aber bei 60% ist der Kern + die wichtigsten
+Aspekte erfasst — der Klassiker-Schwellwert für eine "ja, hat verstanden"-
+Bewertung in einer mündlichen Prüfung.
+
+**Default:** Nachbohren-Modus an. In einer simulierten mündlichen Prüfung
+besonders wertvoll, weil's das Verhalten echter Prüfer spiegelt — bei
+Lücken wird nachgehakt, bevor final bewertet wird. User kann auf "Streng"
+umschalten falls erwünscht.
+
+**Implementation:**
+- `src/components/AICheckPanel.tsx` (new) — selbständiges Widget mit
+  vollständiger State-Machine (input/loading/probing/finalizing/result),
+  eigenem Mic-Recognizer-Lifecycle. Outcome-Modus prop: `'srs'` (4 buttons,
+  legacy für StudySession) oder `'binary'` (2 buttons, ExamMode). Keys
+  als Props übergeben statt hardcoded — re-usable von beliebiger Page.
+- `src/pages/ExamMode.tsx` — Button "🎓 KI Prüfung — Antwort selbst
+  erklären" über den Gewusst/Nicht-Gewusst-Buttons. Klick öffnet das
+  Panel inline; nach Submit klickt User die Empfehlung selbst (`onPickBinary`)
+  und das normale `handleAnswer` läuft → keine doppelte Verbuchung.
+- StudySession bleibt unverändert (eigene inline-Implementation läuft
+  weiter, kann später auf das Panel umziehen wenn Stabilität bewährt).
+
+**Why this can't break exam scoring:** Der AI-Pick ruft das gleiche
+`handleAnswer(boolean)` wie die manuellen Buttons auf — also identische
+Pipeline (correct/wrong-Listen, `onRecordAttempts`, Auto-Unflag). KI ist
+rein advisory, User tippt die Empfehlung weiterhin selber. Score-
+Berechnung am Ende der Prüfung unverändert.
+
+**Files:** `src/components/AICheckPanel.tsx` (new), `src/pages/ExamMode.tsx`
+
+---
+
 ## 2026-05-01 — Google Drive auto-backup (Variant A: on-app-open)
 
 **What:** New "☁️ Google Drive Backup" section in Settings. User connects

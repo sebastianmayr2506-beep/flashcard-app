@@ -4,6 +4,7 @@ import MarkdownText from '../components/MarkdownText';
 import DifficultyBadge from '../components/DifficultyBadge';
 import { LinkedCardsPanel } from '../components/LinkedCards';
 import QuickEditModal from '../components/QuickEditModal';
+import AICheckPanel from '../components/AICheckPanel';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -156,6 +157,10 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
   const [autoUnflagged, setAutoUnflagged] = useState<Flashcard[]>([]);
   const resultRef = useRef<HTMLDivElement>(null);
 
+  // KI-Prüfung state — true while panel is open for the current card.
+  // Auto-resets when the card changes (key on currentIdx in render).
+  const [aiCheckOpen, setAiCheckOpen] = useState(false);
+
   const allTags = useMemo(() => {
     const s = new Set<string>();
     cards.forEach(c => c.customTags.forEach(t => s.add(t)));
@@ -231,6 +236,7 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
     const newWrong   = !isCorrect ? [...wrong, card] : wrong;
     if (isCorrect) setCorrect(newCorrect); else setWrong(newWrong);
     setIsFlipped(false);
+    setAiCheckOpen(false); // close AI panel when moving to next card
 
     if (currentIdx + 1 >= sessionCards.length) {
       const unflagged = onRecordAttempts(newCorrect, newWrong);
@@ -527,20 +533,50 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
               Antwort zeigen
             </button>
           ) : (
-            <div className="grid grid-cols-2 gap-4">
-              <button
-                onClick={() => handleAnswer(false)}
-                className="py-4 rounded-2xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 font-bold text-lg transition-all"
-              >
-                ❌ Nicht gewusst
-              </button>
-              <button
-                onClick={() => handleAnswer(true)}
-                className="py-4 rounded-2xl bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 font-bold text-lg transition-all"
-              >
-                ✅ Gewusst
-              </button>
-            </div>
+            <>
+              {/* KI Prüfung — open panel inline OR show buttons */}
+              {aiCheckOpen ? (
+                <AICheckPanel
+                  key={card.id}
+                  front={card.front}
+                  back={card.back}
+                  apiKeys={{
+                    gemini: settings.geminiApiKey,
+                    anthropic: settings.anthropicApiKey,
+                    groq: settings.groqApiKey,
+                  }}
+                  outcome="binary"
+                  binaryThreshold={60}
+                  defaultProbeMode="probe"
+                  onPickBinary={(gewusst) => handleAnswer(gewusst)}
+                  onClose={() => setAiCheckOpen(false)}
+                  onApiError={(msg) => onApiError?.(msg)}
+                />
+              ) : (
+                <>
+                  <button
+                    onClick={() => setAiCheckOpen(true)}
+                    className="w-full mb-3 py-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-sm font-semibold transition-all flex items-center justify-center gap-2"
+                  >
+                    🎓 KI Prüfung — Antwort selbst erklären
+                  </button>
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      onClick={() => handleAnswer(false)}
+                      className="py-4 rounded-2xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 font-bold text-lg transition-all"
+                    >
+                      ❌ Nicht gewusst
+                    </button>
+                    <button
+                      onClick={() => handleAnswer(true)}
+                      className="py-4 rounded-2xl bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 font-bold text-lg transition-all"
+                    >
+                      ✅ Gewusst
+                    </button>
+                  </div>
+                </>
+              )}
+            </>
           )}
         </div>
 

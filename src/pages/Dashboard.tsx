@@ -21,9 +21,6 @@ interface Props {
 
 
 export default function Dashboard({ cards, settings, onNavigate, onNavigateToLibraryWithSrs, onStartDailySession, onDismissUnflagNotification, onEditCard }: Props) {
-  const today = new Date().toDateString();
-  const snap = settings.dailyPlanSnapshot;
-
   // Reconciled count via the dedicated firstStudiedAt field — see getNewCardsDoneToday.
   // This is the authoritative "new cards done today" number; both Dashboard and
   // handleStartDailySession (the Tagesplan modal) read it through the same helper

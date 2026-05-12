@@ -63,6 +63,33 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardsLoading, gdrive.connected, gdrive.autoEnabled]);
 
+  // Auto-normalize stats data: once per user on first load post-deploy, clean
+  // up legacy "Fragenkatalog YYYY" tags + mirror examiners + derive missing
+  // timesAsked/probabilityPercent. Idempotent — running again on already-clean
+  // data is a no-op (zero patches → zero DB writes).
+  //
+  // We use a localStorage flag so we don't re-run on every mount. Cross-device
+  // is fine: a second device runs it again, finds nothing to do, sets its flag.
+  useEffect(() => {
+    if (cardsLoading || !userId || cards.length === 0) return;
+    const flagKey = `stats_normalized_v1_${userId}`;
+    if (localStorage.getItem(flagKey) === '1') return;
+
+    // Pre-check: only run the handler (which fires toast + bulkUpdate) if
+    // there's actually something to do. For users who already manually
+    // normalized OR who never had legacy data, the auto-run is silent.
+    const { patches } = normalizeAll(cards);
+    if (patches.length === 0) {
+      localStorage.setItem(flagKey, '1');
+      return;
+    }
+    (async () => {
+      await handleNormalizeStats();
+      localStorage.setItem(flagKey, '1');
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardsLoading, userId]);
+
   // Persist current page across reloads so refresh / unfolding-foldable /
   // tab-restore lands the user back where they were instead of dumping them
   // on the dashboard. Uses sessionStorage (per-tab) — closing the tab still

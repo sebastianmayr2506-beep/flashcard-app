@@ -329,23 +329,25 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
         </div>
       </div>
 
-      {/* Filter bar */}
+      {/* Filter bar
+          Mobile: 2-column grid so the various widths line up cleanly.
+          Desktop (≥sm): flex-wrap with natural widths — keeps the dense look. */}
       <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-4 space-y-3">
-        <div className="flex gap-2 flex-wrap">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <input
             type="text"
             placeholder="Suchen…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="flex-1 min-w-[160px] text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none"
+            className="col-span-2 sm:col-span-1 sm:flex-1 sm:min-w-[160px] text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none"
           />
           <Select value={filterSubject} onChange={setFilterSubject} placeholder="Fach" options={settings.subjects} />
           {/* Multi-select examiner dropdown */}
           {activeExaminers.length > 0 && (
-            <div ref={examinerDropdownRef} className="relative">
+            <div ref={examinerDropdownRef} className="relative w-full sm:w-auto">
               <button
                 onClick={() => setExaminerDropdownOpen(o => !o)}
-                className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-xl border transition-colors whitespace-nowrap ${
+                className={`w-full sm:w-auto flex items-center justify-between gap-1.5 text-sm px-3 py-2 rounded-xl border transition-colors whitespace-nowrap ${
                   filterExaminers.size > 0
                     ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-400'
                     : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'
@@ -411,7 +413,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
             <select
               value={filterSet}
               onChange={e => setFilterSet(e.target.value)}
-              className="text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none appearance-none cursor-pointer"
+              className="w-full sm:w-auto text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none appearance-none cursor-pointer"
             >
               <option value="">Set</option>
               {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -441,7 +443,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
           )}
           <button
             onClick={() => setFilterDue(!filterDue)}
-            className={`px-3 py-2 rounded-xl text-sm border transition-colors ${filterDue
+            className={`w-full sm:w-auto px-3 py-2 rounded-xl text-sm border transition-colors ${filterDue
               ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-400'
               : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
           >
@@ -449,7 +451,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
           </button>
           <button
             onClick={() => setFilterFlagged(!filterFlagged)}
-            className={`px-3 py-2 rounded-xl text-sm border transition-colors ${filterFlagged
+            className={`w-full sm:w-auto px-3 py-2 rounded-xl text-sm border transition-colors ${filterFlagged
               ? 'bg-red-500/15 border-red-500/40 text-red-400'
               : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
           >
@@ -457,7 +459,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
           </button>
           <button
             onClick={() => setFilterKlassiker(!filterKlassiker)}
-            className={`px-3 py-2 rounded-xl text-sm border transition-colors ${filterKlassiker
+            className={`w-full sm:w-auto px-3 py-2 rounded-xl text-sm border transition-colors ${filterKlassiker
               ? 'bg-orange-500/15 border-orange-500/40 text-orange-400'
               : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
           >
@@ -465,7 +467,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
           </button>
           <button
             onClick={() => setSortBy(sortBy === 'probability' ? 'default' : 'probability')}
-            className={`px-3 py-2 rounded-xl text-sm border transition-colors ${sortBy === 'probability'
+            className={`col-span-2 sm:col-span-1 w-full sm:w-auto px-3 py-2 rounded-xl text-sm border transition-colors ${sortBy === 'probability'
               ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-400'
               : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
           >
@@ -589,7 +591,8 @@ function Select({ value, onChange, placeholder, options }: {
     <select
       value={value}
       onChange={e => onChange(e.target.value)}
-      className="text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none appearance-none cursor-pointer"
+      // w-full on mobile (grid cell), auto on desktop (flex-wrap natural width)
+      className="w-full sm:w-auto text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none appearance-none cursor-pointer"
     >
       <option value="">{placeholder}</option>
       {options.map(o => <option key={o} value={o}>{o}</option>)}
@@ -689,7 +692,9 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
         </div>
       )}
       {!selectionMode && (
-        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        // Mobile has no hover, so always show. On desktop, transition-opacity still
+        // provides subtle hover feedback via the per-button colour change.
+        <div className="flex gap-2">
           <button
             onClick={e => { e.stopPropagation(); onPreview(card); }}
             className="text-xs py-1.5 px-2 rounded-lg bg-[#252840] hover:bg-purple-500/20 text-[#9ca3af] hover:text-purple-400 border border-[#2d3148] hover:border-purple-500/30 transition-colors"
@@ -766,7 +771,8 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
         <SetDot setId={card.setId} sets={sets} />
       </div>
       {!selectionMode && (
-        <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+        // Always visible on mobile (no hover); hover colours still apply on desktop.
+        <div className="flex gap-1.5 shrink-0">
           <button onClick={e => { e.stopPropagation(); onPreview(card); }} className="text-xs px-2 py-1.5 rounded-lg bg-[#252840] hover:bg-purple-500/20 text-[#9ca3af] hover:text-purple-400 border border-[#2d3148] transition-colors" title="Vorschau">👁</button>
           <button onClick={e => { e.stopPropagation(); onEdit(card); }} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] transition-colors">Bearbeiten</button>
           <button onClick={e => { e.stopPropagation(); onSplit(card.id); }} className="text-xs px-2 py-1.5 rounded-lg bg-[#252840] hover:bg-violet-500/20 text-[#9ca3af] hover:text-violet-400 border border-[#2d3148] transition-colors" title="Mit KI in mehrere Karten trennen">✂️</button>

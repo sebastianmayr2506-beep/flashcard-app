@@ -34,27 +34,37 @@ export interface ClassificationCounts {
 /**
  * Decide an A/B/C tag for a single card from its existing signals.
  * Pure function — does not mutate the card.
+ *
+ * Heuristic v2 (looser, multi-signal): the first iteration was too pessimistic
+ * because most imported cards don't have probabilityPercent set, defaulting
+ * to 0 — which collapsed almost everything to C. We now consider multiple
+ * signals (catalogs, examiners, flagged, difficulty) so a card without an
+ * explicit probability can still land in A or B.
  */
 export function classifyPriority(card: Flashcard): Priority {
-  const prob = card.probabilityPercent ?? 0;
-  const timesAsked = card.timesAsked ?? 0;
+  const prob = Number(card.probabilityPercent ?? 0) || 0;
+  const timesAsked = Number(card.timesAsked ?? 0) || 0;
+  const catalogCount = card.askedInCatalogs?.length ?? 0;
+  const examinerCount = card.askedByExaminers?.length ?? 0;
+  const flagged = !!card.flagged;
 
-  // ── A bucket: high signal, must-know ──────────────────────────────────
-  // 60%+ probability → "Klassiker"-Schwelle (matches Top-Klassiker definition
-  // in the rest of the app)
-  if (prob >= 60) return 'A';
-  // User has manually flagged this card — they know it's important
-  if (card.flagged) return 'A';
-  // Asked many times AND user has marked it as hard → personal pain point
-  if (timesAsked >= 5 && card.difficulty === 'schwer') return 'A';
+  // ── A bucket: strong "must know" signal ───────────────────────────────
+  if (prob >= 50) return 'A';                         // Klassiker (relaxed from 60)
+  if (flagged) return 'A';                            // user-flagged → important
+  if (timesAsked >= 3) return 'A';                    // asked multiple times across catalogs
+  if (catalogCount >= 3) return 'A';                  // surfaced in 3+ catalog years
+  if (examinerCount >= 3) return 'A';                 // 3+ examiners asked it
 
-  // ── C bucket: low signal, can defer ───────────────────────────────────
-  // Asked once or never AND low probability → tail content
-  if (prob < 25 && timesAsked <= 1) return 'C';
-  // Probability under 15% regardless of count → not exam-classic
-  if (prob < 15) return 'C';
+  // ── C bucket: truly no relevance signal at all ────────────────────────
+  // Card has no data tying it to actual exam content. These are likely
+  // user-created supplemental cards or low-relevance tail content.
+  if (prob === 0 && timesAsked === 0 && catalogCount === 0 && examinerCount === 0 && !flagged) {
+    return 'C';
+  }
+  // Very low probability AND barely asked → defer
+  if (prob < 10 && timesAsked <= 1 && catalogCount <= 1) return 'C';
 
-  // ── B bucket: everything else (the bulk) ──────────────────────────────
+  // ── B bucket: has some signal, middle relevance (the bulk) ────────────
   return 'B';
 }
 
@@ -101,6 +111,52 @@ export function previewClassification(cards: Flashcard[], overwrite = false): Cl
     counts[classifyPriority(c)]++;
   }
   return counts;
+}
+
+/**
+ * Inspect the actual signal distribution in the user's card data.
+ * Useful for understanding why an auto-classification produced what it did.
+ */
+export interface SignalDistribution {
+  /** Cards with probabilityPercent >= threshold (50, 25, 10, 1, 0) */
+  byProbability: { ge50: number; ge25: number; ge10: number; ge1: number; eq0: number };
+  /** Cards with any data tying them to catalogs */
+  withCatalogData: number;
+  /** Cards user has manually flagged */
+  flaggedCount: number;
+  /** Cards with no signal whatsoever (the C bucket) */
+  noSignalAtAll: number;
+  total: number;
+}
+
+export function inspectDistribution(cards: Flashcard[]): SignalDistribution {
+  const dist: SignalDistribution = {
+    byProbability: { ge50: 0, ge25: 0, ge10: 0, ge1: 0, eq0: 0 },
+    withCatalogData: 0,
+    flaggedCount: 0,
+    noSignalAtAll: 0,
+    total: cards.length,
+  };
+  for (const c of cards) {
+    const prob = Number(c.probabilityPercent ?? 0) || 0;
+    const timesAsked = Number(c.timesAsked ?? 0) || 0;
+    const catalogCount = c.askedInCatalogs?.length ?? 0;
+    const examinerCount = c.askedByExaminers?.length ?? 0;
+
+    if (prob >= 50) dist.byProbability.ge50++;
+    else if (prob >= 25) dist.byProbability.ge25++;
+    else if (prob >= 10) dist.byProbability.ge10++;
+    else if (prob >= 1) dist.byProbability.ge1++;
+    else dist.byProbability.eq0++;
+
+    if (catalogCount > 0 || timesAsked > 0) dist.withCatalogData++;
+    if (c.flagged) dist.flaggedCount++;
+
+    if (prob === 0 && timesAsked === 0 && catalogCount === 0 && examinerCount === 0 && !c.flagged) {
+      dist.noSignalAtAll++;
+    }
+  }
+  return dist;
 }
 
 /** Filter cards by priority. Pass undefined to include all. */

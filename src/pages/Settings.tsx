@@ -3,7 +3,7 @@ import type { AppSettings, Flashcard } from '../types/card';
 import { calculatePaceMetrics } from '../utils/dailyGoal';
 import { supabase } from '../lib/supabase';
 import type { useGoogleDrive } from '../hooks/useGoogleDrive';
-import { previewClassification } from '../utils/priority';
+import { previewClassification, inspectDistribution } from '../utils/priority';
 
 const ADMIN_EMAIL = 'bastimayr@gmx.at';
 
@@ -854,6 +854,11 @@ function PriorityClassifySection({
     return acc;
   }, { A: 0, B: 0, C: 0, none: 0 });
 
+  // Raw signal distribution — shows what data we have to work with.
+  // Helps diagnose surprising classifications (e.g., everything ending up C
+  // typically means most cards have no probabilityPercent / askedInCatalogs).
+  const signals = inspectDistribution(cards);
+
   const handleApply = async () => {
     if (busy) return;
     if (overwrite) {
@@ -902,11 +907,43 @@ function PriorityClassifySection({
           <PriorityCount label="C" count={preview.C} color="bg-slate-400" />
         </div>
         {preview.preserved > 0 && !overwrite && (
-          <p className="text-[10px] text-[#9ca3af]">
-            {preview.preserved} Karten haben bereits eine manuelle Priorität und bleiben unverändert.
+          <p className="text-[10px] text-amber-300/80 leading-relaxed">
+            ⚠️ {preview.preserved} Karten haben bereits eine Priorität und bleiben unverändert.
+            Aktiviere "Überschreiben" um eine frische Klassifikation zu starten.
           </p>
         )}
       </div>
+
+      {/* Signal-Diagnose */}
+      <details className="bg-[#252840] rounded-xl text-xs">
+        <summary className="cursor-pointer hover:bg-[#2a2d45] p-3 font-semibold text-[#9ca3af] uppercase tracking-wider text-[10px]">
+          🔬 Daten-Diagnose anzeigen
+        </summary>
+        <div className="px-3 pb-3 space-y-2 leading-relaxed">
+          <p className="text-[#9ca3af]">
+            So sieht's in deinen Karten-Daten aus — hilft zu verstehen warum Karten in dieser Verteilung landen:
+          </p>
+          <div className="space-y-1 font-mono text-[11px] text-[#d1d5db]">
+            <p>Klassiker-Score (probabilityPercent):</p>
+            <p className="pl-3">≥50% : {signals.byProbability.ge50.toString().padStart(5)} Karten</p>
+            <p className="pl-3">25–49%: {signals.byProbability.ge25.toString().padStart(5)} Karten</p>
+            <p className="pl-3">10–24%: {signals.byProbability.ge10.toString().padStart(5)} Karten</p>
+            <p className="pl-3">1–9%  : {signals.byProbability.ge1.toString().padStart(5)} Karten</p>
+            <p className="pl-3">0%    : {signals.byProbability.eq0.toString().padStart(5)} Karten</p>
+            <p className="mt-2">Andere Signale:</p>
+            <p className="pl-3">Mit Katalog/Häufigkeits-Daten: {signals.withCatalogData}</p>
+            <p className="pl-3">Geflaggt: {signals.flaggedCount}</p>
+            <p className="pl-3">Komplett ohne Signal: {signals.noSignalAtAll} ← landet in C</p>
+          </div>
+          {signals.noSignalAtAll > signals.total * 0.5 && (
+            <p className="text-amber-300/80 text-[11px] mt-2">
+              💡 Über die Hälfte deiner Karten hat gar keine Häufigkeits-/Klassiker-Daten.
+              Das ist normal wenn du Karten manuell erstellt hast — die landen automatisch in C.
+              Stuf sie beim Lernen einfach manuell um wenn nötig.
+            </p>
+          )}
+        </div>
+      </details>
 
       {/* Overwrite toggle */}
       <label className="flex items-center gap-3 cursor-pointer">

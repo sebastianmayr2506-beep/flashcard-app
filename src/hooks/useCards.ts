@@ -31,6 +31,7 @@ function fromDb(row: Record<string, any>): Flashcard {
     easeFactor: row.ease_factor ?? 2.5,
     nextReviewDate: row.next_review_date,
     firstStudiedAt: row.first_studied_at ?? undefined,
+    priority: (row.priority === 'A' || row.priority === 'B' || row.priority === 'C') ? row.priority : undefined,
   };
 }
 
@@ -59,6 +60,7 @@ function toDb(card: Flashcard, userId: string) {
     ease_factor: card.easeFactor,
     next_review_date: card.nextReviewDate,
     first_studied_at: card.firstStudiedAt ?? null,
+    priority: card.priority ?? null,
   };
 }
 
@@ -303,6 +305,36 @@ export function useCards(userId: string | null) {
     });
   }, [userId]);
 
+  // Bulk update — for operations like auto-classify-priority that touch many
+  // cards at once. Single React render + chunked Supabase upserts instead of
+  // 1000+ individual updateCard calls. Returns the count of cards actually
+  // changed (entries with id not found in current state are skipped).
+  const bulkUpdate = useCallback(async (updates: Array<{ id: string; patch: Partial<Flashcard> }>): Promise<number> => {
+    if (!userId || updates.length === 0) return 0;
+    const now = new Date().toISOString();
+    const byId = new Map(updates.map(u => [u.id, u.patch]));
+
+    // Build a single new state slice with all patches applied
+    let touched = 0;
+    const next = cardsRef.current.map(c => {
+      const patch = byId.get(c.id);
+      if (!patch) return c;
+      touched++;
+      return { ...c, ...patch, updatedAt: now };
+    });
+    setCards(next);
+    cardsRef.current = next;
+
+    // Chunked Supabase upserts (Postgres has a row limit per upsert call)
+    const CHUNK = 200;
+    const rows = next.filter(c => byId.has(c.id)).map(c => toDb(c, userId));
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const { error } = await supabase.from('cards').upsert(rows.slice(i, i + CHUNK));
+      if (error) console.error('[useCards] bulkUpdate chunk failed:', error);
+    }
+    return touched;
+  }, [userId]);
+
   const removeCard = useCallback((id: string) => {
     if (!userId) return;
     setCards(prev => prev.filter(c => c.id !== id));
@@ -382,5 +414,5 @@ export function useCards(userId: string | null) {
     return { ok: !failedChunk && saved >= expected, saved, expected };
   }, [userId]);
 
-  return { cards, loading, loadError, refresh, addCard, updateCard, removeCard, rateCard, importCards };
+  return { cards, loading, loadError, refresh, addCard, updateCard, bulkUpdate, removeCard, rateCard, importCards };
 }

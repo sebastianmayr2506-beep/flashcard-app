@@ -7,6 +7,59 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-02 — Phase 1: A/B/C-Priorität (Auto-Klassifikation + Filter)
+
+**Why:** With ~1000 cards and ~60 days to the exam, an SRS daily-review
+queue at ~110 cards/day is unsustainable as comprehension content (1-3
+min per card). The math is unforgiving: retaining 1000 cards requires
+that volume. **The fix is not a new algorithm — it's a smaller subset.**
+A/B/C lets the user focus on the must-know subset first, defer the rest.
+
+**What:**
+- New optional field `priority?: 'A' | 'B' | 'C'` on Flashcard.
+- Auto-classification heuristic using existing signals (no manual
+  ranking of 1037 cards needed):
+  - **A**: probabilityPercent ≥ 60 (Klassiker) OR flagged OR (asked ≥5×
+    AND difficulty=schwer)
+  - **C**: prob < 25 AND timesAsked ≤ 1, OR prob < 15
+  - **B**: everything else (the bulk)
+- Settings page: new "🎯 A/B/C-Priorisierung" section with live preview
+  ("Würde ergeben: A=180, B=450, C=407"), checkbox for "manuelle
+  Einstellungen überschreiben" (default: preserve manual labels).
+- Inline picker on study session card-front (top-right corner) — small
+  dot, tap to pick A/B/C/Entfernen.
+- Filters in Library, StudySession setup, ExamMode setup — including
+  "A+B" combination for the realistic "focus on important" use case.
+- Read-only badge on Library cards (grid + list + preview modal).
+
+**Files:**
+- `src/types/card.ts` — Flashcard.priority field
+- `src/utils/priority.ts` (new) — classifyPriority + classifyAll +
+  previewClassification + PRIORITY_META
+- `src/components/PriorityPicker.tsx` (new) — popover-style picker +
+  read-only PriorityBadge export
+- `src/hooks/useCards.ts` — fromDb/toDb mapping; new bulkUpdate method
+  for the auto-classify operation (chunked Supabase upserts + single
+  React state pass)
+- `src/App.tsx` — handleAutoClassifyPriority handler wires bulkUpdate
+- `src/pages/Settings.tsx` — new PriorityClassifySection component
+- `src/pages/Library.tsx` — Priorität filter dropdown + badge on cards
+- `src/pages/StudySession.tsx` — Priorität filter in setup, inline
+  picker on card front
+- `src/pages/ExamMode.tsx` — Priorität filter in setup
+- `supabase_migration_priority.sql` (new) — `ALTER TABLE cards ADD
+  COLUMN priority text NULL`
+
+**Migration:** Run `supabase_migration_priority.sql` in Supabase SQL
+Editor BEFORE deploy. Otherwise upserts will silently drop the priority
+field (column doesn't exist).
+
+**Why this can't break SRS counting:** New field with no interaction with
+SRS state. classifyPriority is a pure function. bulkUpdate goes through
+the same toDb mapper as regular updateCard — no path differences.
+
+---
+
 ## 2026-05-02 — getCardsRatedToday over-counted merges/edits as ratings
 
 **Symptom:** Dashboard "12 von 122 erledigt" with 10% progress despite the

@@ -37,6 +37,14 @@ export interface Flashcard {
   customTags: string[];
   setId?: string;
   flagged?: boolean;
+  // Priority for exam-prep focus mode.
+  //   'A' = must know (must master before exam)
+  //   'B' = should know
+  //   'C' = nice to know
+  //   undefined = not yet classified — treated as B for default filtering
+  // Set either automatically via classifyPriority() heuristic or manually
+  // by the user via the inline picker on card front.
+  priority?: 'A' | 'B' | 'C';
   // Exam frequency / probability (set via JSON import)
   timesAsked?: number;
   askedByExaminers?: string[];

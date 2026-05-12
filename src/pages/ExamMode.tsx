@@ -19,6 +19,7 @@ interface ExamConfig {
   filterExaminer: string;
   filterDifficulty: string;
   filterTag: string;
+  filterPriority: '' | 'A' | 'B' | 'C' | 'AB';
   countMode: 'all' | 'random';
   randomCount: number;
   order: Order;
@@ -138,6 +139,7 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
     filterExaminer: '',
     filterDifficulty: '',
     filterTag: '',
+    filterPriority: '',
     countMode: 'all',
     randomCount: 20,
     order: 'random',
@@ -178,6 +180,10 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
       if (config.filterExaminer)  pool = pool.filter(c => c.examiners?.includes(config.filterExaminer));
       if (config.filterDifficulty) pool = pool.filter(c => c.difficulty === config.filterDifficulty);
       if (config.filterTag)       pool = pool.filter(c => c.customTags.includes(config.filterTag));
+      if (config.filterPriority === 'A')  pool = pool.filter(c => c.priority === 'A');
+      else if (config.filterPriority === 'B')  pool = pool.filter(c => c.priority === 'B');
+      else if (config.filterPriority === 'C')  pool = pool.filter(c => c.priority === 'C');
+      else if (config.filterPriority === 'AB') pool = pool.filter(c => c.priority === 'A' || c.priority === 'B');
     }
     return pool;
   }, [cards, config]);
@@ -315,6 +321,17 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
                   <FilterSelect value={config.filterExaminer} onChange={v => setConfig(c => ({ ...c, filterExaminer: v }))} placeholder="Prüfer" options={settings.examiners} />
                   <FilterSelect value={config.filterDifficulty} onChange={v => setConfig(c => ({ ...c, filterDifficulty: v }))} placeholder="Schwierigkeit" options={['einfach','mittel','schwer']} />
                   {allTags.length > 0 && <FilterSelect value={config.filterTag} onChange={v => setConfig(c => ({ ...c, filterTag: v }))} placeholder="Tag" options={allTags} />}
+                  <select
+                    value={config.filterPriority}
+                    onChange={e => setConfig(c => ({ ...c, filterPriority: e.target.value as '' | 'A' | 'B' | 'C' | 'AB' }))}
+                    className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="">Priorität (alle)</option>
+                    <option value="A">🅰️ Nur A</option>
+                    <option value="AB">🅰️🅱️ A + B</option>
+                    <option value="B">🅱️ Nur B</option>
+                    <option value="C">🅲 Nur C</option>
+                  </select>
                 </div>
               )}
 

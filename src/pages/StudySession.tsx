@@ -3,6 +3,7 @@ import type { Flashcard, AppSettings, RatingValue, CardSet, CardLink } from '../
 import { isDueToday, STUDY_RATINGS } from '../types/card';
 import DifficultyBadge from '../components/DifficultyBadge';
 import MarkdownText from '../components/MarkdownText';
+import PriorityPicker from '../components/PriorityPicker';
 import { LinkedCardsPanel } from '../components/LinkedCards';
 import QuickEditModal from '../components/QuickEditModal';
 import { getNewCardsDoneToday } from '../utils/dailyGoal';
@@ -122,6 +123,7 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminers, setFilterExaminers] = useState<string[]>([]);
   const [filterDifficulty, setFilterDifficulty] = useState('');
+  const [filterPriority, setFilterPriority] = useState<'' | 'A' | 'B' | 'C' | 'AB'>('');
   const [filterSet, setFilterSet] = useState('');
   const [onlyDue, setOnlyDue] = useState(true);
   const [filterKlassiker, setFilterKlassiker] = useState(false);
@@ -152,6 +154,10 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
         result = result.filter(c => c.examiners?.some(e => filterExaminers.includes(e)));
       }
       if (filterDifficulty) result = result.filter(c => c.difficulty === filterDifficulty);
+      if (filterPriority === 'A') result = result.filter(c => c.priority === 'A');
+      else if (filterPriority === 'B') result = result.filter(c => c.priority === 'B');
+      else if (filterPriority === 'C') result = result.filter(c => c.priority === 'C');
+      else if (filterPriority === 'AB') result = result.filter(c => c.priority === 'A' || c.priority === 'B');
       if (filterSet) result = result.filter(c => c.setId === filterSet);
       if (!endlessMode && onlyDue) result = result.filter(isDueToday);
       if (filterKlassiker) result = result.filter(c => (c.probabilityPercent ?? 0) > 60);
@@ -179,7 +185,7 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
       if (sortByProbability) result = [...result].sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0));
     }
     return result;
-  }, [cards, preFilteredCards, filterSubject, filterExaminers, filterDifficulty, filterSet, onlyDue, endlessMode, filterKlassiker, sortByProbability, settings]);
+  }, [cards, preFilteredCards, filterSubject, filterExaminers, filterDifficulty, filterPriority, filterSet, onlyDue, endlessMode, filterKlassiker, sortByProbability, settings]);
 
   const applyStudyOrder = (newCards: Flashcard[], reviewCards: Flashcard[]): Flashcard[] => {
     if (studyOrder === 'new-first') return [...newCards, ...reviewCards];
@@ -699,6 +705,20 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                   <option value="schwer">Schwer</option>
                 </select>
               </div>
+              <div>
+                <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">
+                  🎯 Priorität (Fokus)
+                </label>
+                <select value={filterPriority} onChange={e => setFilterPriority(e.target.value as '' | 'A' | 'B' | 'C' | 'AB')}
+                  className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none">
+                  <option value="">Alle</option>
+                  <option value="A">🅰️ Nur A (Muss können)</option>
+                  <option value="AB">🅰️🅱️ A + B (Muss + Sollte)</option>
+                  <option value="B">🅱️ Nur B</option>
+                  <option value="C">🅲 Nur C (Nice to know)</option>
+                </select>
+                <p className="text-xs text-[#6b7280] mt-1.5">Empfehlung: <strong>Nur A</strong> kurz vor Prüfung.</p>
+              </div>
               {sets.length > 0 && (
                 <div>
                   <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">Set</label>
@@ -876,7 +896,15 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
             onClick={() => setIsFlipped(f => !f)}
           >
             {/* Front */}
-            <div className="card-face bg-[#1e2130] border border-[#2d3148] rounded-3xl flex flex-col select-none">
+            <div className="card-face bg-[#1e2130] border border-[#2d3148] rounded-3xl flex flex-col select-none relative">
+              {/* Priority picker in the corner — small, unobtrusive */}
+              <div className="absolute top-3 right-3 z-10" onClick={e => e.stopPropagation()}>
+                <PriorityPicker
+                  value={currentCard.priority}
+                  onChange={(p) => onUpdateCard(currentCard.id, { priority: p })}
+                  size="md"
+                />
+              </div>
               <div className="shrink-0 pt-5 pb-2 text-center">
                 <span className="text-xs font-semibold text-indigo-400 uppercase tracking-widest">Frage</span>
               </div>

@@ -8,6 +8,7 @@ import MarkdownText from '../components/MarkdownText';
 import ProbabilityBadge from '../components/ProbabilityBadge';
 import { exportJSON } from '../utils/export';
 import DuplicateFinderModal from '../components/DuplicateFinderModal';
+import { PriorityBadge } from '../components/PriorityPicker';
 
 interface Props {
   cards: Flashcard[];
@@ -48,6 +49,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
   }, []);
   const [filterDifficulty, setFilterDifficulty] = useState<Difficulty | ''>('');
   const [filterTag, setFilterTag] = useState('');
+  const [filterPriority, setFilterPriority] = useState<'' | 'A' | 'B' | 'C' | 'none'>('');
   const [filterSRS, setFilterSRS] = useState<SRSStatus | ''>(initialSrsFilter as SRSStatus | '' ?? '');
   const [showSrsFilterBanner, setShowSrsFilterBanner] = useState(!!initialSrsFilter);
   const [filterSet, setFilterSet] = useState('');
@@ -104,6 +106,10 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
       if (filterExaminers.size > 0 && !c.examiners?.some(e => filterExaminers.has(e))) return false;
       if (filterDifficulty && c.difficulty !== filterDifficulty) return false;
       if (filterTag && !c.customTags.includes(filterTag)) return false;
+      if (filterPriority) {
+        // 'A'|'B'|'C' = match exactly; 'none' = match cards without any priority
+        if (filterPriority === 'none' ? !!c.priority : c.priority !== filterPriority) return false;
+      }
       if (filterSRS && getSRSStatus(c) !== filterSRS) return false;
       if (filterSet && c.setId !== filterSet) return false;
       if (filterCatalog && !c.askedInCatalogs?.some(v => v.includes(filterCatalog))) return false;
@@ -116,14 +122,15 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
       result.sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0));
     }
     return result;
-  }, [cards, search, filterSubject, filterExaminers, filterDifficulty, filterTag, filterSRS, filterSet, filterCatalog, filterDue, filterFlagged, filterKlassiker, sortBy]);
+  }, [cards, search, filterSubject, filterExaminers, filterDifficulty, filterTag, filterPriority, filterSRS, filterSet, filterCatalog, filterDue, filterFlagged, filterKlassiker, sortBy]);
 
-  const hasFilters = search || filterSubject || filterExaminers.size > 0 || filterDifficulty || filterTag || filterSRS || filterSet || filterCatalog || filterDue || filterFlagged || filterKlassiker || sortBy !== 'default';
+  const hasFilters = search || filterSubject || filterExaminers.size > 0 || filterDifficulty || filterTag || filterPriority || filterSRS || filterSet || filterCatalog || filterDue || filterFlagged || filterKlassiker || sortBy !== 'default';
 
   const clearFilters = () => {
     setSearch(''); setFilterSubject(''); setFilterExaminers(new Set());
-    setFilterDifficulty(''); setFilterTag(''); setFilterSRS('');
-    setFilterSet(''); setFilterCatalog(''); setFilterDue(false); setFilterFlagged(false);
+    setFilterDifficulty(''); setFilterTag(''); setFilterPriority('');
+    setFilterSRS(''); setFilterSet(''); setFilterCatalog('');
+    setFilterDue(false); setFilterFlagged(false);
     setFilterKlassiker(false); setSortBy('default');
   };
 
@@ -405,6 +412,20 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
             </div>
           )}
           <Select value={filterDifficulty} onChange={v => setFilterDifficulty(v as Difficulty | '')} placeholder="Schwierigkeit" options={['einfach','mittel','schwer']} />
+          {/* Priority filter — manual select instead of Select component so we
+              can show "Ohne Priorität" as a sentinel option. */}
+          <select
+            value={filterPriority}
+            onChange={e => setFilterPriority(e.target.value as '' | 'A' | 'B' | 'C' | 'none')}
+            className="w-full sm:w-auto text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none appearance-none cursor-pointer"
+            title="Filter nach A/B/C-Priorität"
+          >
+            <option value="">Priorität</option>
+            <option value="A">🅰️ A · Muss können</option>
+            <option value="B">🅱️ B · Sollte kennen</option>
+            <option value="C">🅲 C · Nice to know</option>
+            <option value="none">— Ohne Priorität</option>
+          </select>
           {allTags.length > 0 && <Select value={filterTag} onChange={setFilterTag} placeholder="Tag" options={allTags} />}
           <Select value={filterSRS} onChange={v => setFilterSRS(v as SRSStatus | '')} placeholder="SRS-Status"
             options={['neu','lernend','wiederholen','beherrscht']}
@@ -674,6 +695,7 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
         {card.subjects?.map(s => <span key={s} className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">{s}</span>)}
         {card.examiners?.map(e => <span key={e} className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">👤 {e}</span>)}
         <DifficultyBadge difficulty={card.difficulty} />
+        <PriorityBadge value={card.priority} />
         <SRSBadge status={status} />
         {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
         {card.flagged && <span title={flagTooltip(card.id, flagAttempts, autoUnflagEnabled)} className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 cursor-help">🚩</span>}
@@ -761,6 +783,7 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
         {card.subjects?.map(s => <span key={s} className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">{s}</span>)}
         {card.examiners?.map(e => <span key={e} className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">👤 {e}</span>)}
         <DifficultyBadge difficulty={card.difficulty} />
+        <PriorityBadge value={card.priority} />
         <SRSBadge status={status} />
         {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
         {card.flagged && <span title={flagTooltip(card.id, flagAttempts, autoUnflagEnabled)} className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 cursor-help">🚩</span>}
@@ -874,6 +897,7 @@ function CardPreviewModal({ card, onClose, onEdit }: { card: Flashcard; onClose:
           {card.subjects?.map(s => <span key={s} className="text-xs px-2 py-0.5 rounded-full bg-[#1e2130] border border-[#2d3148] text-[#9ca3af]">{s}</span>)}
           {card.examiners?.map(e => <span key={e} className="text-xs px-2 py-0.5 rounded-full bg-[#1e2130] border border-[#2d3148] text-[#9ca3af]">👤 {e}</span>)}
           <DifficultyBadge difficulty={card.difficulty} />
+        <PriorityBadge value={card.priority} />
           {card.customTags.map(t => <span key={t} className="text-xs text-[#6b7280]">#{t}</span>)}
         </div>
       </div>

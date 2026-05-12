@@ -16,6 +16,7 @@ import { useAuth } from './hooks/useAuth';
 import { useGoogleDrive } from './hooks/useGoogleDrive';
 import { extractParentLinks } from './utils/import';
 import { calculateDailyPlan, getCardsRatedToday, getNewCardsDoneToday } from './utils/dailyGoal';
+import { classifyAll } from './utils/priority';
 
 import Sidebar from './components/Sidebar';
 import ToastContainer from './components/ToastContainer';
@@ -39,7 +40,7 @@ export default function App() {
   const { user, loading: authLoading, signOut } = useAuth();
   const userId = user?.id ?? null;
 
-  const { cards, loading: cardsLoading, loadError: cardsLoadError, addCard, updateCard, removeCard, rateCard, importCards } = useCards(userId);
+  const { cards, loading: cardsLoading, loadError: cardsLoadError, addCard, updateCard, bulkUpdate, removeCard, rateCard, importCards } = useCards(userId);
   const { settings, updateSettings, updateSettingsFn, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag } = useSettings(userId);
   const { sets, addSet, updateSet, removeSet } = useSets(userId);
   const { links, addLink, removeLink, replaceLinks } = useCardLinks(userId);
@@ -312,6 +313,27 @@ export default function App() {
     cardIds.forEach(id => removeCard(id));
     showToast(`${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} gelöscht`, 'info');
   }, [removeCard, showToast]);
+
+  // Auto-classify all cards into A/B/C using the priority heuristic.
+  // `overwrite=false` (default): preserve any user-set priorities, only fill
+  // in cards that are currently unset. `overwrite=true`: re-baseline everything,
+  // wiping manual labels.
+  const handleAutoClassifyPriority = useCallback(async (overwrite: boolean): Promise<{ A: number; B: number; C: number; touched: number }> => {
+    const { byId, counts } = classifyAll(cards, overwrite);
+    const updates = Array.from(byId.entries()).map(([id, priority]) => ({
+      id,
+      patch: { priority } as Partial<Flashcard>,
+    }));
+    const touched = await bulkUpdate(updates);
+    showToast(
+      `📊 ${touched} Karten klassifiziert · A=${counts.A}, B=${counts.B}, C=${counts.C}`,
+      'success',
+    );
+    return { A: counts.A, B: counts.B, C: counts.C, touched };
+  }, [cards, bulkUpdate, showToast]);
+
+  // Note: single-card priority changes go through the regular updateCard
+  // path (used by PriorityPicker on card fronts). No special handler needed.
 
   const handleBulkCreateAndAssignSet = useCallback((cardIds: string[], setName: string) => {
     if (!userId) return;
@@ -858,6 +880,7 @@ export default function App() {
             }}
             showToast={showToast}
             gdrive={gdrive}
+            onAutoClassifyPriority={handleAutoClassifyPriority}
           />
         )}
       </main>

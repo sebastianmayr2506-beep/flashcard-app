@@ -3,6 +3,7 @@ import type { AppSettings, Flashcard } from '../types/card';
 import { calculatePaceMetrics } from '../utils/dailyGoal';
 import { supabase } from '../lib/supabase';
 import type { useGoogleDrive } from '../hooks/useGoogleDrive';
+import { previewClassification } from '../utils/priority';
 
 const ADMIN_EMAIL = 'bastimayr@gmx.at';
 
@@ -20,12 +21,13 @@ interface Props {
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
   userEmail?: string;
   gdrive: ReturnType<typeof useGoogleDrive>;
+  onAutoClassifyPriority: (overwrite: boolean) => Promise<{ A: number; B: number; C: number; touched: number }>;
 }
 
 export default function Settings({
   settings, cards, onUpdateSettings, onAddSubject, onRemoveSubject,
   onAddExaminer, onRemoveExaminer, onAddTag, onRemoveTag, onResetAllSrs, showToast, userEmail,
-  gdrive,
+  gdrive, onAutoClassifyPriority,
 }: Props) {
   const [dailyGoalInput, setDailyGoalInput] = useState(String(settings.dailyNewCardGoal ?? 10));
   const [reviewCapInput, setReviewCapInput] = useState(
@@ -420,6 +422,9 @@ export default function Settings({
           </p>
         </div>
       </div>
+
+      {/* Priority auto-classification */}
+      <PriorityClassifySection cards={cards} onApply={onAutoClassifyPriority} />
 
       {/* Google Drive automatic backup */}
       <GoogleDriveSection gdrive={gdrive} cards={cards} />
@@ -824,4 +829,136 @@ function formatRelativeTime(epochMs: number): string {
   if (diffH < 24) return `vor ${diffH} Stunde${diffH !== 1 ? 'n' : ''}`;
   const diffDay = Math.round(diffH / 24);
   return `vor ${diffDay} Tag${diffDay !== 1 ? 'en' : ''}`;
+}
+
+// ─── Priority auto-classification ──────────────────────────────────────────
+function PriorityClassifySection({
+  cards,
+  onApply,
+}: {
+  cards: Flashcard[];
+  onApply: (overwrite: boolean) => Promise<{ A: number; B: number; C: number; touched: number }>;
+}) {
+  const [overwrite, setOverwrite] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // Live preview that follows the overwrite toggle
+  const preview = previewClassification(cards, overwrite);
+
+  // Current manual distribution (what user has set up to now)
+  const existing = cards.reduce((acc, c) => {
+    if (c.priority === 'A') acc.A++;
+    else if (c.priority === 'B') acc.B++;
+    else if (c.priority === 'C') acc.C++;
+    else acc.none++;
+    return acc;
+  }, { A: 0, B: 0, C: 0, none: 0 });
+
+  const handleApply = async () => {
+    if (busy) return;
+    if (overwrite) {
+      const ok = window.confirm(
+        `⚠️ Überschreiben aktiviert!\n\nAlle ${cards.length} Karten werden gemäß Auto-Heuristik neu klassifiziert. ` +
+        `Manuelle Einstellungen werden ÜBERSCHRIEBEN.\n\nFortfahren?`
+      );
+      if (!ok) return;
+    }
+    setBusy(true);
+    try { await onApply(overwrite); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-3">
+      <div>
+        <h3 className="font-semibold text-white flex items-center gap-2">🎯 A/B/C-Priorisierung</h3>
+        <p className="text-xs text-[#9ca3af] mt-0.5 leading-relaxed">
+          Automatische Einstufung deiner Karten nach Prüfungsrelevanz, basierend auf Klassiker-Score, Häufigkeit
+          und manuellen Flaggings. Du kannst einzelne Karten beim Lernen jederzeit umstufen.
+        </p>
+      </div>
+
+      {/* Existing distribution */}
+      {(existing.A + existing.B + existing.C) > 0 && (
+        <div className="bg-[#252840] rounded-xl p-3 space-y-1.5">
+          <p className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider">Aktuelle Verteilung</p>
+          <div className="grid grid-cols-4 gap-2 text-xs">
+            <PriorityCount label="A" count={existing.A} color="bg-red-500" />
+            <PriorityCount label="B" count={existing.B} color="bg-amber-400" />
+            <PriorityCount label="C" count={existing.C} color="bg-slate-400" />
+            <PriorityCount label="—" count={existing.none} color="bg-[#3d4168]" />
+          </div>
+        </div>
+      )}
+
+      {/* Preview after auto-classify */}
+      <div className="bg-[#252840] rounded-xl p-3 space-y-1.5">
+        <p className="text-[10px] font-semibold text-purple-300/80 uppercase tracking-wider">
+          Vorschau nach Auto-Klassifikation
+        </p>
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          <PriorityCount label="A" count={preview.A} color="bg-red-500" />
+          <PriorityCount label="B" count={preview.B} color="bg-amber-400" />
+          <PriorityCount label="C" count={preview.C} color="bg-slate-400" />
+        </div>
+        {preview.preserved > 0 && !overwrite && (
+          <p className="text-[10px] text-[#9ca3af]">
+            {preview.preserved} Karten haben bereits eine manuelle Priorität und bleiben unverändert.
+          </p>
+        )}
+      </div>
+
+      {/* Overwrite toggle */}
+      <label className="flex items-center gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={overwrite}
+          onChange={e => setOverwrite(e.target.checked)}
+          className="accent-red-500 w-4 h-4"
+        />
+        <div>
+          <p className="text-sm text-white">Manuelle Einstellungen überschreiben</p>
+          <p className="text-[11px] text-[#9ca3af]">
+            Standardmäßig: nur Karten ohne bisherige Priorität werden gesetzt.
+          </p>
+        </div>
+      </label>
+
+      <div className="flex gap-2">
+        <button
+          onClick={handleApply}
+          disabled={busy || cards.length === 0}
+          className="text-sm px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors flex items-center gap-2"
+        >
+          {busy ? (
+            <>
+              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              Klassifiziere…
+            </>
+          ) : (
+            <>📊 Automatisch klassifizieren</>
+          )}
+        </button>
+      </div>
+
+      <details className="text-[11px] text-[#6b7280]">
+        <summary className="cursor-pointer hover:text-[#9ca3af]">Wie funktioniert die Heuristik?</summary>
+        <ul className="mt-1.5 space-y-1 leading-relaxed pl-3">
+          <li>· <strong className="text-red-300">A</strong>: Klassiker (≥60%), geflaggte Karten, oder oft+schwer</li>
+          <li>· <strong className="text-amber-300">B</strong>: Mittelfeld — ein gewisses Maß an Häufigkeit/Relevanz</li>
+          <li>· <strong className="text-slate-300">C</strong>: Niedrige Wahrscheinlichkeit, selten/nie gestellt</li>
+        </ul>
+      </details>
+    </div>
+  );
+}
+
+function PriorityCount({ label, count, color }: { label: string; count: number; color: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className={`w-2.5 h-2.5 rounded-full ${color}`} />
+      <span className="text-white font-mono">{count}</span>
+      <span className="text-[#6b7280]">{label}</span>
+    </div>
+  );
 }

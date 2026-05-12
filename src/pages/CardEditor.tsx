@@ -431,24 +431,41 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
             </button>
           </div>
 
-          {card && card.timesAsked != null && card.timesAsked > 0 && (
-            <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-3">
-              <h3 className="font-semibold text-white flex items-center gap-2">📊 Prüfungsstatistik</h3>
-              <div className="space-y-2 text-sm">
-                <p className="text-[#9ca3af]">🔁 <span className="text-white font-medium">{card.timesAsked}×</span> gestellt</p>
-                {card.askedByExaminers && card.askedByExaminers.length > 0 && (
-                  <p className="text-[#9ca3af]">👥 Gefragt von: <span className="text-white">{card.askedByExaminers.join(', ')}</span></p>
-                )}
-                {card.askedInCatalogs && card.askedInCatalogs.length > 0 && (
-                  <p className="text-[#9ca3af]">📅 In Katalogen: <span className="text-white">{card.askedInCatalogs.join(', ')}</span></p>
-                )}
-                {card.probabilityPercent != null && card.probabilityPercent > 0 && (
-                  <div className="pt-1">
-                    <ProbabilityBadge pct={card.probabilityPercent} />
+          {card && (
+            // Show the stats section if ANY exam-frequency signal is present —
+            // a card can have askedInCatalogs / askedByExaminers without
+            // timesAsked being populated (depending on which JSON shape was
+            // imported), so the prior `timesAsked > 0`-only gate hid the
+            // stats for many cards that actually have data.
+            (() => {
+              const hasStats =
+                (card.timesAsked ?? 0) > 0 ||
+                (card.askedByExaminers?.length ?? 0) > 0 ||
+                (card.askedInCatalogs?.length ?? 0) > 0 ||
+                (card.probabilityPercent ?? 0) > 0;
+              if (!hasStats) return null;
+              return (
+                <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-3">
+                  <h3 className="font-semibold text-white flex items-center gap-2">📊 Prüfungsstatistik</h3>
+                  <div className="space-y-2 text-sm">
+                    {(card.timesAsked ?? 0) > 0 && (
+                      <p className="text-[#9ca3af]">🔁 <span className="text-white font-medium">{card.timesAsked}×</span> gestellt</p>
+                    )}
+                    {card.askedByExaminers && card.askedByExaminers.length > 0 && (
+                      <p className="text-[#9ca3af]">👥 Gefragt von: <span className="text-white">{card.askedByExaminers.join(', ')}</span></p>
+                    )}
+                    {card.askedInCatalogs && card.askedInCatalogs.length > 0 && (
+                      <p className="text-[#9ca3af]">📅 In Katalogen: <span className="text-white">{card.askedInCatalogs.join(', ')}</span></p>
+                    )}
+                    {card.probabilityPercent != null && card.probabilityPercent > 0 && (
+                      <div className="pt-1">
+                        <ProbabilityBadge pct={card.probabilityPercent} />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
+              );
+            })()
           )}
 
           {card && (

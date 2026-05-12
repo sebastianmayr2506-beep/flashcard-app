@@ -7,6 +7,7 @@ import type { Flashcard, AppSettings } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
 import { calculateDailyPlan, getCardsRatedToday, getNewCardsDoneToday } from '../utils/dailyGoal';
 import { applyFocus, type FocusMode } from '../utils/priority';
+import InfoTooltip from '../components/InfoTooltip';
 import ProbabilityBadge from '../components/ProbabilityBadge';
 import SrsLevelGrid, { type SrsKey } from '../components/SrsLevelGrid';
 
@@ -143,6 +144,9 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
           color="text-white"
           bg={isFocused ? 'bg-amber-500/5 border-amber-500/20' : 'bg-[#1e2130] border-[#2d3148]'}
           hint={isFocused ? `von ${stats.grandTotal} gesamt` : undefined}
+          info={isFocused
+            ? `Karten im aktuellen Fokus-Set (${stats.total} von ${stats.grandTotal}). Wechsle auf 'Alle' um den vollen Stand zu sehen.`
+            : 'Alle Karten in deiner Bibliothek — egal wann zuletzt gelernt oder fällig.'}
         />
         <StatCard
           value={stats.due.length}
@@ -155,9 +159,24 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
             { icon: '🔄', label: 'Wdh.', value: plan.reviewCards.length, color: 'text-amber-300' },
             { icon: '✨', label: 'Neu',  value: plan.newCards.length,    color: 'text-purple-300' },
           ] : undefined}
+          info="Karten, deren nächster Wiederholungstermin auf heute oder früher fällt. Diese werden beim 'Jetzt lernen'-Klick zuerst gezogen — gemixt mit dem heutigen Neu-Karten-Kontingent."
         />
-        <StatCard value={stats.srsGroups.beherrscht} label="Beherrscht" icon="✅" color="text-green-400" bg="bg-[#1e2130] border-[#2d3148]" />
-        <StatCard value={`${settings.studyStreak}🔥`} label="Lerntage in Folge" icon="" color="text-amber-400" bg="bg-[#1e2130] border-[#2d3148]" />
+        <StatCard
+          value={stats.srsGroups.beherrscht}
+          label="Beherrscht"
+          icon="✅"
+          color="text-green-400"
+          bg="bg-[#1e2130] border-[#2d3148]"
+          info="Karten im SRS-Status 'Beherrscht': mindestens 5× richtig wiederholt mit großen Intervallen. Tauchen nur noch sehr selten auf — kannst du."
+        />
+        <StatCard
+          value={`${settings.studyStreak}🔥`}
+          label="Lerntage in Folge"
+          icon=""
+          color="text-amber-400"
+          bg="bg-[#1e2130] border-[#2d3148]"
+          info="Anzahl Tage in Folge, an denen du mindestens eine Karte bewertet hast. Bricht ab, sobald du einen Tag pausierst."
+        />
       </div>
 
       {/* Exam Countdown Widget */}
@@ -167,7 +186,13 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
       {topKlassiker.length > 0 && (
         <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-white flex items-center gap-2">🔥 Top Klassiker</h3>
+            <h3 className="font-semibold text-white flex items-center gap-2">
+              🔥 Top Klassiker
+              <InfoTooltip
+                side="bottom"
+                text="Die 5 Karten mit der höchsten Klassiker-Wahrscheinlichkeit — basierend darauf, in wie vielen Katalogjahren / von wie vielen Prüfern die Frage gestellt wurde. Diese kommen sehr wahrscheinlich auch in deiner Prüfung dran."
+              />
+            </h3>
             <span className="text-xs text-[#6b7280]">Häufigste Prüfungsfragen</span>
           </div>
           <div className="space-y-2">
@@ -350,7 +375,12 @@ function DailyGoalCard({ plan, ratedToday, progressPct, progressTotal, onStart }
   return (
     <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h3 className="font-semibold text-white">Tagesziel</h3>
+        <h3 className="font-semibold text-white flex items-center gap-2">
+          Tagesziel
+          <InfoTooltip
+            text="Dein vorgeschlagenes Lern-Pensum für heute: fällige Wiederholungen + neue Karten gemäß deinem Tageslimit. Wenn Fokus aktiv ist, nur Karten aus dem Fokus-Set. Mit 'Jetzt lernen' arbeitest du diese Liste durch."
+          />
+        </h3>
         {goalDone && (
           <span className="text-xs font-semibold px-3 py-1 rounded-full bg-green-500/15 border border-green-500/30 text-green-400">
             ✅ Tagesziel erreicht!
@@ -440,8 +470,10 @@ interface StatCardProps {
   breakdown?: Array<{ icon: string; label: string; value: number; color?: string }>;
   /** Optional small secondary line under the label, e.g. "von 1037 gesamt". */
   hint?: string;
+  /** Optional info tooltip — shows an "i"-icon next to label that explains the metric. */
+  info?: string;
 }
-function StatCard({ value, label, icon, color, bg, onClick, breakdown, hint }: StatCardProps) {
+function StatCard({ value, label, icon, color, bg, onClick, breakdown, hint, info }: StatCardProps) {
   return (
     <div
       className={`${bg} border rounded-2xl p-4 transition-all duration-200 ${onClick ? 'cursor-pointer hover:scale-[1.02]' : ''}`}
@@ -450,7 +482,10 @@ function StatCard({ value, label, icon, color, bg, onClick, breakdown, hint }: S
       <div className="flex items-start justify-between">
         <div>
           <p className={`text-3xl font-bold ${color}`}>{value}</p>
-          <p className="text-xs text-[#9ca3af] mt-1 leading-tight">{label}</p>
+          <div className="flex items-center gap-1 mt-1">
+            <p className="text-xs text-[#9ca3af] leading-tight">{label}</p>
+            {info && <InfoTooltip side="bottom" text={info} />}
+          </div>
           {hint && <p className="text-[10px] text-[#6b7280] mt-0.5">{hint}</p>}
         </div>
         {icon && <span className="text-2xl">{icon}</span>}
@@ -504,6 +539,10 @@ function FocusToggle({
         <div>
           <p className="text-sm font-semibold text-white flex items-center gap-2">
             🎯 Fokus
+            <InfoTooltip
+              side="bottom"
+              text="Reduziert die App auf einen Karten-Subset (A oder A+B), damit 'Fällig heute' eine machbare Zahl zeigt statt der überfordernden Gesamtzahl. Andere Karten sind nicht weg — nur ausgeblendet bis du den Fokus wechselst."
+            />
             {isFocused && (
               <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
                 aktiv
@@ -521,15 +560,11 @@ function FocusToggle({
       <div className="flex gap-1 p-1 rounded-xl bg-[#15172a] border border-[#2d3148]">
         {(['all', 'AB', 'A'] as FocusMode[]).map(m => {
           const active = focusMode === m;
-          const label =
-            m === 'all' ? 'Alle' :
-            m === 'A' ? '🅰️ Nur A' :
-            '🅰️🅱️ A + B';
           return (
             <button
               key={m}
               onClick={() => onSetFocusMode(m)}
-              className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 active
                   ? m === 'all'
                     ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30'
@@ -537,7 +572,21 @@ function FocusToggle({
                   : 'text-[#9ca3af] hover:text-white hover:bg-white/5'
               }`}
             >
-              {label}
+              {/* Small coloured priority dots (no emoji rendering shenanigans) */}
+              {m === 'A' && (
+                <span className={`w-2 h-2 rounded-full ${active ? 'bg-white' : 'bg-red-500'}`} />
+              )}
+              {m === 'AB' && (
+                <span className="flex items-center gap-0.5">
+                  <span className={`w-2 h-2 rounded-full ${active ? 'bg-white' : 'bg-red-500'}`} />
+                  <span className={`w-2 h-2 rounded-full ${active ? 'bg-white' : 'bg-amber-400'}`} />
+                </span>
+              )}
+              <span>
+                {m === 'all' ? 'Alle' :
+                 m === 'A' ? 'Nur A' :
+                 'A + B'}
+              </span>
             </button>
           );
         })}

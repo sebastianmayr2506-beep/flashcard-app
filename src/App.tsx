@@ -17,6 +17,7 @@ import { useGoogleDrive } from './hooks/useGoogleDrive';
 import { extractParentLinks } from './utils/import';
 import { calculateDailyPlan, getCardsRatedToday, getNewCardsDoneToday } from './utils/dailyGoal';
 import { classifyAll } from './utils/priority';
+import { normalizeAll, type NormalizationSummary } from './utils/normalizeStats';
 
 import Sidebar from './components/Sidebar';
 import ToastContainer from './components/ToastContainer';
@@ -334,6 +335,23 @@ export default function App() {
 
   // Note: single-card priority changes go through the regular updateCard
   // path (used by PriorityPicker on card fronts). No special handler needed.
+
+  // One-time data normalization: extracts catalog-year tags into the
+  // dedicated stats fields, mirrors examiners, derives timesAsked/
+  // probabilityPercent. See src/utils/normalizeStats.ts.
+  const handleNormalizeStats = useCallback(async (): Promise<NormalizationSummary> => {
+    const { patches, summary } = normalizeAll(cards);
+    if (patches.length > 0) {
+      await bulkUpdate(patches.map(p => ({ id: p.id, patch: p.patch })));
+    }
+    showToast(
+      patches.length === 0
+        ? '✨ Daten waren schon sauber — nichts zu tun'
+        : `🧹 ${patches.length} Karten normalisiert · ${summary.catalogTagsMovedTotal} Tags umgezogen`,
+      'success',
+    );
+    return summary;
+  }, [cards, bulkUpdate, showToast]);
 
   const handleBulkCreateAndAssignSet = useCallback((cardIds: string[], setName: string) => {
     if (!userId) return;
@@ -881,6 +899,7 @@ export default function App() {
             showToast={showToast}
             gdrive={gdrive}
             onAutoClassifyPriority={handleAutoClassifyPriority}
+            onNormalizeStats={handleNormalizeStats}
           />
         )}
       </main>

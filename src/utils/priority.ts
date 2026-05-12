@@ -44,9 +44,20 @@ export interface ClassificationCounts {
 export function classifyPriority(card: Flashcard): Priority {
   const prob = Number(card.probabilityPercent ?? 0) || 0;
   const timesAsked = Number(card.timesAsked ?? 0) || 0;
-  const catalogCount = card.askedInCatalogs?.length ?? 0;
-  const examinerCount = card.askedByExaminers?.length ?? 0;
   const flagged = !!card.flagged;
+
+  // Best-effort signal extraction: many imports route exam-frequency
+  // data through general fields (`examiners`, `customTags` with
+  // "Fragenkatalog YYYY") rather than the dedicated stats fields.
+  // Fall back to general fields when stats fields are empty so we don't
+  // miss frequency information that's clearly present on the card.
+  const examinersFromStats = card.askedByExaminers?.length ?? 0;
+  const examinerCount = examinersFromStats > 0
+    ? examinersFromStats
+    : (card.examiners?.length ?? 0);
+  const catalogsFromStats = card.askedInCatalogs?.length ?? 0;
+  const catalogsFromTags = (card.customTags ?? []).filter(t => /^fragenkatalog\s*\d{4}$/i.test(t)).length;
+  const catalogCount = catalogsFromStats > 0 ? catalogsFromStats : catalogsFromTags;
 
   // ── A bucket: strong "must know" signal ───────────────────────────────
   if (prob >= 50) return 'A';                         // Klassiker (relaxed from 60)
@@ -62,7 +73,7 @@ export function classifyPriority(card: Flashcard): Priority {
     return 'C';
   }
   // Very low probability AND barely asked → defer
-  if (prob < 10 && timesAsked <= 1 && catalogCount <= 1) return 'C';
+  if (prob < 10 && timesAsked <= 1 && catalogCount <= 1 && examinerCount <= 1) return 'C';
 
   // ── B bucket: has some signal, middle relevance (the bulk) ────────────
   return 'B';
@@ -140,8 +151,13 @@ export function inspectDistribution(cards: Flashcard[]): SignalDistribution {
   for (const c of cards) {
     const prob = Number(c.probabilityPercent ?? 0) || 0;
     const timesAsked = Number(c.timesAsked ?? 0) || 0;
-    const catalogCount = c.askedInCatalogs?.length ?? 0;
-    const examinerCount = c.askedByExaminers?.length ?? 0;
+    // Best-effort: fall back to general fields if dedicated stats aren't set.
+    const catalogCount = (c.askedInCatalogs?.length ?? 0) > 0
+      ? (c.askedInCatalogs?.length ?? 0)
+      : (c.customTags ?? []).filter(t => /^fragenkatalog\s*\d{4}$/i.test(t)).length;
+    const examinerCount = (c.askedByExaminers?.length ?? 0) > 0
+      ? (c.askedByExaminers?.length ?? 0)
+      : (c.examiners?.length ?? 0);
 
     if (prob >= 50) dist.byProbability.ge50++;
     else if (prob >= 25) dist.byProbability.ge25++;
@@ -149,7 +165,7 @@ export function inspectDistribution(cards: Flashcard[]): SignalDistribution {
     else if (prob >= 1) dist.byProbability.ge1++;
     else dist.byProbability.eq0++;
 
-    if (catalogCount > 0 || timesAsked > 0) dist.withCatalogData++;
+    if (catalogCount > 0 || timesAsked > 0 || examinerCount > 0) dist.withCatalogData++;
     if (c.flagged) dist.flaggedCount++;
 
     if (prob === 0 && timesAsked === 0 && catalogCount === 0 && examinerCount === 0 && !c.flagged) {

@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { Flashcard, Difficulty } from '../types/card';
 import { createInitialSRS } from './srs';
+import { normalizeAll } from './normalizeStats';
 
 function mergeCatalogs(asked: unknown, year: unknown): string[] | undefined {
   const out: string[] = [];
@@ -20,7 +21,19 @@ function mergeCatalogs(asked: unknown, year: unknown): string[] | undefined {
 export function importFromJSON(jsonText: string): Flashcard[] {
   const data = JSON.parse(jsonText);
   if (!Array.isArray(data)) throw new Error('Ungültiges JSON-Format: Array erwartet');
-  return data.map(validateCard);
+  const cards = data.map(validateCard);
+  // Auto-normalize on import so old backups (with Fragenkatalog-tags in
+  // customTags, missing askedByExaminers, etc.) come in cleanly. Imported
+  // probabilityPercent values WIN — normalizeAll only computes them when
+  // missing. The user can re-run the manual normalize button in Settings
+  // afterwards to recompute against the now-merged library.
+  const { patches } = normalizeAll(cards);
+  if (patches.length === 0) return cards;
+  const byId = new Map(patches.map(p => [p.id, p.patch]));
+  return cards.map(c => {
+    const patch = byId.get(c.id);
+    return patch ? { ...c, ...patch } : c;
+  });
 }
 
 function validateCard(raw: unknown): Flashcard {

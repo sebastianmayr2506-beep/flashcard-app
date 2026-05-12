@@ -432,30 +432,43 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
           </div>
 
           {card && (
-            // Show the stats section if ANY exam-frequency signal is present —
-            // a card can have askedInCatalogs / askedByExaminers without
-            // timesAsked being populated (depending on which JSON shape was
-            // imported), so the prior `timesAsked > 0`-only gate hid the
-            // stats for many cards that actually have data.
+            // Show the stats section if ANY frequency signal is present.
+            // We accept signals from EITHER the dedicated stats fields
+            // (askedByExaminers, askedInCatalogs — populated by some import
+            // shapes) OR the general fields (examiners.length, "Fragenkatalog
+            // YYYY"-tags in customTags). Many imports route exam-frequency
+            // data through the general fields, so gating only on the
+            // dedicated fields hid stats for the majority of cards.
             (() => {
+              // Derive "best-effort" stats from whatever data the card has
+              const examinersFromStats = card.askedByExaminers ?? [];
+              const examinersAsked = examinersFromStats.length > 0
+                ? examinersFromStats
+                : (card.examiners ?? []);
+              const catalogsFromStats = card.askedInCatalogs ?? [];
+              const catalogsFromTags = (card.customTags ?? []).filter(t => /^fragenkatalog\s*\d{4}$/i.test(t));
+              const catalogs = catalogsFromStats.length > 0 ? catalogsFromStats : catalogsFromTags;
+              const timesAsked = card.timesAsked ?? Math.max(examinersAsked.length, catalogs.length);
+
               const hasStats =
-                (card.timesAsked ?? 0) > 0 ||
-                (card.askedByExaminers?.length ?? 0) > 0 ||
-                (card.askedInCatalogs?.length ?? 0) > 0 ||
+                timesAsked > 0 ||
+                examinersAsked.length > 0 ||
+                catalogs.length > 0 ||
                 (card.probabilityPercent ?? 0) > 0;
               if (!hasStats) return null;
+
               return (
                 <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-3">
                   <h3 className="font-semibold text-white flex items-center gap-2">📊 Prüfungsstatistik</h3>
                   <div className="space-y-2 text-sm">
-                    {(card.timesAsked ?? 0) > 0 && (
-                      <p className="text-[#9ca3af]">🔁 <span className="text-white font-medium">{card.timesAsked}×</span> gestellt</p>
+                    {timesAsked > 0 && (
+                      <p className="text-[#9ca3af]">🔁 Mindestens <span className="text-white font-medium">{timesAsked}×</span> in Katalogen / von Prüfern gestellt</p>
                     )}
-                    {card.askedByExaminers && card.askedByExaminers.length > 0 && (
-                      <p className="text-[#9ca3af]">👥 Gefragt von: <span className="text-white">{card.askedByExaminers.join(', ')}</span></p>
+                    {examinersAsked.length > 0 && (
+                      <p className="text-[#9ca3af]">👥 Gefragt von: <span className="text-white">{examinersAsked.join(', ')}</span></p>
                     )}
-                    {card.askedInCatalogs && card.askedInCatalogs.length > 0 && (
-                      <p className="text-[#9ca3af]">📅 In Katalogen: <span className="text-white">{card.askedInCatalogs.join(', ')}</span></p>
+                    {catalogs.length > 0 && (
+                      <p className="text-[#9ca3af]">📅 In Katalogen: <span className="text-white">{catalogs.join(', ')}</span></p>
                     )}
                     {card.probabilityPercent != null && card.probabilityPercent > 0 && (
                       <div className="pt-1">

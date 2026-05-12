@@ -7,6 +7,61 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-02 — Stats data normalization + resilient fallbacks
+
+**Background:** Some JSON imports historically routed exam-frequency info
+through general fields (`examiners`, `customTags` with "Fragenkatalog
+YYYY" entries) rather than the dedicated stats fields
+(`askedByExaminers`, `askedInCatalogs`, `timesAsked`,
+`probabilityPercent`). Effects:
+- CardEditor's "📊 Prüfungsstatistik" section was hidden (gated on
+  `timesAsked > 0`)
+- Auto-classify-priority pushed everything to C because the dedicated
+  signal fields were all empty
+
+**Fix in three layers:**
+
+1. **Resilient fallbacks (display + classification)** — `CardEditor`
+   stats section and `classifyPriority` now derive signals best-effort:
+   prefer dedicated fields, fall back to `examiners` and "Fragenkatalog
+   YYYY" entries in `customTags` when stats fields are empty.
+
+2. **One-time data migration** — new `src/utils/normalizeStats.ts` with
+   pure `normalizeAll(cards)` producing patches + summary:
+   - Moves "Fragenkatalog YYYY" tags out of `customTags` into
+     `askedInCatalogs` (set-union with existing)
+   - Mirrors `examiners` into `askedByExaminers` when empty
+   - Derives `timesAsked` = max(catalogs.length, examiners.length) when 0
+   - Computes `probabilityPercent` = card-catalogs / global-catalogs ×
+     100 when 0 (imported values win — only computes when missing)
+   - New Settings section "🧹 Daten normalisieren" with live preview
+     and confirm-dialog before applying via `bulkUpdate`.
+
+3. **Auto-normalize on import** — `importFromJSON` now runs the same
+   normalization on the parsed cards so old backups land cleanly without
+   re-introducing the mess.
+
+**Diagnostic added** in Settings: collapsible "🔬 Daten-Diagnose" shows
+probability distribution + signal coverage to help understand
+classification outcomes.
+
+**Classification heuristic loosened (v2):**
+- A threshold lowered 60% → 50%
+- A also triggers on `timesAsked≥3`, `catalogs≥3`, `examiners≥3`
+- C only when card has TRULY no signal in any field
+- Numeric coercion explicit (handles string-from-JSON edge case)
+
+**Why this can't break SRS counting:** Pure metadata field changes; no
+interaction with SRS state. `normalizeAll` is a pure function whose
+output goes through the existing `bulkUpdate` path. Resilient fallbacks
+are read-only display logic.
+
+**Files:** `src/utils/normalizeStats.ts` (new), `src/utils/priority.ts`,
+`src/utils/import.ts`, `src/pages/Settings.tsx`, `src/pages/CardEditor.tsx`,
+`src/App.tsx`
+
+---
+
 ## 2026-05-02 — Phase 1: A/B/C-Priorität (Auto-Klassifikation + Filter)
 
 **Why:** With ~1000 cards and ~60 days to the exam, an SRS daily-review

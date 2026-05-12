@@ -4,6 +4,7 @@ import { calculatePaceMetrics } from '../utils/dailyGoal';
 import { supabase } from '../lib/supabase';
 import type { useGoogleDrive } from '../hooks/useGoogleDrive';
 import { previewClassification, inspectDistribution } from '../utils/priority';
+import { normalizeAll, type NormalizationSummary } from '../utils/normalizeStats';
 
 const ADMIN_EMAIL = 'bastimayr@gmx.at';
 
@@ -22,12 +23,13 @@ interface Props {
   userEmail?: string;
   gdrive: ReturnType<typeof useGoogleDrive>;
   onAutoClassifyPriority: (overwrite: boolean) => Promise<{ A: number; B: number; C: number; touched: number }>;
+  onNormalizeStats: () => Promise<NormalizationSummary>;
 }
 
 export default function Settings({
   settings, cards, onUpdateSettings, onAddSubject, onRemoveSubject,
   onAddExaminer, onRemoveExaminer, onAddTag, onRemoveTag, onResetAllSrs, showToast, userEmail,
-  gdrive, onAutoClassifyPriority,
+  gdrive, onAutoClassifyPriority, onNormalizeStats,
 }: Props) {
   const [dailyGoalInput, setDailyGoalInput] = useState(String(settings.dailyNewCardGoal ?? 10));
   const [reviewCapInput, setReviewCapInput] = useState(
@@ -422,6 +424,10 @@ export default function Settings({
           </p>
         </div>
       </div>
+
+      {/* Data normalization — runs BEFORE classification so the heuristic
+          can use the cleaned-up dedicated fields */}
+      <NormalizeStatsSection cards={cards} onApply={onNormalizeStats} />
 
       {/* Priority auto-classification */}
       <PriorityClassifySection cards={cards} onApply={onAutoClassifyPriority} />
@@ -996,6 +1002,110 @@ function PriorityCount({ label, count, color }: { label: string; count: number; 
       <span className={`w-2.5 h-2.5 rounded-full ${color}`} />
       <span className="text-white font-mono">{count}</span>
       <span className="text-[#6b7280]">{label}</span>
+    </div>
+  );
+}
+
+// ─── Data normalization (Stats migration) ──────────────────────────────────
+function NormalizeStatsSection({
+  cards,
+  onApply,
+}: {
+  cards: Flashcard[];
+  onApply: () => Promise<NormalizationSummary>;
+}) {
+  const [busy, setBusy] = useState(false);
+  // Live preview — computed on every render, cheap pure function
+  const { summary } = normalizeAll(cards);
+
+  const handleApply = async () => {
+    if (busy) return;
+    if (summary.totalAffected === 0) return;
+    const ok = window.confirm(
+      `🧹 Daten-Normalisierung\n\n` +
+      `${summary.totalAffected} Karten werden bearbeitet:\n` +
+      `• ${summary.catalogTagsMovedTotal} "#Fragenkatalog YYYY"-Tags werden in 'In Katalogen' verschoben\n` +
+      `• ${summary.cardsWithExaminersFilled} Karten: Prüfer-Daten gespiegelt\n` +
+      `• ${summary.cardsWithTimesAskedSet} Karten: Häufigkeit (timesAsked) berechnet\n` +
+      `• ${summary.cardsWithProbabilityComputed} Karten: Wahrscheinlichkeit berechnet\n\n` +
+      `Karten mit bereits gesetzten Werten bleiben unangetastet.\n\n` +
+      `Fortfahren?`
+    );
+    if (!ok) return;
+    setBusy(true);
+    try { await onApply(); }
+    finally { setBusy(false); }
+  };
+
+  const nothingToDo = summary.totalAffected === 0;
+
+  return (
+    <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-3">
+      <div>
+        <h3 className="font-semibold text-white flex items-center gap-2">🧹 Daten normalisieren</h3>
+        <p className="text-xs text-[#9ca3af] mt-0.5 leading-relaxed">
+          Räumt Karten-Daten auf: zieht <code className="text-[#d1d5db]">#Fragenkatalog YYYY</code>-Tags
+          in das dedizierte Katalog-Feld, spiegelt Prüfer-Daten in die Stats-Felder und berechnet fehlende
+          Häufigkeit + Wahrscheinlichkeit aus den Daten.
+        </p>
+      </div>
+
+      {/* Preview */}
+      <div className="bg-[#252840] rounded-xl p-3 space-y-2 text-xs">
+        <p className="text-[10px] font-semibold text-purple-300/80 uppercase tracking-wider">
+          Vorschau — was würde passieren
+        </p>
+        {nothingToDo ? (
+          <p className="text-green-400">✨ Deine Daten sind bereits sauber, nichts zu tun.</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[#d1d5db]">
+              <p>📌 <strong className="text-white">{summary.totalAffected}</strong> von {cards.length} Karten betroffen</p>
+              <p>📅 <strong className="text-white">{summary.catalogTagsMovedTotal}</strong> Tag(s) umgezogen</p>
+              <p>👥 <strong className="text-white">{summary.cardsWithExaminersFilled}</strong> Prüfer-Spiegelungen</p>
+              <p>🔁 <strong className="text-white">{summary.cardsWithTimesAskedSet}</strong> Häufigkeiten berechnet</p>
+              <p>📊 <strong className="text-white">{summary.cardsWithProbabilityComputed}</strong> Wahrscheinlichkeiten berechnet</p>
+              <p>📚 <strong className="text-white">{summary.globalCatalogYearCount}</strong> Katalogjahre gefunden</p>
+            </div>
+            {summary.globalCatalogYears.length > 0 && (
+              <p className="text-[10px] text-[#6b7280]">
+                Erkannte Jahre: {summary.globalCatalogYears.join(', ')}
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      <button
+        onClick={handleApply}
+        disabled={busy || nothingToDo}
+        className="text-sm px-4 py-2 rounded-xl bg-purple-500 hover:bg-purple-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors flex items-center gap-2"
+      >
+        {busy ? (
+          <>
+            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            Normalisiere…
+          </>
+        ) : nothingToDo ? (
+          <>✅ Daten sind sauber</>
+        ) : (
+          <>🧹 Jetzt normalisieren</>
+        )}
+      </button>
+
+      <details className="text-[11px] text-[#6b7280]">
+        <summary className="cursor-pointer hover:text-[#9ca3af]">Was wird konkret verändert?</summary>
+        <ul className="mt-1.5 space-y-1 leading-relaxed pl-3">
+          <li>· <strong>Katalogjahre</strong>: <code>#Fragenkatalog 2024</code>-Tags wandern aus
+            "Tags" in das Feld "In Katalogen" — saubere Trennung, Tags bleiben für echte Tags reserviert.</li>
+          <li>· <strong>Prüfer-Spiegelung</strong>: Wenn das Stats-Feld <code>askedByExaminers</code> leer ist,
+            wird's mit den ausgewählten <code>examiners</code> befüllt.</li>
+          <li>· <strong>Häufigkeit</strong>: Wenn nicht importiert, wird timesAsked aus
+            max(Katalogjahre, Prüfer) berechnet. Importierte Werte gewinnen.</li>
+          <li>· <strong>Wahrscheinlichkeit</strong>: Wenn nicht importiert, berechnet aus
+            "Katalogjahre der Karte / Gesamt-Katalogjahre × 100". Importierte Werte gewinnen.</li>
+        </ul>
+      </details>
     </div>
   );
 }

@@ -181,6 +181,23 @@ export function filterByPriority(cards: Flashcard[], priority?: Priority | '' | 
   return cards.filter(c => c.priority === priority);
 }
 
+/** Focus-Modus filter. Single source of truth so Dashboard, "Jetzt lernen"
+ *  and any future flow that needs to respect the focus all behave identically. */
+export type FocusMode = 'all' | 'A' | 'AB';
+
+export function applyFocus(cards: Flashcard[], focus: FocusMode | undefined): Flashcard[] {
+  if (!focus || focus === 'all') return cards;
+  if (focus === 'A') return cards.filter(c => c.priority === 'A');
+  if (focus === 'AB') return cards.filter(c => c.priority === 'A' || c.priority === 'B');
+  return cards;
+}
+
+export const FOCUS_LABELS: Record<FocusMode, string> = {
+  all: 'Alle Karten',
+  A: 'Nur A · Muss können',
+  AB: 'A + B · Muss + Sollte',
+};
+
 /** Visual config per priority — central place so colours stay consistent. */
 export const PRIORITY_META: Record<Priority, { label: string; emoji: string; color: string; bg: string; border: string }> = {
   A: { label: 'A · Muss können',  emoji: '🅰️', color: 'text-red-300',    bg: 'bg-red-500/15',    border: 'border-red-500/40' },

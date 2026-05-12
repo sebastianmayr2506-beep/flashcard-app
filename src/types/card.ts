@@ -92,6 +92,13 @@ export interface AppSettings {
   geminiApiKey?: string;              // stored client-side for AI card revision (Google AI Studio)
   groqApiKey?: string;               // stored client-side for Groq fallback (free, no credit card)
   studyOrder?: 'new-first' | 'review-first' | 'mixed'; // stored client-side
+  // Focus-Modus: when set to 'A' or 'AB', the Dashboard + "Jetzt lernen" only
+  // consider cards with that priority. Everything else (lower-priority cards)
+  // is invisible until the user widens focus. The motivation engine: with
+  // 1037 cards and 60 days to exam, retaining everything is impossible —
+  // focusing on 200 must-know cards is realistic and gives a "done today"
+  // feeling that the global view can't.
+  focusMode?: 'all' | 'A' | 'AB';
 }
 
 export interface FlagAttempt {

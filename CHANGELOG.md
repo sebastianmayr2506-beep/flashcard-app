@@ -7,6 +7,50 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-02 — Phase 2: Focus-Modus (Dashboard mode switch)
+
+**What:** New segmented control on Dashboard: **Alle · A+B · A**. Picks
+a subset of cards that ALL Dashboard metrics + the "Jetzt lernen"
+daily-plan flow respect.
+
+**Why:** With ~1000 cards and ~60 days to exam, SRS daily-load of
+~100/day is unsustainable. Focusing on a smaller subset (e.g., 200
+A-cards) makes the daily count reachable — "Fällig heute" goes from
+overwhelming 95 to motivating 14, and you can actually hit 0 in 15
+minutes. Phase 2 is the *real* motivation engine.
+
+**Files:**
+- `src/types/card.ts` — `AppSettings.focusMode?: 'all' | 'A' | 'AB'`
+- `src/hooks/useSettings.ts` — fromDb/toDb mapping for new column
+- `src/utils/priority.ts` — `applyFocus(cards, mode)` helper +
+  `FOCUS_LABELS` (single source of truth)
+- `src/pages/Dashboard.tsx` — FocusToggle component at top; every
+  metric (Fällig heute, Beherrscht, Tagesziel, Klassiker, Subject
+  distribution, progress bar) now derives from `focusedCards` instead
+  of `cards`. "Karten gesamt" tile relabels to "Karten im Fokus" with
+  a "von X gesamt"-hint when active. Amber accent tint signals focus
+  is on. StatCard component gets an optional `hint` prop.
+- `src/App.tsx` — `handleStartDailySession` applies focus before
+  computing the daily plan, so Tagesplan-Modal mirrors Dashboard.
+  Dashboard prop `onSetFocusMode` wired to `updateSettings({focusMode})`.
+- `supabase_migration_focus_mode.sql` (new) — `ALTER TABLE user_settings
+  ADD COLUMN focus_mode text NULL`
+
+**Persistence + sync:** focusMode lives in `user_settings`, so it
+syncs across devices via the existing live-sync subscription. Switch
+on laptop → iPad picks it up.
+
+**Migration:** Run `supabase_migration_focus_mode.sql` in Supabase SQL
+Editor before deploy. Otherwise updates to user_settings silently drop
+the new field.
+
+**Why this can't break SRS counting:** Focus is a pure read-side filter.
+No mutations to card state, no changes to SRS logic. The daily-plan
+calculation receives a smaller card array — same code path, same SM-2
+logic.
+
+---
+
 ## 2026-05-02 — Stats data normalization + resilient fallbacks
 
 **Background:** Some JSON imports historically routed exam-frequency info

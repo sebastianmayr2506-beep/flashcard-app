@@ -6,6 +6,7 @@ import {
 import type { Flashcard, AppSettings } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
 import { calculateDailyPlan, getCardsRatedToday, getNewCardsDoneToday } from '../utils/dailyGoal';
+import { applyFocus, type FocusMode } from '../utils/priority';
 import ProbabilityBadge from '../components/ProbabilityBadge';
 import SrsLevelGrid, { type SrsKey } from '../components/SrsLevelGrid';
 
@@ -17,21 +18,27 @@ interface Props {
   onStartDailySession: () => void;
   onDismissUnflagNotification: () => void;
   onEditCard: (card: Flashcard) => void;
+  onSetFocusMode: (m: FocusMode) => void;
 }
 
 
-export default function Dashboard({ cards, settings, onNavigate, onNavigateToLibraryWithSrs, onStartDailySession, onDismissUnflagNotification, onEditCard }: Props) {
+export default function Dashboard({ cards, settings, onNavigate, onNavigateToLibraryWithSrs, onStartDailySession, onDismissUnflagNotification, onEditCard, onSetFocusMode }: Props) {
+  // Focus-Modus filter applied once at the top — every downstream metric
+  // (Fällig heute, Tagesziel, Beherrscht, Klassiker, …) operates on this
+  // narrowed subset. With focus='all' this is just `cards`, no change.
+  const focusMode: FocusMode = settings.focusMode ?? 'all';
+  const focusedCards = useMemo(() => applyFocus(cards, focusMode), [cards, focusMode]);
+  const isFocused = focusMode !== 'all';
+
   // Reconciled count via the dedicated firstStudiedAt field — see getNewCardsDoneToday.
-  // This is the authoritative "new cards done today" number; both Dashboard and
-  // handleStartDailySession (the Tagesplan modal) read it through the same helper
-  // so they can never disagree.
-  const newDoneToday = getNewCardsDoneToday(cards, settings);
+  // Note we feed `focusedCards` so "Neu heute" reflects what's in focus.
+  const newDoneToday = getNewCardsDoneToday(focusedCards, settings);
 
   // Pass newDoneToday so the plan reflects remaining work, not the original full quota
   const plan = useMemo(
-    () => calculateDailyPlan(cards, settings, newDoneToday),
+    () => calculateDailyPlan(focusedCards, settings, newDoneToday),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cards, settings, newDoneToday],
+    [focusedCards, settings, newDoneToday],
   );
 
   // Always derive ratedToday from card state — getCardsRatedToday now uses
@@ -44,15 +51,15 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
   // Card-state is always the truth; the snapshot is just a (now redundant)
   // performance cache. See "getCardsRatedToday over-counted merges/edits"
   // entry in CHANGELOG.
-  const ratedToday = getCardsRatedToday(cards);
+  const ratedToday = getCardsRatedToday(focusedCards);
 
   const stats = useMemo(() => {
-    const due = cards.filter(isDueToday);
+    const due = focusedCards.filter(isDueToday);
     const srsGroups = { neu: 0, lernend: 0, wiederholen: 0, beherrscht: 0 };
-    cards.forEach(c => srsGroups[getSRSStatus(c)]++);
+    focusedCards.forEach(c => srsGroups[getSRSStatus(c)]++);
 
     const bySubject = settings.subjects.reduce<Record<string, { total: number; due: number; mastered: number }>>((acc, s) => {
-      const subCards = cards.filter(c => c.subjects?.includes(s));
+      const subCards = focusedCards.filter(c => c.subjects?.includes(s));
       if (subCards.length === 0) return acc;
       acc[s] = {
         total: subCards.length,
@@ -62,8 +69,8 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
       return acc;
     }, {});
 
-    return { due, srsGroups, bySubject, total: cards.length };
-  }, [cards, settings.subjects]);
+    return { due, srsGroups, bySubject, total: focusedCards.length, grandTotal: cards.length };
+  }, [focusedCards, cards.length, settings.subjects]);
 
   const subjectData = Object.entries(stats.bySubject).map(([name, d]) => ({
     name: name.length > 12 ? name.slice(0, 12) + '…' : name,
@@ -73,11 +80,11 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
   }));
 
   const topKlassiker = useMemo(() =>
-    cards
+    focusedCards
       .filter(c => (c.probabilityPercent ?? 0) > 0)
       .sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0))
       .slice(0, 5),
-    [cards]
+    [focusedCards]
   );
 
   const unflagNotif = settings.autoUnflagNotification;
@@ -105,6 +112,16 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
         <p className="text-[#9ca3af] text-sm mt-1">Dein Lernfortschritt auf einen Blick</p>
       </div>
 
+      {/* Focus-Modus toggle — the motivation engine. When set to A or AB,
+          every metric below collapses to that subset so the user sees
+          progress-able numbers instead of the overwhelming global view. */}
+      <FocusToggle
+        focusMode={focusMode}
+        onSetFocusMode={onSetFocusMode}
+        focusedCount={focusedCards.length}
+        totalCount={cards.length}
+      />
+
       {showUnflagBanner && (
         <div className="bg-green-500/10 border border-green-500/30 rounded-2xl px-4 py-3 flex items-center justify-between gap-3">
           <p className="text-green-400 text-sm font-medium">
@@ -119,7 +136,14 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
 
       {/* Top stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard value={stats.total} label="Karten gesamt" icon="🃏" color="text-white" bg="bg-[#1e2130] border-[#2d3148]" />
+        <StatCard
+          value={stats.total}
+          label={isFocused ? 'Karten im Fokus' : 'Karten gesamt'}
+          icon="🃏"
+          color="text-white"
+          bg={isFocused ? 'bg-amber-500/5 border-amber-500/20' : 'bg-[#1e2130] border-[#2d3148]'}
+          hint={isFocused ? `von ${stats.grandTotal} gesamt` : undefined}
+        />
         <StatCard
           value={stats.due.length}
           label="Fällig heute"
@@ -414,8 +438,10 @@ interface StatCardProps {
   value: number | string; label: string; icon: string;
   color: string; bg: string; onClick?: () => void;
   breakdown?: Array<{ icon: string; label: string; value: number; color?: string }>;
+  /** Optional small secondary line under the label, e.g. "von 1037 gesamt". */
+  hint?: string;
 }
-function StatCard({ value, label, icon, color, bg, onClick, breakdown }: StatCardProps) {
+function StatCard({ value, label, icon, color, bg, onClick, breakdown, hint }: StatCardProps) {
   return (
     <div
       className={`${bg} border rounded-2xl p-4 transition-all duration-200 ${onClick ? 'cursor-pointer hover:scale-[1.02]' : ''}`}
@@ -425,6 +451,7 @@ function StatCard({ value, label, icon, color, bg, onClick, breakdown }: StatCar
         <div>
           <p className={`text-3xl font-bold ${color}`}>{value}</p>
           <p className="text-xs text-[#9ca3af] mt-1 leading-tight">{label}</p>
+          {hint && <p className="text-[10px] text-[#6b7280] mt-0.5">{hint}</p>}
         </div>
         {icon && <span className="text-2xl">{icon}</span>}
       </div>
@@ -443,6 +470,78 @@ function StatCard({ value, label, icon, color, bg, onClick, breakdown }: StatCar
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Focus Toggle ────────────────────────────────────────────
+// A segmented control + status banner. When focus is on (A / AB) the
+// banner gives visual confirmation of what's been narrowed and how many
+// cards remain in scope — so the user can quickly verify they're looking
+// at the right slice.
+
+function FocusToggle({
+  focusMode,
+  onSetFocusMode,
+  focusedCount,
+  totalCount,
+}: {
+  focusMode: FocusMode;
+  onSetFocusMode: (m: FocusMode) => void;
+  focusedCount: number;
+  totalCount: number;
+}) {
+  const isFocused = focusMode !== 'all';
+  return (
+    <div
+      className={`rounded-2xl border p-4 space-y-3 ${
+        isFocused
+          ? 'bg-amber-500/5 border-amber-500/30'
+          : 'bg-[#1e2130] border-[#2d3148]'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-sm font-semibold text-white flex items-center gap-2">
+            🎯 Fokus
+            {isFocused && (
+              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                aktiv
+              </span>
+            )}
+          </p>
+          <p className="text-xs text-[#9ca3af] mt-0.5 leading-relaxed">
+            {isFocused
+              ? `Du siehst gerade ${focusedCount.toLocaleString()} von ${totalCount.toLocaleString()} Karten — Rest ist parkiert.`
+              : 'Du siehst alle Karten. Fokus reduziert auf A oder A+B für einen klaren Tagesziel-Fokus.'}
+          </p>
+        </div>
+      </div>
+      {/* Segmented control */}
+      <div className="flex gap-1 p-1 rounded-xl bg-[#15172a] border border-[#2d3148]">
+        {(['all', 'AB', 'A'] as FocusMode[]).map(m => {
+          const active = focusMode === m;
+          const label =
+            m === 'all' ? 'Alle' :
+            m === 'A' ? '🅰️ Nur A' :
+            '🅰️🅱️ A + B';
+          return (
+            <button
+              key={m}
+              onClick={() => onSetFocusMode(m)}
+              className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                active
+                  ? m === 'all'
+                    ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30'
+                    : 'bg-amber-500 text-white shadow-lg shadow-amber-500/30'
+                  : 'text-[#9ca3af] hover:text-white hover:bg-white/5'
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

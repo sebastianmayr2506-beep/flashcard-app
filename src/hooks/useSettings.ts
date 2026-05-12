@@ -29,6 +29,7 @@ function fromDb(row: Record<string, any>): AppSettings {
     dailyPlanSnapshot: row.daily_plan_snapshot ?? undefined,
     autoUnflagEnabled: row.auto_unflag_enabled ?? true,
     autoUnflagNotification: row.auto_unflag_notification ?? undefined,
+    focusMode: (row.focus_mode === 'A' || row.focus_mode === 'AB' || row.focus_mode === 'all') ? row.focus_mode : 'all',
     // API keys are stored in localStorage only (no DB column needed)
     anthropicApiKey: localStorage.getItem('anthropic_api_key') ?? undefined,
     geminiApiKey: localStorage.getItem('gemini_api_key') ?? undefined,
@@ -50,6 +51,7 @@ function toDb(settings: AppSettings, userId: string) {
     daily_plan_snapshot: settings.dailyPlanSnapshot ?? null,
     auto_unflag_enabled: settings.autoUnflagEnabled,
     auto_unflag_notification: settings.autoUnflagNotification ?? null,
+    focus_mode: settings.focusMode ?? null,
     // anthropicApiKey lives in localStorage only — not sent to Supabase
     updated_at: new Date().toISOString(),
   };

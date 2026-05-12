@@ -16,7 +16,7 @@ import { useAuth } from './hooks/useAuth';
 import { useGoogleDrive } from './hooks/useGoogleDrive';
 import { extractParentLinks } from './utils/import';
 import { calculateDailyPlan, getCardsRatedToday, getNewCardsDoneToday } from './utils/dailyGoal';
-import { classifyAll } from './utils/priority';
+import { classifyAll, applyFocus, type FocusMode } from './utils/priority';
 import { normalizeAll, type NormalizationSummary } from './utils/normalizeStats';
 
 import Sidebar from './components/Sidebar';
@@ -186,10 +186,14 @@ export default function App() {
   const handleStartDailySession = useCallback(() => {
     const today = new Date().toDateString();
 
+    // Respect the active Focus-Modus so Tagesplan-Modal + "Jetzt lernen"
+    // mirror the Dashboard's narrowed view. With focus='all' this is a no-op.
+    const focused = applyFocus(cards, settings.focusMode ?? 'all');
+
     // Reconciled via firstStudiedAt — same source of truth Dashboard uses,
     // so the modal's "Neu" tile and the Dashboard's "Neu heute" can never diverge.
-    const newDoneToday = getNewCardsDoneToday(cards, settings);
-    const plan = calculateDailyPlan(cards, settings, newDoneToday);
+    const newDoneToday = getNewCardsDoneToday(focused, settings);
+    const plan = calculateDailyPlan(focused, settings, newDoneToday);
     if (plan.totalToday === 0) return;
 
     // How many cards were already successfully rated today.
@@ -198,7 +202,7 @@ export default function App() {
     // inflated by edits/merges. Trusting snap.totalDone here would freeze
     // a stale or buggy-bootstrapped value (e.g. from a pre-fix session
     // earlier today). Card state is the truth.
-    const doneSoFar = getCardsRatedToday(cards);
+    const doneSoFar = getCardsRatedToday(focused);
 
     const newSnapshot = {
       date: today,
@@ -825,6 +829,7 @@ export default function App() {
             onStartDailySession={handleStartDailySession}
             onDismissUnflagNotification={handleDismissUnflagNotification}
             onEditCard={handleEditCard}
+            onSetFocusMode={(m: FocusMode) => updateSettings({ focusMode: m })}
           />
         )}
         {page === 'library' && (

@@ -7,6 +7,66 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-02 — Dashboard verschlankt + Dynamic Daily Goal
+
+**Why:** Dashboard war überladen (7+ Widgets), mit widersprüchlichen
+Zahlen (z.B. "Fällig heute: 57" vs Tagesziel "13+1=14"), und SRS-Default-
+Settings produzierten für Cram-Szenarien sinnlose Werte (z.B. nur 1
+neue Karte/Tag bei 44 unseen + 46 Tagen Frist).
+
+### UI/UX-Aufräumen
+- **Top-4-Stat-Tiles entfernt** (Karten gesamt / Fällig heute /
+  Beherrscht / Streak): waren teils redundant zur Lernstand-Grid, teils
+  zu Tagesziel, "Fällig heute: 57" war besonders irreführend weil ALLE
+  unseen Karten als fällig zählten (technisch korrekt, gating-respektiert
+  sind's nur 14).
+- **Status-Header (neu)**: kompakte einzeilige Statusleiste mit
+  Prüfungstagen + Im-Zeitplan + Streak. Ersetzt ExamCountdownWidget.
+- **Hero-Block (neu)**: Fokus-Toggle + Tagesziel + Jetzt-Lernen in einer
+  Karte. Visueller Schwerpunkt = die einzige Action die der User braucht.
+  Tagesziel zeigt große Zahl "X Karten" + Wdh/Neu-Breakdown + Progress-
+  Bar + Pace-Stats (kleiner, am Fuß).
+- **Top Klassiker collapsible** (default zu) — Nice-to-have, nicht
+  Action-relevant.
+- **Fächer-Chart entfernt** — interessant aber selten relevant. Bundle
+  ~34 KB kleiner (recharts raus, da nur dort verwendet).
+- **Tooltips** an allen Headers — kontextuelle "i"-Icons erklären die
+  Sektionen ohne Doku-Overhead.
+
+### Dynamic Daily Goal (Auto-Modus)
+Neuer Setting-Toggle "**Manuell ⚡ Auto**" für `dailyNewCardGoal`:
+- **Manuell**: bisheriger Wert
+- **Auto**: berechnet als `ceil(unseen_im_Fokus / (Tage_bis_Prüfung × 0.5))`
+  — jede Karte bekommt damit ~2× Zeit für Wiederholung vor der Prüfung.
+  Respektiert den aktiven Fokus-Modus.
+
+Beispiel-Effekt (User-Setup): 44 unseen A-Karten + 46 Tage Frist →
+manuelles Limit 15 = überflüssig (nur 1-2/Tag würden eh kommen).
+Auto-Wert: ceil(44 / 23) = 2/Tag → realistisch. Bei Focus=Alle mit 600
+unseen Karten: ceil(600/23) = 27/Tag — anspruchsvoll aber notwendig.
+
+**Files:**
+- `src/types/card.ts` — `dailyNewCardGoalMode?: 'manual' | 'auto'`
+- `src/hooks/useSettings.ts` — fromDb/toDb mapping
+- `src/utils/dailyGoal.ts` — neue `getEffectiveDailyNewCardGoal()`-Helper,
+  `calculateDailyPlan` nutzt den effektiven Wert
+- `src/pages/Settings.tsx` — Modus-Toggle, Input disabled im Auto-Mode
+- `src/pages/Dashboard.tsx` — komplette Render-Refactorierung
+  (StatusHeader, TagesZiel, FocusToggleInline; recharts/StatCard/
+  DailyGoalCard/FocusToggle/ExamCountdownWidget entfernt)
+- `supabase_migration_daily_goal_mode.sql` (new)
+
+**Migration:** Run `supabase_migration_daily_goal_mode.sql` before
+deploy.
+
+**Why this can't break SRS counting:** `calculateDailyPlan` ist die
+einzige Stelle die `effectiveGoal` nutzt, und das ersetzt nur den
+zuvor direkt aus `settings.dailyNewCardGoal` gelesenen Wert. Alle
+Code-Pfade (Dashboard, handleStartDailySession, StudySession) lesen
+weiterhin durch dieselbe Funktion → konsistent.
+
+---
+
 ## 2026-05-02 — Phase 2: Focus-Modus (Dashboard mode switch)
 
 **What:** New segmented control on Dashboard: **Alle · A+B · A**. Picks

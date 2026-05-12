@@ -1,8 +1,4 @@
 import { useMemo } from 'react';
-import {
-  ResponsiveContainer, Tooltip,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
-} from 'recharts';
 import type { Flashcard, AppSettings } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
 import { calculateDailyPlan, getCardsRatedToday, getNewCardsDoneToday } from '../utils/dailyGoal';
@@ -58,27 +54,8 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
     const due = focusedCards.filter(isDueToday);
     const srsGroups = { neu: 0, lernend: 0, wiederholen: 0, beherrscht: 0 };
     focusedCards.forEach(c => srsGroups[getSRSStatus(c)]++);
-
-    const bySubject = settings.subjects.reduce<Record<string, { total: number; due: number; mastered: number }>>((acc, s) => {
-      const subCards = focusedCards.filter(c => c.subjects?.includes(s));
-      if (subCards.length === 0) return acc;
-      acc[s] = {
-        total: subCards.length,
-        due: subCards.filter(isDueToday).length,
-        mastered: subCards.filter(c => getSRSStatus(c) === 'beherrscht').length,
-      };
-      return acc;
-    }, {});
-
-    return { due, srsGroups, bySubject, total: focusedCards.length, grandTotal: cards.length };
-  }, [focusedCards, cards.length, settings.subjects]);
-
-  const subjectData = Object.entries(stats.bySubject).map(([name, d]) => ({
-    name: name.length > 12 ? name.slice(0, 12) + '…' : name,
-    Gelernt: d.mastered,
-    Ausstehend: d.due,
-    Neu: d.total - d.mastered - d.due,
-  }));
+    return { due, srsGroups, total: focusedCards.length, grandTotal: cards.length };
+  }, [focusedCards, cards.length]);
 
   const topKlassiker = useMemo(() =>
     focusedCards
@@ -107,20 +84,19 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
   const progressPct = progressTotal > 0 ? Math.min(100, Math.round((ratedToday / progressTotal) * 100)) : 0;
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 space-y-6 fade-in">
+    <div className="p-4 md:p-6 lg:p-8 space-y-4 fade-in">
       <div>
         <h2 className="text-2xl font-bold text-white">Dashboard</h2>
         <p className="text-[#9ca3af] text-sm mt-1">Dein Lernfortschritt auf einen Blick</p>
       </div>
 
-      {/* Focus-Modus toggle — the motivation engine. When set to A or AB,
-          every metric below collapses to that subset so the user sees
-          progress-able numbers instead of the overwhelming global view. */}
-      <FocusToggle
-        focusMode={focusMode}
-        onSetFocusMode={onSetFocusMode}
-        focusedCount={focusedCards.length}
-        totalCount={cards.length}
+      {/* Status header: ein-zeilige Statusleiste mit allen wichtigsten Live-
+          Signalen (Tage bis Prüfung, On-Track, Streak). Ersetzt das alte
+          ExamCountdownWidget + drei der vier Top-Stat-Tiles. */}
+      <StatusHeader
+        plan={plan}
+        settings={settings}
+        onNavigate={onNavigate}
       />
 
       {showUnflagBanner && (
@@ -135,67 +111,76 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
         </div>
       )}
 
-      {/* Top stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard
-          value={stats.total}
-          label={isFocused ? 'Karten im Fokus' : 'Karten gesamt'}
-          icon="🃏"
-          color="text-white"
-          bg={isFocused ? 'bg-amber-500/5 border-amber-500/20' : 'bg-[#1e2130] border-[#2d3148]'}
-          hint={isFocused ? `von ${stats.grandTotal} gesamt` : undefined}
-          info={isFocused
-            ? `Karten im aktuellen Fokus-Set (${stats.total} von ${stats.grandTotal}). Wechsle auf 'Alle' um den vollen Stand zu sehen.`
-            : 'Alle Karten in deiner Bibliothek — egal wann zuletzt gelernt oder fällig.'}
-        />
-        <StatCard
-          value={stats.due.length}
-          label="Fällig heute"
-          icon="📅"
-          color={stats.due.length > 0 ? 'text-indigo-400' : 'text-white'}
-          bg={stats.due.length > 0 ? 'bg-indigo-500/10 border-indigo-500/30 pulse-glow' : 'bg-[#1e2130] border-[#2d3148]'}
-          onClick={() => onNavigate('study')}
-          breakdown={stats.due.length > 0 ? [
-            { icon: '🔄', label: 'Wdh.', value: plan.reviewCards.length, color: 'text-amber-300' },
-            { icon: '✨', label: 'Neu',  value: plan.newCards.length,    color: 'text-purple-300' },
-          ] : undefined}
-          info="Karten, deren nächster Wiederholungstermin auf heute oder früher fällt. Diese werden beim 'Jetzt lernen'-Klick zuerst gezogen — gemixt mit dem heutigen Neu-Karten-Kontingent."
-        />
-        <StatCard
-          value={stats.srsGroups.beherrscht}
-          label="Beherrscht"
-          icon="✅"
-          color="text-green-400"
-          bg="bg-[#1e2130] border-[#2d3148]"
-          info="Karten im SRS-Status 'Beherrscht': mindestens 5× richtig wiederholt mit großen Intervallen. Tauchen nur noch sehr selten auf — kannst du."
-        />
-        <StatCard
-          value={`${settings.studyStreak}🔥`}
-          label="Lerntage in Folge"
-          icon=""
-          color="text-amber-400"
-          bg="bg-[#1e2130] border-[#2d3148]"
-          info="Anzahl Tage in Folge, an denen du mindestens eine Karte bewertet hast. Bricht ab, sobald du einen Tag pausierst."
-        />
-      </div>
+      {/* HERO: Fokus + Tagesziel + Jetzt-Lernen — alles in einem Block.
+          Die einzige Action die du brauchst zum Lernen ist hier. */}
+      {cards.length > 0 && (
+        <div className={`rounded-2xl border p-5 space-y-4 ${
+          isFocused
+            ? 'bg-amber-500/5 border-amber-500/30'
+            : 'bg-[#1e2130] border-[#2d3148]'
+        }`}>
+          {/* Focus toggle */}
+          <FocusToggleInline
+            focusMode={focusMode}
+            onSetFocusMode={onSetFocusMode}
+            focusedCount={focusedCards.length}
+            totalCount={cards.length}
+            isFocused={isFocused}
+          />
 
-      {/* Exam Countdown Widget */}
-      <ExamCountdownWidget plan={plan} settings={settings} onNavigate={onNavigate} />
+          {/* Tagesziel + Action */}
+          <TagesZiel
+            plan={plan}
+            settings={settings}
+            ratedToday={ratedToday}
+            progressPct={progressPct}
+            progressTotal={progressTotal}
+            onStart={onStartDailySession}
+            onNavigate={onNavigate}
+          />
+        </div>
+      )}
 
-      {/* Top Klassiker Widget */}
+      {/* Legacy due-today banner (only if no exam set) — kept as fallback */}
+      {!settings.examDate && cards.length > 0 && stats.due.length > 0 && (
+        <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-2xl p-4 flex items-center justify-between flex-wrap gap-3">
+          <p className="text-indigo-300 text-sm">
+            💡 Setze ein Prüfungsdatum in den Einstellungen, um den Tagesplan zu aktivieren.
+          </p>
+          <button
+            onClick={() => onNavigate('settings')}
+            className="text-xs text-indigo-400 hover:text-indigo-300 underline"
+          >
+            Jetzt einstellen
+          </button>
+        </div>
+      )}
+
+      {/* SRS Level Breakdown — sekundär, "wo stehe ich grundsätzlich?" */}
+      {cards.length > 0 && (
+        <SrsLevelGrid
+          srsGroups={stats.srsGroups}
+          total={stats.total}
+          onLevelClick={(srs: SrsKey) => onNavigateToLibraryWithSrs(srs)}
+        />
+      )}
+
+      {/* Top Klassiker — collapsible, default zu. Nice-to-have, nicht
+          handlungsrelevant. */}
       {topKlassiker.length > 0 && (
-        <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-3">
-          <div className="flex items-center justify-between">
+        <details className="bg-[#1e2130] border border-[#2d3148] rounded-2xl overflow-hidden group">
+          <summary className="px-5 py-3 cursor-pointer hover:bg-[#252840] transition-colors flex items-center justify-between">
             <h3 className="font-semibold text-white flex items-center gap-2">
               🔥 Top Klassiker
               <InfoTooltip
                 side="bottom"
                 text="Die 5 Karten mit der höchsten Klassiker-Wahrscheinlichkeit — basierend darauf, in wie vielen Katalogjahren / von wie vielen Prüfern die Frage gestellt wurde. Diese kommen sehr wahrscheinlich auch in deiner Prüfung dran."
               />
+              <span className="text-xs font-normal text-[#6b7280] ml-1">({topKlassiker.length})</span>
             </h3>
-            <span className="text-xs text-[#6b7280]">Häufigste Prüfungsfragen</span>
-          </div>
-          <div className="space-y-2">
+            <span className="text-[#6b7280] text-sm group-open:rotate-180 transition-transform">▾</span>
+          </summary>
+          <div className="px-5 pb-5 space-y-2">
             {topKlassiker.map(card => (
               <button
                 key={card.id}
@@ -212,65 +197,8 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
               </button>
             ))}
           </div>
-        </div>
+        </details>
       )}
-
-      {/* Daily Goal Card */}
-      {settings.examDate && !plan.examPassed && (
-        <DailyGoalCard
-          plan={plan}
-          ratedToday={ratedToday}
-          progressPct={progressPct}
-          progressTotal={progressTotal}
-          onStart={onStartDailySession}
-        />
-      )}
-
-      {/* Legacy due-today banner (only if no exam set) */}
-      {!settings.examDate && stats.due.length > 0 && (
-        <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-2xl p-5 flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <p className="text-indigo-300 font-semibold text-lg">
-              {stats.due.length} {stats.due.length === 1 ? 'Karte' : 'Karten'} zur Wiederholung
-            </p>
-            <p className="text-indigo-400/70 text-sm mt-0.5">Jetzt lernen und Streak aufrechterhalten!</p>
-          </div>
-          <button
-            onClick={() => onNavigate('study')}
-            className="bg-indigo-500 hover:bg-indigo-400 text-white font-semibold px-5 py-2.5 rounded-xl transition-colors"
-          >
-            Jetzt lernen →
-          </button>
-        </div>
-      )}
-
-      {/* SRS Level Breakdown — clickable cards */}
-      {cards.length > 0 && (
-        <SrsLevelGrid
-          srsGroups={stats.srsGroups}
-          total={stats.total}
-          onLevelClick={(srs: SrsKey) => onNavigateToLibraryWithSrs(srs)}
-        />
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
-        {subjectData.length > 0 && (
-          <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5">
-            <h3 className="font-semibold text-white mb-4">Fächer</h3>
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={subjectData} barSize={12}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2d3148" vertical={false} />
-                <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ background: '#1e2130', border: '1px solid #2d3148', borderRadius: '8px', color: '#e8eaf0', fontSize: 12 }} cursor={{ fill: 'rgba(99,102,241,0.05)' }} />
-                <Bar dataKey="Gelernt"    fill="#22c55e" radius={[2,2,0,0]} stackId="a" />
-                <Bar dataKey="Ausstehend" fill="#f59e0b" radius={[0,0,0,0]} stackId="a" />
-                <Bar dataKey="Neu"        fill="#6366f1" radius={[2,2,0,0]} stackId="a" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </div>
 
       {cards.length === 0 && (
         <div className="text-center py-20">
@@ -286,25 +214,33 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
   );
 }
 
-// ─── Exam Countdown Widget ────────────────────────────────────
+// ─── Status Header ────────────────────────────────────────────
+// Slim one-liner with Tage bis Prüfung + Im-Zeitplan-Status + Streak.
+// Replaces the old standalone ExamCountdownWidget + 3 of the 4 top-stat
+// tiles ("Beherrscht", "Lerntage in Folge", and the now-redundant "Karten
+// gesamt"). Click navigates to settings when no exam date is set.
 
-function ExamCountdownWidget({ plan, settings, onNavigate }: {
+function StatusHeader({
+  plan,
+  settings,
+  onNavigate,
+}: {
   plan: ReturnType<typeof calculateDailyPlan>;
   settings: AppSettings;
   onNavigate: (p: string) => void;
 }) {
+  // No exam date → soft prompt to set one
   if (!settings.examDate) {
     return (
-      <div className="bg-[#1e2130] border border-dashed border-[#2d3148] rounded-2xl p-5 flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <p className="text-white font-medium">📅 Kein Prüfungsdatum gesetzt</p>
-          <p className="text-[#9ca3af] text-sm mt-0.5">Setze ein Datum um den Countdown und Tagesplan zu aktivieren</p>
-        </div>
+      <div className="bg-[#1e2130] border border-dashed border-[#2d3148] rounded-2xl px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-sm text-[#9ca3af]">
+          📅 Kein Prüfungsdatum · 🔥 {settings.studyStreak} Lerntag{settings.studyStreak === 1 ? '' : 'e'} in Folge
+        </p>
         <button
           onClick={() => onNavigate('settings')}
-          className="text-sm text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 px-4 py-2 rounded-xl transition-colors"
+          className="text-xs text-indigo-400 hover:text-indigo-300 font-medium"
         >
-          Jetzt einstellen →
+          Datum setzen →
         </button>
       </div>
     );
@@ -312,118 +248,108 @@ function ExamCountdownWidget({ plan, settings, onNavigate }: {
 
   if (plan.examPassed) {
     return (
-      <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-5 text-center">
-        <p className="text-3xl mb-1">🎉</p>
-        <p className="text-white font-semibold">Prüfung vorbei!</p>
-        <p className="text-[#9ca3af] text-sm mt-1">Hoffentlich lief alles gut.</p>
-      </div>
-    );
-  }
-
-  if (plan.allLearned) {
-    return (
-      <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-5 text-center">
-        <p className="text-3xl mb-1">🏆</p>
-        <p className="text-white font-semibold">Alle Karten beherrscht!</p>
-        <p className="text-[#9ca3af] text-sm mt-1">Du bist bestens vorbereitet.</p>
+      <div className="bg-green-500/10 border border-green-500/30 rounded-2xl px-4 py-3 text-center">
+        <p className="text-white font-semibold">🎉 Prüfung vorbei — hoffentlich lief alles gut!</p>
       </div>
     );
   }
 
   const days = plan.daysUntilExam!;
-  const urgencyColor = days <= 3 ? 'border-red-500/40 bg-red-500/5' :
-                       days <= 7 ? 'border-amber-500/40 bg-amber-500/5' :
-                       'border-indigo-500/30 bg-indigo-500/5';
-  const daysColor = days <= 3 ? 'text-red-400' : days <= 7 ? 'text-amber-400' : 'text-indigo-400';
-  const examDateFormatted = new Date(settings.examDate!).toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' });
+  const examDateFormatted = new Date(settings.examDate!).toLocaleDateString('de-DE', { day: 'numeric', month: 'short', year: 'numeric' });
+  const urgencyClass =
+    days <= 3 ? 'bg-red-500/10 border-red-500/40' :
+    days <= 7 ? 'bg-amber-500/10 border-amber-500/40' :
+    'bg-[#1e2130] border-[#2d3148]';
+  const daysColor =
+    days <= 3 ? 'text-red-400' :
+    days <= 7 ? 'text-amber-400' :
+    'text-indigo-400';
 
   return (
-    <div className={`border rounded-2xl p-5 flex items-center justify-between flex-wrap gap-4 ${urgencyColor}`}>
-      <div className="flex items-center gap-4">
-        <div className={`text-4xl font-black ${daysColor} leading-none`}>{days}</div>
-        <div>
-          <p className="text-white font-semibold">
-            {days === 1 ? 'Tag' : 'Tage'} bis zur Prüfung
-          </p>
-          <p className="text-[#9ca3af] text-sm">{examDateFormatted}</p>
-          {plan.isAheadOfSchedule && (
-            <p className="text-green-400 text-xs mt-0.5">✓ Im Zeitplan</p>
-          )}
-        </div>
+    <div className={`border rounded-2xl px-4 py-3 flex items-center justify-between gap-3 flex-wrap ${urgencyClass}`}>
+      <div className="flex items-center gap-3 flex-wrap text-sm">
+        <span className="flex items-center gap-1.5">
+          <span className={`font-bold text-2xl leading-none ${daysColor}`}>{days}</span>
+          <span className="text-[#9ca3af]">
+            {days === 1 ? 'Tag' : 'Tage'} bis Prüfung
+            <span className="text-[#6b7280] ml-1.5">· {examDateFormatted}</span>
+          </span>
+        </span>
+        <span className="text-[#3d4168]">·</span>
+        {plan.isAheadOfSchedule ? (
+          <span className="text-green-400 text-xs font-medium">✓ Im Zeitplan</span>
+        ) : (
+          <span className="text-amber-400 text-xs font-medium">⚠ Hinter Plan</span>
+        )}
+        <span className="text-[#3d4168]">·</span>
+        <span className="text-[#9ca3af] text-xs">🔥 {settings.studyStreak} {settings.studyStreak === 1 ? 'Tag' : 'Tage'} in Folge</span>
       </div>
       {days <= 7 && (
-        <div className={`text-xs font-semibold px-3 py-1.5 rounded-full ${days <= 3 ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
-          {days <= 3 ? '⚡ Endspurt!' : '📚 Letzte Woche'}
-        </div>
+        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${days <= 3 ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
+          {days <= 3 ? '⚡ Endspurt' : '📚 Letzte Woche'}
+        </span>
       )}
     </div>
   );
 }
 
-// ─── Daily Goal Card ─────────────────────────────────────────
+// ─── Tagesziel (Hero CTA) ─────────────────────────────────────
+// Consolidates: counters + progress bar + Jetzt-Lernen button + pace stats.
+// Replaces the old separate DailyGoalCard. Lives inside the Hero block.
 
-function DailyGoalCard({ plan, ratedToday, progressPct, progressTotal, onStart }: {
+function TagesZiel({
+  plan,
+  settings,
+  ratedToday,
+  progressPct,
+  progressTotal,
+  onStart,
+  onNavigate,
+}: {
   plan: ReturnType<typeof calculateDailyPlan>;
+  settings: AppSettings;
   ratedToday: number;
   progressPct: number;
   progressTotal: number;
   onStart: () => void;
+  onNavigate: (p: string) => void;
 }) {
-  const goalDone = ratedToday >= progressTotal && progressTotal > 0;
   const totalToday = plan.reviewCards.length + plan.newCards.length;
+  const goalDone = ratedToday >= progressTotal && progressTotal > 0;
+  const autoMode = settings.dailyNewCardGoalMode === 'auto';
 
   return (
-    <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h3 className="font-semibold text-white flex items-center gap-2">
-          Tagesziel
+        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+          Heute zu lernen
           <InfoTooltip
-            text="Dein vorgeschlagenes Lern-Pensum für heute: fällige Wiederholungen + neue Karten gemäß deinem Tageslimit. Wenn Fokus aktiv ist, nur Karten aus dem Fokus-Set. Mit 'Jetzt lernen' arbeitest du diese Liste durch."
+            text="Dein Tagesplan: fällige Wiederholungen + neue Karten gemäß deinem Tageslimit. Wenn Fokus aktiv ist, nur aus dem Fokus-Set. 'Jetzt lernen' arbeitet die Liste durch."
           />
         </h3>
         {goalDone && (
           <span className="text-xs font-semibold px-3 py-1 rounded-full bg-green-500/15 border border-green-500/30 text-green-400">
-            ✅ Tagesziel erreicht!
+            ✅ Tagesziel erreicht
           </span>
         )}
       </div>
 
-      {/* Main counters */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-[#252840] rounded-xl p-3">
-          <p className="text-2xl font-bold text-amber-400">{plan.reviewCards.length}</p>
-          <p className="text-xs text-[#9ca3af] mt-0.5">✅ Zu wiederholen</p>
-          {plan.reviewOverflow > 0 && (
-            <p className="text-[10px] text-amber-500/70 mt-1">+{plan.reviewOverflow} auf morgen verschoben</p>
-          )}
-        </div>
-        <div className="bg-[#252840] rounded-xl p-3">
-          <p className="text-2xl font-bold text-indigo-400">{plan.newCards.length}</p>
-          <p className="text-xs text-[#9ca3af] mt-0.5">🆕 Neu heute</p>
-        </div>
+      {/* Big number + breakdown */}
+      <div className="flex items-end justify-center gap-3 py-2">
+        <span className="text-5xl font-black text-white leading-none">{totalToday}</span>
+        <span className="text-sm text-[#9ca3af] pb-1">Karten</span>
       </div>
-
-      {/* SM-2 pace row */}
-      {plan.newCardsPerDay > 0 && (
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <div className="bg-[#252840]/60 rounded-lg px-2 py-2">
-            <p className="text-sm font-semibold text-indigo-300">{plan.newCardsPerDay}</p>
-            <p className="text-[10px] text-[#6b7280] mt-0.5">Neu / Tag</p>
-          </div>
-          <div className="bg-[#252840]/60 rounded-lg px-2 py-2">
-            <p className="text-sm font-semibold text-indigo-300">~{plan.estimatedDailyReviews}</p>
-            <p className="text-[10px] text-[#6b7280] mt-0.5">Wdh. / Tag</p>
-          </div>
-          <div className={`rounded-lg px-2 py-2 ${
-            plan.masteryRateAtExam >= 90 ? 'bg-emerald-500/10' :
-            plan.masteryRateAtExam >= 70 ? 'bg-amber-500/10' : 'bg-red-500/10'
-          }`}>
-            <p className={`text-sm font-semibold ${
-              plan.masteryRateAtExam >= 90 ? 'text-emerald-400' :
-              plan.masteryRateAtExam >= 70 ? 'text-amber-400' : 'text-red-400'
-            }`}>{plan.masteryRateAtExam}%</p>
-            <p className="text-[10px] text-[#6b7280] mt-0.5">Prognose</p>
-          </div>
+      {totalToday > 0 && (
+        <div className="flex justify-center gap-4 text-sm">
+          <span className="text-amber-400 font-medium">{plan.reviewCards.length} Wdh.</span>
+          <span className="text-[#3d4168]">·</span>
+          <span className="text-purple-300 font-medium">{plan.newCards.length} Neu</span>
+          {plan.reviewOverflow > 0 && (
+            <>
+              <span className="text-[#3d4168]">·</span>
+              <span className="text-[#6b7280] text-xs">+{plan.reviewOverflow} auf morgen</span>
+            </>
+          )}
         </div>
       )}
 
@@ -448,113 +374,92 @@ function DailyGoalCard({ plan, ratedToday, progressPct, progressTotal, onStart }
         </div>
       )}
 
+      {/* Jetzt-Lernen button */}
       <button
         onClick={onStart}
         disabled={totalToday === 0}
-        className="w-full py-3 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors flex items-center justify-center gap-2"
+        className="w-full py-3.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors flex items-center justify-center gap-2 text-base"
       >
         ▶ Jetzt lernen
         {totalToday > 0 && (
-          <span className="bg-white/20 text-xs px-2 py-0.5 rounded-full">{totalToday} Karten</span>
+          <span className="bg-white/20 text-xs px-2 py-0.5 rounded-full">{totalToday}</span>
         )}
       </button>
-    </div>
-  );
-}
 
-// ─── Stat Card ───────────────────────────────────────────────
-
-interface StatCardProps {
-  value: number | string; label: string; icon: string;
-  color: string; bg: string; onClick?: () => void;
-  breakdown?: Array<{ icon: string; label: string; value: number; color?: string }>;
-  /** Optional small secondary line under the label, e.g. "von 1037 gesamt". */
-  hint?: string;
-  /** Optional info tooltip — shows an "i"-icon next to label that explains the metric. */
-  info?: string;
-}
-function StatCard({ value, label, icon, color, bg, onClick, breakdown, hint, info }: StatCardProps) {
-  return (
-    <div
-      className={`${bg} border rounded-2xl p-4 transition-all duration-200 ${onClick ? 'cursor-pointer hover:scale-[1.02]' : ''}`}
-      onClick={onClick}
-    >
-      <div className="flex items-start justify-between">
-        <div>
-          <p className={`text-3xl font-bold ${color}`}>{value}</p>
-          <div className="flex items-center gap-1 mt-1">
-            <p className="text-xs text-[#9ca3af] leading-tight">{label}</p>
-            {info && <InfoTooltip side="bottom" text={info} />}
+      {/* Pace stats — small, at the bottom */}
+      {plan.newCardsPerDay > 0 && (
+        <div className="pt-2 border-t border-white/5 flex items-center justify-between flex-wrap gap-2 text-xs text-[#9ca3af]">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span title="Neue Karten pro Tag (Tagesziel)">
+              <span className="text-indigo-300 font-semibold">{plan.newCardsPerDay}</span> neu/Tag
+              {autoMode && <span className="text-[10px] text-amber-400 ml-1">(auto)</span>}
+            </span>
+            <span className="text-[#3d4168]">·</span>
+            <span title="Geschätzte tägliche Wiederholungen">
+              <span className="text-indigo-300 font-semibold">~{plan.estimatedDailyReviews}</span> Wdh./Tag
+            </span>
+            <span className="text-[#3d4168]">·</span>
+            <span title="Geschätzter Beherrschungsgrad zum Prüfungstag">
+              Prognose:{' '}
+              <span className={`font-semibold ${
+                plan.masteryRateAtExam >= 90 ? 'text-emerald-400' :
+                plan.masteryRateAtExam >= 70 ? 'text-amber-400' : 'text-red-400'
+              }`}>{plan.masteryRateAtExam}%</span>
+            </span>
+            <InfoTooltip
+              text="'Neu/Tag': wie viele neue Karten heute eingeführt werden — entweder fester Wert (manuell) oder automatisch berechnet aus 'verbleibendeKartenImFokus / (TageBisPrüfung × 0.5)'. 'Wdh/Tag': geschätzte Anzahl Wiederholungen pro Tag durch SRS. 'Prognose': geschätzter Anteil beherrschter Karten zum Prüfungstag."
+            />
           </div>
-          {hint && <p className="text-[10px] text-[#6b7280] mt-0.5">{hint}</p>}
-        </div>
-        {icon && <span className="text-2xl">{icon}</span>}
-      </div>
-      {breakdown && breakdown.length > 0 && (
-        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/5">
-          {breakdown.map((b, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-1.5 text-xs"
-              title={b.label}
-            >
-              <span>{b.icon}</span>
-              <span className={`font-semibold ${b.color ?? 'text-white/90'}`}>{b.value}</span>
-              <span className="text-[#6b7280] hidden sm:inline">{b.label}</span>
-            </div>
-          ))}
+          <button
+            onClick={() => onNavigate('settings')}
+            className="text-[#6b7280] hover:text-indigo-400 underline-offset-2 hover:underline"
+          >
+            Anpassen
+          </button>
         </div>
       )}
     </div>
   );
 }
 
-// ─── Focus Toggle ────────────────────────────────────────────
-// A segmented control + status banner. When focus is on (A / AB) the
-// banner gives visual confirmation of what's been narrowed and how many
-// cards remain in scope — so the user can quickly verify they're looking
-// at the right slice.
+// ─── Focus Toggle (inline variant, sits inside the Hero block) ────
+// Renders only the focus controls + a short status line, without the
+// outer wrapper card (the parent Hero already has one). Same semantics
+// as the old FocusToggle.
 
-function FocusToggle({
+function FocusToggleInline({
   focusMode,
   onSetFocusMode,
   focusedCount,
   totalCount,
+  isFocused,
 }: {
   focusMode: FocusMode;
   onSetFocusMode: (m: FocusMode) => void;
   focusedCount: number;
   totalCount: number;
+  isFocused: boolean;
 }) {
-  const isFocused = focusMode !== 'all';
   return (
-    <div
-      className={`rounded-2xl border p-4 space-y-3 ${
-        isFocused
-          ? 'bg-amber-500/5 border-amber-500/30'
-          : 'bg-[#1e2130] border-[#2d3148]'
-      }`}
-    >
+    <div className="space-y-2.5">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <p className="text-sm font-semibold text-white flex items-center gap-2">
-            🎯 Fokus
-            <InfoTooltip
-              side="bottom"
-              text="Reduziert die App auf einen Karten-Subset (A oder A+B), damit 'Fällig heute' eine machbare Zahl zeigt statt der überfordernden Gesamtzahl. Andere Karten sind nicht weg — nur ausgeblendet bis du den Fokus wechselst."
-            />
-            {isFocused && (
-              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                aktiv
-              </span>
-            )}
-          </p>
-          <p className="text-xs text-[#9ca3af] mt-0.5 leading-relaxed">
-            {isFocused
-              ? `Du siehst gerade ${focusedCount.toLocaleString()} von ${totalCount.toLocaleString()} Karten — Rest ist parkiert.`
-              : 'Du siehst alle Karten. Fokus reduziert auf A oder A+B für einen klaren Tagesziel-Fokus.'}
-          </p>
-        </div>
+        <p className="text-sm font-semibold text-white flex items-center gap-2">
+          🎯 Fokus
+          <InfoTooltip
+            side="bottom"
+            text="Reduziert die App auf einen Karten-Subset (A oder A+B), damit 'Heute zu lernen' eine machbare Zahl zeigt statt der überfordernden Gesamtzahl. Andere Karten sind nicht weg — nur ausgeblendet bis du den Fokus wechselst."
+          />
+          {isFocused && (
+            <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              aktiv
+            </span>
+          )}
+        </p>
+        <p className="text-xs text-[#9ca3af]">
+          {isFocused
+            ? `${focusedCount.toLocaleString()} von ${totalCount.toLocaleString()} Karten im Fokus`
+            : `${totalCount.toLocaleString()} Karten gesamt`}
+        </p>
       </div>
       {/* Segmented control */}
       <div className="flex gap-1 p-1 rounded-xl bg-[#15172a] border border-[#2d3148]">
@@ -572,7 +477,6 @@ function FocusToggle({
                   : 'text-[#9ca3af] hover:text-white hover:bg-white/5'
               }`}
             >
-              {/* Small coloured priority dots (no emoji rendering shenanigans) */}
               {m === 'A' && (
                 <span className={`w-2 h-2 rounded-full ${active ? 'bg-white' : 'bg-red-500'}`} />
               )}

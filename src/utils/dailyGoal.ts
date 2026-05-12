@@ -176,22 +176,28 @@ export function calculateDailyPlan(
     if (diffDays < 0) examPassed = true;
   }
 
+  // Effective daily goal: 'auto' derives from unseen / (days × 0.5) so the
+  // user covers all unseen cards with ~2× exposure before exam. 'manual'
+  // keeps the user-set value as-is. We do this BEFORE pace calculation so
+  // the projection reflects the actual goal we'll use.
+  const effectiveGoal = getEffectiveDailyNewCardGoal(cards, settings, daysUntilExam);
+
   // Use SM-2-aware pace when exam date is set, otherwise fixed goal
-  let newCardsPerDay = settings.dailyNewCardGoal;
+  let newCardsPerDay = effectiveGoal;
   let isAheadOfSchedule = false;
   let estimatedDailyReviews = 0;
   let masteryRateAtExam = 0;
 
   if (daysUntilExam !== null && !examPassed && daysUntilExam > 0) {
-    // Pass the user's actual daily goal so the mastery projection reflects
-    // what they'll really accomplish, not the ideal required pace.
-    const pace = calculatePaceMetrics(cards, daysUntilExam, settings.dailyNewCardGoal);
-    newCardsPerDay = Math.min(settings.dailyNewCardGoal, pace.requiredNewPerDay);
-    if (pace.requiredNewPerDay <= settings.dailyNewCardGoal) isAheadOfSchedule = true;
+    // Pass the effective goal so the mastery projection reflects what we'll
+    // really do — not the raw manual value.
+    const pace = calculatePaceMetrics(cards, daysUntilExam, effectiveGoal);
+    newCardsPerDay = Math.min(effectiveGoal, pace.requiredNewPerDay);
+    if (pace.requiredNewPerDay <= effectiveGoal) isAheadOfSchedule = true;
     estimatedDailyReviews = pace.estimatedDailyReviews;
     masteryRateAtExam = pace.masteryRateAtExam;
   } else if (examPassed || daysUntilExam === 0) {
-    newCardsPerDay = Math.min(settings.dailyNewCardGoal, unseenCards.length);
+    newCardsPerDay = Math.min(effectiveGoal, unseenCards.length);
   }
 
   // Subtract already-done new cards from today's quota so resuming a session
@@ -217,6 +223,42 @@ export function calculateDailyPlan(
     estimatedDailyReviews,
     masteryRateAtExam,
   };
+}
+
+/**
+ * The actual daily new-card goal to use, taking mode into account.
+ *
+ * - 'manual': just returns settings.dailyNewCardGoal
+ * - 'auto':   ceil(unseen / (daysUntilExam × 0.5)) — i.e. introduce every
+ *             unseen card with enough time for ~2× exposure before exam.
+ *             Falls back to manual when no exam date is set.
+ *
+ * The returned value is always bounded above by 999 (sanity), and the
+ * 'auto' value is bounded above by max(manual, computed) so the user's
+ * manual setting acts as a soft upper cap on extreme auto-calculations.
+ *
+ * Pass `cards` filtered to the current focus-set so 'auto' respects what
+ * the user is currently working on, not the global library.
+ */
+export function getEffectiveDailyNewCardGoal(
+  cards: Flashcard[],
+  settings: AppSettings,
+  daysUntilExam: number | null,
+): number {
+  const manual = Math.max(1, settings.dailyNewCardGoal);
+  if (settings.dailyNewCardGoalMode !== 'auto') return manual;
+  if (daysUntilExam === null || daysUntilExam <= 0) return manual;
+
+  const unseen = cards.filter(c => c.repetitions === 0 && c.interval === 0).length;
+  if (unseen === 0) return manual;
+
+  // The 0.5 factor leaves time for each new card to be reviewed ~2× before
+  // exam day. Adjust if too aggressive/conservative.
+  const computed = Math.ceil(unseen / Math.max(1, daysUntilExam * 0.5));
+  // Bounded: at least 1, at most manual (so user has a ceiling) OR computed
+  // if computed itself exceeds manual (then the user's setting is too low
+  // for the deadline → we honour the math).
+  return Math.min(999, Math.max(1, computed));
 }
 
 // Cards where the user successfully recalled something today (rating >= 1: Schwer/Gut/Einfach).

@@ -74,6 +74,10 @@ export interface AppSettings {
   // Exam countdown & daily goal
   examDate?: string;        // ISO date string (YYYY-MM-DD)
   dailyNewCardGoal: number;   // default: 10
+  // 'manual' = use dailyNewCardGoal as-is
+  // 'auto'   = derive from unseen-in-focus / (daysUntilExam × 0.5), with
+  //            the manual value as upper cap so the user retains control
+  dailyNewCardGoalMode?: 'manual' | 'auto';
   dailyReviewCap: number;     // max reviews shown per day (default: 9999 = no cap)
   // Daily progress snapshot (resets each day)
   dailyPlanSnapshot?: {

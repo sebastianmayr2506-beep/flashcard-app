@@ -125,6 +125,31 @@ export default function Settings({
             <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">
               {hasExamDate ? 'Tagesmaximum (optional)' : 'Neue Karten pro Tag'}
             </label>
+
+            {/* Mode toggle: manuell vs auto. Auto is only really useful when
+                an exam date is set (otherwise there's no horizon to plan against). */}
+            <div className="flex gap-1 p-0.5 mb-2 rounded-xl bg-[#15172a] border border-[#2d3148]">
+              {(['manual', 'auto'] as const).map(mode => {
+                const active = (settings.dailyNewCardGoalMode ?? 'manual') === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => onUpdateSettings({ dailyNewCardGoalMode: mode })}
+                    disabled={mode === 'auto' && !hasExamDate}
+                    title={mode === 'auto' && !hasExamDate ? 'Erst Prüfungsdatum setzen' : undefined}
+                    className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                      active
+                        ? 'bg-indigo-500 text-white'
+                        : 'text-[#9ca3af] hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    {mode === 'manual' ? 'Manuell' : '⚡ Auto'}
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="flex items-center gap-2">
               <input
                 type="number"
@@ -134,14 +159,17 @@ export default function Settings({
                 onChange={e => setDailyGoalInput(e.target.value)}
                 onBlur={handleDailyGoalBlur}
                 onKeyDown={e => e.key === 'Enter' && handleDailyGoalBlur()}
-                className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
+                disabled={settings.dailyNewCardGoalMode === 'auto'}
+                className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <span className="text-[#6b7280] text-sm shrink-0">/ Tag</span>
             </div>
-            <p className="text-xs text-[#6b7280] mt-1.5">
-              {hasExamDate
-                ? 'Begrenzt die tägliche Anzahl nach oben'
-                : 'Wird ohne Prüfungsdatum als fixes Ziel verwendet'}
+            <p className="text-xs text-[#6b7280] mt-1.5 leading-relaxed">
+              {settings.dailyNewCardGoalMode === 'auto'
+                ? '⚡ Wert wird automatisch berechnet aus "verbleibende unseen Karten / (Tage bis Prüfung × 0.5)" — jede Karte hat damit ~2× Zeit für Wiederholung vor der Prüfung. Respektiert den aktiven Fokus.'
+                : hasExamDate
+                  ? 'Begrenzt die tägliche Anzahl nach oben. Schalte auf Auto für dynamische Berechnung basierend auf Prüfungsdatum.'
+                  : 'Wird ohne Prüfungsdatum als fixes Ziel verwendet.'}
             </p>
           </div>
 

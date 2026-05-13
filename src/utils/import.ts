@@ -36,10 +36,37 @@ export function importFromJSON(jsonText: string): Flashcard[] {
   });
 }
 
+// Read a field from either camelCase (modern export from this app) or
+// snake_case (legacy / direct-DB-shape imports). Modern exports use camelCase
+// throughout, but old backups and some external sources use snake_case.
+function pick<T = unknown>(c: Record<string, unknown>, camel: string, snake?: string): T | undefined {
+  const v = c[camel];
+  if (v !== undefined && v !== null) return v as T;
+  if (snake) {
+    const s = c[snake];
+    if (s !== undefined && s !== null) return s as T;
+  }
+  return undefined;
+}
+
 function validateCard(raw: unknown): Flashcard {
   if (typeof raw !== 'object' || raw === null) throw new Error('Ungültige Karte');
   const c = raw as Record<string, unknown>;
   const srs = createInitialSRS();
+
+  // Numeric/string fields with snake_case legacy fallback
+  const timesAsked = pick<number>(c, 'timesAsked', 'times_asked');
+  const askedByExaminers = pick<unknown[]>(c, 'askedByExaminers', 'asked_by_examiners');
+  const askedInCatalogsRaw = pick<unknown>(c, 'askedInCatalogs', 'asked_in_catalogs');
+  const probabilityPercent = pick<number>(c, 'probabilityPercent', 'probability_percent');
+  const firstStudiedAt = pick<string>(c, 'firstStudiedAt', 'first_studied_at');
+  const mcQuestions = pick<unknown>(c, 'mcQuestions', 'mc_questions');
+  const mcQuestionsGeneratedAt = pick<string>(c, 'mcQuestionsGeneratedAt', 'mc_questions_generated_at');
+  const blacklisted = pick<unknown>(c, 'blacklisted');
+  const flagged = pick<unknown>(c, 'flagged');
+  const setId = pick<string>(c, 'setId', 'set_id');
+  const priorityRaw = pick<unknown>(c, 'priority');
+
   return {
     id: typeof c.id === 'string' ? c.id : uuidv4(),
     front: String(c.front ?? ''),
@@ -53,16 +80,28 @@ function validateCard(raw: unknown): Flashcard {
     difficulty: (['einfach', 'mittel', 'schwer'].includes(c.difficulty as string)
       ? c.difficulty : 'mittel') as Difficulty,
     customTags: Array.isArray(c.customTags) ? c.customTags.map(String) : [],
+    setId: typeof setId === 'string' && setId ? setId : undefined,
+    flagged: typeof flagged === 'boolean' ? flagged : false,
     createdAt: String(c.createdAt ?? new Date().toISOString()),
     updatedAt: String(c.updatedAt ?? new Date().toISOString()),
     interval: typeof c.interval === 'number' ? c.interval : srs.interval,
     repetitions: typeof c.repetitions === 'number' ? c.repetitions : srs.repetitions,
     easeFactor: typeof c.easeFactor === 'number' ? c.easeFactor : srs.easeFactor,
     nextReviewDate: typeof c.nextReviewDate === 'string' ? c.nextReviewDate : srs.nextReviewDate,
-    timesAsked: typeof c.times_asked === 'number' ? c.times_asked : undefined,
-    askedByExaminers: Array.isArray(c.asked_by_examiners) ? c.asked_by_examiners.map(String) : undefined,
-    askedInCatalogs: mergeCatalogs(c.asked_in_catalogs, c.catalog_year),
-    probabilityPercent: typeof c.probability_percent === 'number' ? c.probability_percent : undefined,
+    firstStudiedAt: typeof firstStudiedAt === 'string' ? firstStudiedAt : undefined,
+    timesAsked: typeof timesAsked === 'number' ? timesAsked : undefined,
+    askedByExaminers: Array.isArray(askedByExaminers) ? askedByExaminers.map(String) : undefined,
+    askedInCatalogs: mergeCatalogs(askedInCatalogsRaw, c.catalog_year),
+    probabilityPercent: typeof probabilityPercent === 'number' ? probabilityPercent : undefined,
+    // A/B/C-Priority — preserve manual + auto-classified labels across exports.
+    priority: (priorityRaw === 'A' || priorityRaw === 'B' || priorityRaw === 'C')
+      ? priorityRaw : undefined,
+    // Persistent MC questions — drop only if it's not a non-empty array.
+    mcQuestions: Array.isArray(mcQuestions) && mcQuestions.length > 0
+      ? (mcQuestions as Flashcard['mcQuestions']) : undefined,
+    mcQuestionsGeneratedAt: typeof mcQuestionsGeneratedAt === 'string' ? mcQuestionsGeneratedAt : undefined,
+    // Parkiert-Flag.
+    blacklisted: typeof blacklisted === 'boolean' ? blacklisted : false,
   };
 }
 

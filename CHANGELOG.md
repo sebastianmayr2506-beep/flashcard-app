@@ -7,6 +7,41 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-13 — Import-Bug: priority, flagged, setId, mcQuestions, blacklisted gingen verloren
+
+**Symptom:** Ein User hat Sebis JSON-Export importiert. Alle 1037 Karten
+kamen an, aber **ohne** A/B/C-Priorities. Auto-Classify lieferte danach
+eine andere Verteilung (34/68/935 statt Sebis 57/84/896), weil die
+Heuristik je nach Account-State leicht unterschiedlich scort.
+
+**Ursache:** `src/utils/import.ts validateCard` baute Karten aus dem JSON
+neu auf und vergaß dabei mehrere Felder komplett:
+
+- `priority` (A/B/C — der Hauptfehler)
+- `flagged`
+- `setId`
+- `firstStudiedAt`
+- `mcQuestions` / `mcQuestionsGeneratedAt`
+- `blacklisted`
+
+Zusätzlich nutzte der Importer **snake_case** für `times_asked`,
+`asked_by_examiners`, etc. — der Exporter (`exportJSON` → `JSON.stringify`
+der Flashcard) schreibt aber **camelCase**. Round-Trip war also auch für
+diese Stats-Felder bereits seit Monaten kaputt; nur bei Original-DB-Dumps
+hatte es zufällig funktioniert.
+
+**Fix:** `validateCard` liest jetzt jedes Feld via `pick(c, camel, snake)`
+mit Snake-Case-Fallback für Legacy-Backups und ergänzt die fehlenden
+Felder. Heißt: Modern-Export → Modern-Import = bit-für-bit identisch.
+
+**Workaround für betroffene User:** Karten löschen und nochmal frisch
+importieren. Priorities, MC-Fragen, Sets, Flags, Parkiert-Status kommen
+diesmal mit.
+
+**Files:** `src/utils/import.ts`.
+
+---
+
 ## 2026-05-13 — Parkieren: Sidebar-Badge + Dashboard-Total schließen parkierte aus
 
 **What:** Follow-up auf das Parkieren-Feature. Parkierte Karten wurden

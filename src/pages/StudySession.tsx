@@ -908,15 +908,23 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
               <div className="shrink-0 pt-5 pb-2 text-center">
                 <span className="text-xs font-semibold text-indigo-400 uppercase tracking-widest">Frage</span>
               </div>
-              <div className="flex-1 overflow-y-auto px-6 md:px-10 pb-4 flex flex-col items-start gap-3">
+              {/* Scrollable question content — only the question scrolls. */}
+              <div className="flex-1 min-h-0 overflow-y-auto px-6 md:px-10 pb-2 flex flex-col items-start gap-3">
                 {frontImg && <img src={frontImg} alt="" onClick={e => { e.stopPropagation(); setZoomedImg(frontImg); }} className="max-h-40 max-w-full object-contain rounded-xl cursor-zoom-in" />}
                 <p className="text-lg md:text-xl font-medium text-white text-left leading-relaxed w-full">
                   <MarkdownText text={currentCard.front} />
                 </p>
+              </div>
 
-                {/* MC Hint section — only if Gemini key is configured */}
+              {/* MC Hint + KI Prüfung action area — pinned to bottom of card-face
+                  so action buttons stay visible regardless of question length.
+                  Panel can grow up to 60% of card height when expanded; above
+                  that it scrolls internally. */}
                 {(settings.geminiApiKey || settings.anthropicApiKey || settings.groqApiKey) && (
-                  <div className="w-full mt-1 border-t border-[#2d3148]/60 pt-3" onClick={e => e.stopPropagation()}>
+                  <div
+                    className="shrink-0 border-t border-[#2d3148]/60 px-6 md:px-10 py-2 max-h-[60%] overflow-y-auto"
+                    onClick={e => e.stopPropagation()}
+                  >
                     {!effectiveMcHint && (
                       <button
                         onClick={handleRequestMCHint}
@@ -1012,9 +1020,8 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                     )}
                   </div>
                 )}
-              </div>
               {!isFlipped && !effectiveMcHint && (
-                <div className="shrink-0 pb-4 text-center">
+                <div className="shrink-0 pb-3 text-center">
                   <p className="text-xs text-[#6b7280] animate-pulse">Klicke zum Umdrehen</p>
                 </div>
               )}
@@ -1127,14 +1134,14 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
           </div>
         </div>
 
-        {/* Subject / tags info */}
-        <div className="flex items-center gap-2 py-2 flex-wrap justify-center shrink-0">
-          {currentCard.subjects?.map(s => <span key={s} className="text-xs px-2 py-0.5 rounded-full bg-[#1e2130] border border-[#2d3148] text-[#9ca3af]">{s}</span>)}
-          {currentCard.examiners?.map(e => <span key={e} className="text-xs text-[#6b7280]">{e}</span>)}
-          {currentCard.customTags.map(t => (
-            <span key={t} className="text-xs text-[#6b7280]">#{t}</span>
-          ))}
-        </div>
+        {/* Subject / tags info — compact by default so MC/KI-Buttons unten
+            sichtbar bleiben. Wird per Toggle aufgeklappt wenn der User die
+            vollständige Zuordnung sehen will. */}
+        <CardMetadataBar
+          subjects={currentCard.subjects ?? []}
+          examiners={currentCard.examiners ?? []}
+          customTags={currentCard.customTags ?? []}
+        />
       </div>
 
       {/* Rating buttons */}
@@ -1184,6 +1191,67 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
           groqApiKey={settings.groqApiKey}
           onApiError={onApiError}
         />
+      )}
+    </div>
+  );
+}
+
+// Compact metadata bar: shows subjects + first N examiners by default,
+// hides all custom-tags behind a count-button. User can tap to expand
+// the full list. Prevents 30+ Fragenkatalog-tags from pushing MC/KI
+// buttons off the screen on mobile.
+function CardMetadataBar({
+  subjects,
+  examiners,
+  customTags,
+}: {
+  subjects: string[];
+  examiners: string[];
+  customTags: string[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const EXAMINER_PREVIEW = 3;
+  const showAllExaminers = expanded || examiners.length <= EXAMINER_PREVIEW;
+  const examinersVisible = showAllExaminers ? examiners : examiners.slice(0, EXAMINER_PREVIEW);
+  const examinersHidden = examiners.length - examinersVisible.length;
+  const hasTags = customTags.length > 0;
+
+  return (
+    <div className="flex items-center gap-1.5 py-1.5 flex-wrap justify-center shrink-0 px-3">
+      {subjects.map(s => (
+        <span key={s} className="text-[11px] px-2 py-0.5 rounded-full bg-[#1e2130] border border-[#2d3148] text-[#9ca3af]">
+          {s}
+        </span>
+      ))}
+      {examinersVisible.map(e => (
+        <span key={e} className="text-[11px] text-[#6b7280]">👤 {e}</span>
+      ))}
+      {!expanded && examinersHidden > 0 && (
+        <button
+          onClick={() => setExpanded(true)}
+          className="text-[11px] text-indigo-400 hover:text-indigo-300 underline-offset-2 hover:underline"
+        >
+          +{examinersHidden} Prüfer
+        </button>
+      )}
+      {!expanded && hasTags && (
+        <button
+          onClick={() => setExpanded(true)}
+          className="text-[11px] text-indigo-400 hover:text-indigo-300 underline-offset-2 hover:underline"
+        >
+          +{customTags.length} Tags
+        </button>
+      )}
+      {expanded && customTags.map(t => (
+        <span key={t} className="text-[10px] text-[#6b7280]">#{t}</span>
+      ))}
+      {expanded && (examinersHidden > 0 || hasTags) && (
+        <button
+          onClick={() => setExpanded(false)}
+          className="text-[11px] text-[#6b7280] hover:text-[#9ca3af] underline-offset-2 hover:underline"
+        >
+          weniger
+        </button>
       )}
     </div>
   );

@@ -91,29 +91,47 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   // 'summary' is terminal. Card data is re-resolved from the live `cards`
   // prop so post-restore card edits / sync updates are reflected. If any
   // persisted card was deleted in the meantime, it's silently dropped.
+  // Restore-shape covers BOTH classic and MC sessions. MC restore is keyed by
+  // sessionMode === 'mc' in the stored object and carries indices + answers.
+  type MCSessionAnswerLocal = { selected: string[]; isCorrect: boolean };
   const restoredSession = useMemo<{
+    mode: 'classic' | 'mc';
     sessionCards: Flashcard[];
+    // Classic fields
     currentIdx: number;
     ratings: RatingCount;
+    // MC fields
+    mcCardIdx: number;
+    mcQuestionIdx: number;
+    mcAnswers: Map<string, MCSessionAnswerLocal[]>;
   } | null>(() => {
     try {
       const raw = sessionStorage.getItem('studySession:state');
       if (!raw) return null;
       const obj = JSON.parse(raw) as {
         sessionState?: SessionState;
+        sessionMode?: 'classic' | 'mc';
         cardIds?: string[];
         currentIdx?: number;
         ratings?: RatingCount;
+        mcCardIdx?: number;
+        mcQuestionIdx?: number;
+        mcAnswersEntries?: Array<[string, MCSessionAnswerLocal[]]>;
       };
       if (obj.sessionState !== 'studying' || !Array.isArray(obj.cardIds)) return null;
       const resolved = obj.cardIds
         .map(id => cards.find(c => c.id === id))
         .filter((c): c is Flashcard => !!c);
       if (resolved.length === 0) return null;
+      const mode: 'classic' | 'mc' = obj.sessionMode === 'mc' ? 'mc' : 'classic';
       return {
+        mode,
         sessionCards: resolved,
         currentIdx: Math.min(Math.max(obj.currentIdx ?? 0, 0), resolved.length - 1),
         ratings: obj.ratings ?? { nochmal: 0, schwer: 0, gut: 0, einfach: 0 },
+        mcCardIdx: Math.min(Math.max(obj.mcCardIdx ?? 0, 0), resolved.length - 1),
+        mcQuestionIdx: Math.max(obj.mcQuestionIdx ?? 0, 0),
+        mcAnswers: new Map(obj.mcAnswersEntries ?? []),
       };
     } catch { return null; }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -126,18 +144,26 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
 
   // ── MC-Lernmodus state ──────────────────────────────────────────────────
   // sessionMode: 'classic' = SRS flashcards (default), 'mc' = MC-Lernmodus.
-  // Persisted in localStorage so the toggle remembers across sessions.
+  // If we're restoring an in-progress MC session, prefer its mode.
   const [sessionMode, setSessionMode] = useState<'classic' | 'mc'>(
-    () => (localStorage.getItem('session_mode') === 'mc' ? 'mc' : 'classic')
+    () => restoredSession?.mode === 'mc'
+      ? 'mc'
+      : (localStorage.getItem('session_mode') === 'mc' ? 'mc' : 'classic')
   );
   // MC session progress: which card and which question within it.
-  // mcAnswers[cardIdx]?.[questionIdx] = { selected: string[], isCorrect: boolean }
-  const [mcCardIdx, setMcCardIdx] = useState(0);
-  const [mcQuestionIdx, setMcQuestionIdx] = useState(0);
+  // Restored from sessionStorage when resuming after reload / abort.
+  const [mcCardIdx, setMcCardIdx] = useState(
+    restoredSession?.mode === 'mc' ? restoredSession.mcCardIdx : 0
+  );
+  const [mcQuestionIdx, setMcQuestionIdx] = useState(
+    restoredSession?.mode === 'mc' ? restoredSession.mcQuestionIdx : 0
+  );
   const [mcSelected, setMcSelected] = useState<string[]>([]);
   const [mcSubmitted, setMcSubmitted] = useState(false);
   type MCSessionAnswer = { selected: string[]; isCorrect: boolean };
-  const [mcAnswers, setMcAnswers] = useState<Map<string, MCSessionAnswer[]>>(new Map());
+  const [mcAnswers, setMcAnswers] = useState<Map<string, MCSessionAnswer[]>>(
+    () => restoredSession?.mode === 'mc' ? restoredSession.mcAnswers : new Map()
+  );
   // Pre-flight: cards lacking MC questions; null when no check pending
   const [mcPreFlight, setMcPreFlight] = useState<{ missing: Flashcard[]; allCards: Flashcard[] } | null>(null);
   const [mcGenerating, setMcGenerating] = useState(false);
@@ -220,7 +246,34 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     localStorage.setItem('study_order', order);
   };
 
+  // True if we have an MC session in progress that was paused (user clicked
+  // "✕ Beenden" or aborted, or just reloaded the page mid-session).
+  // The Beenden button keeps state in memory; the persistence effect keeps
+  // it on sessionStorage. So even after reload + abort, we can resume.
+  const hasPausedMCSession = sessionMode === 'mc' && mcAnswers.size > 0 && sessionCards.length > 0;
+
+  const resumePausedMCSession = () => {
+    setSessionState('studying');
+  };
+
+  const discardPausedMCSession = () => {
+    setMcAnswers(new Map());
+    setMcCardIdx(0);
+    setMcQuestionIdx(0);
+    setMcSelected([]);
+    setMcSubmitted(false);
+    setSessionCards([]);
+  };
+
   const startSession = () => {
+    // Auto-resume: if user has a paused MC session, "Los geht's" continues
+    // it instead of starting fresh. To start fresh, user has to click
+    // "Verwerfen" in the resume banner first.
+    if (hasPausedMCSession) {
+      resumePausedMCSession();
+      return;
+    }
+
     let ordered: Flashcard[];
 
     if (dailyPlan) {
@@ -614,20 +667,32 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   // any sync updates) plus position and rating counts.
   useEffect(() => {
     try {
-      // Only persist classic-mode sessions — MC sessions are short, restoring
-      // mid-question would be confusing. Reload mid-MC = back to setup.
-      if (sessionState === 'studying' && sessionCards.length > 0 && sessionMode === 'classic') {
-        sessionStorage.setItem('studySession:state', JSON.stringify({
+      if (sessionState === 'studying' && sessionCards.length > 0) {
+        const base = {
           sessionState,
+          sessionMode,
           cardIds: sessionCards.map(c => c.id),
-          currentIdx,
-          ratings,
-        }));
+        };
+        if (sessionMode === 'mc') {
+          // Serialize Map as entries-array so it survives JSON round-trip.
+          sessionStorage.setItem('studySession:state', JSON.stringify({
+            ...base,
+            mcCardIdx,
+            mcQuestionIdx,
+            mcAnswersEntries: Array.from(mcAnswers.entries()),
+          }));
+        } else {
+          sessionStorage.setItem('studySession:state', JSON.stringify({
+            ...base,
+            currentIdx,
+            ratings,
+          }));
+        }
       } else {
         sessionStorage.removeItem('studySession:state');
       }
     } catch { /* sessionStorage unavailable / quota — fail silently */ }
-  }, [sessionState, sessionCards, currentIdx, ratings, sessionMode]);
+  }, [sessionState, sessionCards, currentIdx, ratings, sessionMode, mcCardIdx, mcQuestionIdx, mcAnswers]);
 
   const handleRate = (rating: RatingValue) => {
     const card = sessionCards[currentIdx];
@@ -747,6 +812,42 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                 Bewertet das SRS nicht — fürs Festigen anschließend in den Karteikarten-Modus wechseln.
               </p>
             )}
+
+            {/* Paused MC session banner — appears when user aborted a session
+                via "✕ Beenden" or after a reload. Clicking "Los geht's" also
+                resumes (auto-resume in startSession). */}
+            {hasPausedMCSession && (() => {
+              const totalQuestions = sessionCards.reduce((s, c) => s + (c.mcQuestions?.length ?? 0), 0);
+              const answered = Array.from(mcAnswers.values()).reduce((s, arr) => s + arr.filter(Boolean).length, 0);
+              return (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-4 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <span className="text-base">⏸</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-amber-300">MC-Session pausiert</p>
+                      <p className="text-xs text-[#d1d5db] mt-0.5">
+                        Du warst bei <strong>Karte {mcCardIdx + 1} / {sessionCards.length}</strong>
+                        {' '}({answered} von {totalQuestions} Fragen beantwortet).
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={discardPausedMCSession}
+                      className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-[#2d3148] hover:border-[#3d4168] text-[#9ca3af] hover:text-white transition-colors"
+                    >
+                      🗑 Verwerfen
+                    </button>
+                    <button
+                      onClick={resumePausedMCSession}
+                      className="flex-1 text-xs px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-white font-semibold transition-colors"
+                    >
+                      ▶ Fortsetzen
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Order selector */}
             <p className="text-xs font-semibold text-[#9ca3af] uppercase tracking-wider mb-2">Reihenfolge</p>

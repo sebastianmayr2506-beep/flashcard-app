@@ -42,7 +42,7 @@ export default function App() {
   const { user, loading: authLoading, signOut } = useAuth();
   const userId = user?.id ?? null;
 
-  const { cards, loading: cardsLoading, loadError: cardsLoadError, addCard, updateCard, bulkUpdate, removeCard, rateCard, importCards } = useCards(userId);
+  const { cards, loading: cardsLoading, loadError: cardsLoadError, addCard, updateCard, bulkUpdate, removeCard, bulkRemove, rateCard, importCards } = useCards(userId);
   const { settings, updateSettings, updateSettingsFn, addSubject, removeSubject, addExaminer, removeExaminer, addTag, removeTag } = useSettings(userId);
   const { sets, addSet, updateSet, removeSet } = useSets(userId);
   const { links, addLink, removeLink, replaceLinks } = useCardLinks(userId);
@@ -345,10 +345,18 @@ export default function App() {
     showToast(`${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} zugewiesen`, 'success');
   }, [updateCard, showToast]);
 
-  const handleBulkDelete = useCallback((cardIds: string[]) => {
-    cardIds.forEach(id => removeCard(id));
-    showToast(`${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} gelöscht`, 'info');
-  }, [removeCard, showToast]);
+  const handleBulkDelete = useCallback(async (cardIds: string[]) => {
+    if (cardIds.length === 0) return;
+    const { ok, deleted, expected } = await bulkRemove(cardIds);
+    if (ok) {
+      showToast(`${deleted} Karte${deleted !== 1 ? 'n' : ''} gelöscht`, 'info');
+    } else {
+      showToast(
+        `Nur ${deleted} von ${expected} Karten konnten gelöscht werden — bitte erneut versuchen.`,
+        'error',
+      );
+    }
+  }, [bulkRemove, showToast]);
 
   // Bulk set/unset blacklist (Parkiert) flag. Parkierte Karten sind aus
   // allen Lern-Pools (Daily Plan, Lernen, Prüfungsmodus, MC) ausgeschlossen,

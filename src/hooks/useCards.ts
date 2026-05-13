@@ -349,6 +349,58 @@ export function useCards(userId: string | null) {
     });
   }, [userId]);
 
+  // Bulk-delete with chunked .in() queries. Replaces the previous pattern of
+  // firing N individual removeCard() calls — at scale (>500) Supabase would
+  // rate-limit/drop some of the parallel requests silently, leaving "phantom"
+  // cards that reappeared on reload. Now: one query per chunk, awaited, with
+  // an actual server-side count check at the end so callers can react to
+  // partial failures.
+  const bulkRemove = useCallback(async (cardIds: string[]): Promise<{ ok: boolean; deleted: number; expected: number }> => {
+    if (!userId || cardIds.length === 0) return { ok: true, deleted: 0, expected: 0 };
+    const ids = Array.from(new Set(cardIds));
+    // Optimistic local removal so the UI feels instant.
+    setCards(prev => prev.filter(c => !ids.includes(c.id)));
+
+    const CHUNK = 100;
+    const MAX_ATTEMPTS = 3;
+    let allOk = true;
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK);
+      let chunkOk = false;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        const { error } = await supabase
+          .from('cards').delete().in('id', slice).eq('user_id', userId);
+        if (!error) { chunkOk = true; break; }
+        console.warn(`[bulkRemove] chunk failed (size ${slice.length}, attempt ${attempt}):`, error.message);
+        if (attempt < MAX_ATTEMPTS) await new Promise(r => setTimeout(r, 300 * attempt));
+      }
+      if (!chunkOk) allOk = false;
+    }
+
+    // Verify — query the count of any remaining rows in the set we tried to delete.
+    // If anything is left, restore them locally so state ↔ DB stay consistent.
+    let stillPresent = 0;
+    {
+      // Supabase's PostgREST .in() has a URL length limit (~1KB). Verify in chunks too.
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const slice = ids.slice(i, i + CHUNK);
+        const { count } = await supabase
+          .from('cards').select('id', { count: 'exact', head: true })
+          .in('id', slice).eq('user_id', userId);
+        stillPresent += count ?? 0;
+      }
+    }
+    if (stillPresent > 0) {
+      console.error(`[bulkRemove] ${stillPresent}/${ids.length} cards still present after delete`);
+      // Re-fetch full list so phantom rows show up in the UI again rather than
+      // creating a false "looks deleted" state.
+      await refresh();
+      allOk = false;
+    }
+
+    return { ok: allOk, deleted: ids.length - stillPresent, expected: ids.length };
+  }, [userId]);
+
   const rateCard = useCallback((id: string, rating: RatingValue, examDate?: string) => {
     if (!userId) return;
     const card = cardsRef.current.find(c => c.id === id);
@@ -420,5 +472,5 @@ export function useCards(userId: string | null) {
     return { ok: !failedChunk && saved >= expected, saved, expected };
   }, [userId]);
 
-  return { cards, loading, loadError, refresh, addCard, updateCard, bulkUpdate, removeCard, rateCard, importCards };
+  return { cards, loading, loadError, refresh, addCard, updateCard, bulkUpdate, removeCard, bulkRemove, rateCard, importCards };
 }

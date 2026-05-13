@@ -7,6 +7,35 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-13 — Bulk-Delete: 1029 parallele Requests → einzige chunked Query
+
+**Symptom:** Bei großen Selections (z.B. „alle 1029 löschen") blieben
+nach dem Klick auf Löschen regelmäßig 100–300 Karten übrig. User mussten
+den Vorgang 2–3 mal wiederholen bis es wirklich leer war. Lokal war die
+UI sofort leer (Optimistic Update) — aber beim nächsten Reload kamen
+die Karten aus der DB zurück.
+
+**Ursache:** `handleBulkDelete` lief `cardIds.forEach(id => removeCard(id))`.
+`removeCard` ist fire-and-forget (kein await), feuerte also 1029
+parallele HTTP-Requests gegen Supabase. PostgREST/Connection-Pool
+rate-limited einen Teil davon → die schlugen still mit Errors fehl, die
+nur in der Console landeten. Der lokale State-Filter klappte aber für
+alle 1029, daher das Phantom-Verhalten.
+
+**Fix:** Neue `bulkRemove`-Funktion in `useCards`:
+- `.in('id', chunk)`-Delete pro 100er-Chunk, mit `await`
+- Retry-Ladder (3 Versuche pro Chunk mit Backoff)
+- Server-side Count-Verify am Ende — falls Reste übrig sind, wird
+  `refresh()` gerufen, damit die UI nicht lügt
+- Rückgabe `{ ok, deleted, expected }` für den Caller, ehrlicher Toast
+  („Nur X von Y gelöscht — erneut versuchen") wenn nicht alles geklappt hat
+
+`handleBulkDelete` ruft jetzt `bulkRemove` und ist `async`.
+
+**Files:** `src/hooks/useCards.ts`, `src/App.tsx`.
+
+---
+
 ## 2026-05-13 — Import-Bug: priority, flagged, setId, mcQuestions, blacklisted gingen verloren
 
 **Symptom:** Ein User hat Sebis JSON-Export importiert. Alle 1037 Karten

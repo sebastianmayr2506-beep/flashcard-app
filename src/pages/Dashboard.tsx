@@ -24,7 +24,13 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
   // (Fällig heute, Tagesziel, Beherrscht, Klassiker, …) operates on this
   // narrowed subset. With focus='all' this is just `cards`, no change.
   const focusMode: FocusMode = settings.focusMode ?? 'all';
-  const focusedCards = useMemo(() => applyFocus(cards, focusMode), [cards, focusMode]);
+  // Also exclude parkiert (blacklisted) cards — they're explicitly opted out
+  // of all study pools. Counts/metrics below thus reflect what's actually
+  // available for study, not the raw library size.
+  const focusedCards = useMemo(
+    () => applyFocus(cards, focusMode).filter(c => !c.blacklisted),
+    [cards, focusMode],
+  );
   const isFocused = focusMode !== 'all';
 
   // Reconciled count via the dedicated firstStudiedAt field — see getNewCardsDoneToday.

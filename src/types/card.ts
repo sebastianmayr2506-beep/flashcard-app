@@ -37,6 +37,12 @@ export interface Flashcard {
   customTags: string[];
   setId?: string;
   flagged?: boolean;
+  // "Parkiert" — explicitly excluded from all study pickers (daily plan,
+  // Lernen, Prüfungsmodus, MC-Session). Card stays in Library with a
+  // visual badge so the user can manage it; they can unparken anytime.
+  // Different from `flagged` (which means "had trouble with it lately")
+  // and different from priority C (which still shows up if you pick C).
+  blacklisted?: boolean;
   // Priority for exam-prep focus mode.
   //   'A' = must know (must master before exam)
   //   'B' = should know

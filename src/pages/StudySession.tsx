@@ -206,7 +206,9 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
 
   // Cards available for setup
   const availableCards = useMemo(() => {
-    let result = preFilteredCards ?? cards;
+    // Parkiert (blacklisted) cards are excluded from all study pools — they
+    // stay in Library but won't appear here.
+    let result = (preFilteredCards ?? cards).filter(c => !c.blacklisted);
     if (!preFilteredCards) {
       if (filterSubject) result = result.filter(c => c.subjects?.includes(filterSubject));
       if (filterExaminers.length > 0) {
@@ -410,6 +412,21 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     setIsFlipped(false);
     setRatings({ nochmal: 0, schwer: 0, gut: 0, einfach: 0 });
     setSessionState('studying');
+  };
+
+  const handleParkCurrent = () => {
+    const card = sessionCards[currentIdx];
+    // Persist the parked flag — useCards will subsequently filter it from study pools.
+    onUpdateCard(card.id, { blacklisted: true });
+    setIsFlipped(false);
+    // Remove from session queue so we don't show it again this session.
+    const next = sessionCards.filter((_, i) => i !== currentIdx);
+    if (next.length === 0) {
+      setSessionState('summary');
+    } else {
+      setSessionCards(next);
+      if (currentIdx >= next.length) setCurrentIdx(next.length - 1);
+    }
   };
 
   const handleDeleteCurrent = () => {
@@ -1653,6 +1670,13 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                       </button>
                     );
                   })()}
+                  <button
+                    onClick={e => { e.stopPropagation(); handleParkCurrent(); }}
+                    title="Parkieren — Karte aus allen Lern-Pools ausschließen (bleibt in Bibliothek)"
+                    className="text-base px-2 py-1.5 rounded-lg border border-transparent text-[#6b7280] hover:text-amber-300 hover:bg-[#252840] transition-colors"
+                  >
+                    🚫
+                  </button>
                   {onSplitCard && (
                     <button
                       onClick={e => { e.stopPropagation(); handleSplitCurrent(); }}

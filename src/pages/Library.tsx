@@ -22,6 +22,8 @@ interface Props {
   onBulkAssignSet: (cardIds: string[], setId: string | undefined) => void;
   onBulkCreateAndAssignSet: (cardIds: string[], setName: string) => void;
   onBulkDelete: (cardIds: string[]) => void;
+  onBulkSetBlacklist: (cardIds: string[], blacklisted: boolean) => void;
+  onUpdateCard: (id: string, patch: Partial<Flashcard>) => void;
   onMergeCards: (cardIds: string[]) => void;
   onSplitCard: (cardId: string) => void;
   onGenerateMC: (cardIds: string[]) => Promise<void>;
@@ -31,7 +33,7 @@ interface Props {
 
 type ViewMode = 'grid' | 'list';
 
-export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onMergeCards, onSplitCard, onGenerateMC, onNavigate, initialSrsFilter }: Props) {
+export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onBulkSetBlacklist, onUpdateCard, onMergeCards, onSplitCard, onGenerateMC, onNavigate, initialSrsFilter }: Props) {
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminers, setFilterExaminers] = useState<Set<string>>(new Set());
@@ -52,6 +54,10 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
   const [filterTag, setFilterTag] = useState('');
   const [filterPriority, setFilterPriority] = useState<'' | 'A' | 'B' | 'C' | 'none'>('');
   const [filterMC, setFilterMC] = useState<'' | 'yes' | 'no'>('');
+  // 'show' = default, show all incl. parked with badge
+  // 'only' = only parked cards (for managing them)
+  // 'hide' = hide parked entirely (sometimes useful for clean browsing)
+  const [filterBlacklist, setFilterBlacklist] = useState<'show' | 'only' | 'hide'>('show');
   const [filterSRS, setFilterSRS] = useState<SRSStatus | ''>(initialSrsFilter as SRSStatus | '' ?? '');
   const [showSrsFilterBanner, setShowSrsFilterBanner] = useState(!!initialSrsFilter);
   const [filterSet, setFilterSet] = useState('');
@@ -114,6 +120,8 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
       }
       if (filterMC === 'yes' && (!c.mcQuestions || c.mcQuestions.length === 0)) return false;
       if (filterMC === 'no'  && c.mcQuestions && c.mcQuestions.length > 0)      return false;
+      if (filterBlacklist === 'hide' && c.blacklisted) return false;
+      if (filterBlacklist === 'only' && !c.blacklisted) return false;
       if (filterSRS && getSRSStatus(c) !== filterSRS) return false;
       if (filterSet && c.setId !== filterSet) return false;
       if (filterCatalog && !c.askedInCatalogs?.some(v => v.includes(filterCatalog))) return false;
@@ -126,13 +134,14 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
       result.sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0));
     }
     return result;
-  }, [cards, search, filterSubject, filterExaminers, filterDifficulty, filterTag, filterPriority, filterMC, filterSRS, filterSet, filterCatalog, filterDue, filterFlagged, filterKlassiker, sortBy]);
+  }, [cards, search, filterSubject, filterExaminers, filterDifficulty, filterTag, filterPriority, filterMC, filterBlacklist, filterSRS, filterSet, filterCatalog, filterDue, filterFlagged, filterKlassiker, sortBy]);
 
-  const hasFilters = search || filterSubject || filterExaminers.size > 0 || filterDifficulty || filterTag || filterPriority || filterMC || filterSRS || filterSet || filterCatalog || filterDue || filterFlagged || filterKlassiker || sortBy !== 'default';
+  const hasFilters = search || filterSubject || filterExaminers.size > 0 || filterDifficulty || filterTag || filterPriority || filterMC || filterBlacklist !== 'show' || filterSRS || filterSet || filterCatalog || filterDue || filterFlagged || filterKlassiker || sortBy !== 'default';
 
   const clearFilters = () => {
     setSearch(''); setFilterSubject(''); setFilterExaminers(new Set());
     setFilterDifficulty(''); setFilterTag(''); setFilterPriority(''); setFilterMC('');
+    setFilterBlacklist('show');
     setFilterSRS(''); setFilterSet(''); setFilterCatalog('');
     setFilterDue(false); setFilterFlagged(false);
     setFilterKlassiker(false); setSortBy('default');
@@ -185,6 +194,15 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
 
   const selectedCount = selectedIds.size;
   const allFilteredSelected = filtered.length > 0 && filtered.every(c => selectedIds.has(c.id));
+
+  // If every selected card is already parked, the bulk button unparks instead.
+  const allSelectedBlacklisted = selectedCount > 0 && cards.every(c => !selectedIds.has(c.id) || c.blacklisted);
+
+  const handleBulkParken = () => {
+    if (selectedCount === 0) return;
+    onBulkSetBlacklist(Array.from(selectedIds), !allSelectedBlacklisted);
+    exitSelectionMode();
+  };
 
   return (
     <div className="fade-in">
@@ -272,6 +290,16 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
               title="MC-Fragen via KI für die ausgewählten Karten generieren und auf den Karten speichern"
             >
               🎯 MC generieren
+            </button>
+            <button
+              onClick={handleBulkParken}
+              disabled={selectedCount === 0}
+              className="px-4 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 disabled:opacity-40 disabled:cursor-not-allowed text-amber-300 text-sm font-semibold transition-colors shrink-0"
+              title={allSelectedBlacklisted
+                ? 'Karten wieder zum Lernen aktivieren'
+                : 'Karten vom Lernen ausschließen (bleiben in Bibliothek)'}
+            >
+              {allSelectedBlacklisted ? '✓ Aktivieren' : '🚫 Parkieren'}
             </button>
             <button
               onClick={handleBulkDelete}
@@ -448,6 +476,20 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
             <option value="yes">✓ Mit MC</option>
             <option value="no">✗ Ohne MC</option>
           </select>
+          <select
+            value={filterBlacklist}
+            onChange={e => setFilterBlacklist(e.target.value as 'show' | 'only' | 'hide')}
+            className={`w-full sm:w-auto text-sm rounded-xl px-3 py-2 focus:outline-none appearance-none cursor-pointer border ${
+              filterBlacklist !== 'show'
+                ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                : 'bg-[#252840] border-[#2d3148] text-white focus:border-indigo-500'
+            }`}
+            title="Parkierte Karten (vom Lernen ausgeschlossen)"
+          >
+            <option value="show">Parkiert: alle</option>
+            <option value="only">🚫 Nur parkierte</option>
+            <option value="hide">Parkierte ausblenden</option>
+          </select>
           {allTags.length > 0 && <Select value={filterTag} onChange={setFilterTag} placeholder="Tag" options={allTags} />}
           <Select value={filterSRS} onChange={v => setFilterSRS(v as SRSStatus | '')} placeholder="SRS-Status"
             options={['neu','lernend','wiederholen','beherrscht']}
@@ -590,6 +632,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
               onToggleSelect={() => toggleSelection(card.id)}
               onEdit={onEdit} onDelete={onDelete} onSplit={onSplitCard}
               onPreview={setPreviewCard}
+              onToggleBlacklist={(c) => onUpdateCard(c.id, { blacklisted: !c.blacklisted })}
             />
           ))}
         </div>
@@ -604,6 +647,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
               onToggleSelect={() => toggleSelection(card.id)}
               onEdit={onEdit} onDelete={onDelete} onSplit={onSplitCard}
               onPreview={setPreviewCard}
+              onToggleBlacklist={(c) => onUpdateCard(c.id, { blacklisted: !c.blacklisted })}
             />
           ))}
         </div>
@@ -670,6 +714,7 @@ interface CardItemProps {
   onDelete: (id: string) => void;
   onSplit: (id: string) => void;
   onPreview: (c: Flashcard) => void;
+  onToggleBlacklist: (c: Flashcard) => void;
 }
 
 function flagTooltip(cardId: string, flagAttempts: FlagAttempt[], autoUnflagEnabled: boolean): string {
@@ -682,7 +727,7 @@ function flagTooltip(cardId: string, flagAttempts: FlagAttempt[], autoUnflagEnab
   return '🚩 Flagge wird bald automatisch entfernt';
 }
 
-function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete, onSplit, onPreview }: CardItemProps) {
+function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete, onSplit, onPreview, onToggleBlacklist }: CardItemProps) {
   const status = getSRSStatus(card);
   const due = isDueToday(card);
   const linkCount = links.filter(l => l.cardId === card.id || l.linkedCardId === card.id).length;
@@ -698,7 +743,8 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
       onClick={handleClick}
       className={`bg-[#1e2130] border rounded-2xl p-4 flex flex-col gap-3 transition-all duration-200 group relative
         ${selectionMode ? 'cursor-pointer' : ''}
-        ${selected ? 'border-indigo-500 ring-1 ring-indigo-500/50' : due ? 'border-indigo-500/30 hover:border-indigo-500/40' : 'border-[#2d3148] hover:border-indigo-500/40'}`}
+        ${card.blacklisted ? 'opacity-60' : ''}
+        ${selected ? 'border-indigo-500 ring-1 ring-indigo-500/50' : card.blacklisted ? 'border-amber-500/30 hover:border-amber-500/50' : due ? 'border-indigo-500/30 hover:border-indigo-500/40' : 'border-[#2d3148] hover:border-indigo-500/40'}`}
     >
       {selectionMode && (
         <div className={`absolute top-3 right-3 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors
@@ -721,6 +767,11 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
         {card.mcQuestions && card.mcQuestions.length > 0 && (
           <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 font-semibold" title={`${card.mcQuestions.length} MC-Fragen verfügbar`}>
             🎯 {card.mcQuestions.length}
+          </span>
+        )}
+        {card.blacklisted && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 font-semibold" title="Parkiert — vom Lernen ausgeschlossen">
+            🚫 Parkiert
           </span>
         )}
         <SRSBadge status={status} />
@@ -765,6 +816,17 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
             ✂️
           </button>
           <button
+            onClick={e => { e.stopPropagation(); onToggleBlacklist(card); }}
+            className={`text-xs py-1.5 px-2 rounded-lg border transition-colors ${
+              card.blacklisted
+                ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40'
+                : 'bg-[#252840] hover:bg-amber-500/20 text-[#9ca3af] hover:text-amber-300 border-[#2d3148] hover:border-amber-500/30'
+            }`}
+            title={card.blacklisted ? 'Wieder aktivieren' : 'Parkieren (vom Lernen ausschließen)'}
+          >
+            {card.blacklisted ? '✓' : '🚫'}
+          </button>
+          <button
             onClick={e => { e.stopPropagation(); exportJSON([card], `karte_${card.id.slice(0,8)}.json`); }}
             className="text-xs py-1.5 px-2 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] hover:border-indigo-500/30 transition-colors"
             title="JSON exportieren"
@@ -783,7 +845,7 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
   );
 }
 
-function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete, onSplit, onPreview }: CardItemProps) {
+function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete, onSplit, onPreview, onToggleBlacklist }: CardItemProps) {
   const status = getSRSStatus(card);
   const due = isDueToday(card);
   const linkCount = links.filter(l => l.cardId === card.id || l.linkedCardId === card.id).length;
@@ -792,7 +854,8 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
       onClick={() => { if (selectionMode) onToggleSelect(); else onPreview(card); }}
       className={`bg-[#1e2130] border rounded-xl px-4 py-3 flex items-center gap-3 transition-all group cursor-pointer
         ${selectionMode ? 'cursor-pointer' : ''}
-        ${selected ? 'border-indigo-500 ring-1 ring-indigo-500/50' : due ? 'border-indigo-500/30 hover:border-indigo-500/40' : 'border-[#2d3148] hover:border-indigo-500/40'}`}
+        ${card.blacklisted ? 'opacity-60' : ''}
+        ${selected ? 'border-indigo-500 ring-1 ring-indigo-500/50' : card.blacklisted ? 'border-amber-500/30 hover:border-amber-500/50' : due ? 'border-indigo-500/30 hover:border-indigo-500/40' : 'border-[#2d3148] hover:border-indigo-500/40'}`}
     >
       {selectionMode && (
         <div className={`shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors
@@ -816,6 +879,11 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
             🎯 {card.mcQuestions.length}
           </span>
         )}
+        {card.blacklisted && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 font-semibold" title="Parkiert — vom Lernen ausgeschlossen">
+            🚫 Parkiert
+          </span>
+        )}
         <SRSBadge status={status} />
         {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
         {card.flagged && <span title={flagTooltip(card.id, flagAttempts, autoUnflagEnabled)} className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 cursor-help">🚩</span>}
@@ -831,6 +899,17 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
           <button onClick={e => { e.stopPropagation(); onPreview(card); }} className="text-xs px-2 py-1.5 rounded-lg bg-[#252840] hover:bg-purple-500/20 text-[#9ca3af] hover:text-purple-400 border border-[#2d3148] transition-colors" title="Vorschau">👁</button>
           <button onClick={e => { e.stopPropagation(); onEdit(card); }} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] transition-colors">Bearbeiten</button>
           <button onClick={e => { e.stopPropagation(); onSplit(card.id); }} className="text-xs px-2 py-1.5 rounded-lg bg-[#252840] hover:bg-violet-500/20 text-[#9ca3af] hover:text-violet-400 border border-[#2d3148] transition-colors" title="Mit KI in mehrere Karten trennen">✂️</button>
+          <button
+            onClick={e => { e.stopPropagation(); onToggleBlacklist(card); }}
+            className={`text-xs px-2 py-1.5 rounded-lg border transition-colors ${
+              card.blacklisted
+                ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40'
+                : 'bg-[#252840] hover:bg-amber-500/20 text-[#9ca3af] hover:text-amber-300 border-[#2d3148]'
+            }`}
+            title={card.blacklisted ? 'Wieder aktivieren' : 'Parkieren (vom Lernen ausschließen)'}
+          >
+            {card.blacklisted ? '✓' : '🚫'}
+          </button>
           <button onClick={e => { e.stopPropagation(); exportJSON([card], `karte_${card.id.slice(0,8)}.json`); }} className="text-xs px-2 py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] transition-colors" title="JSON exportieren">📦</button>
           <button onClick={e => { e.stopPropagation(); onDelete(card.id); }} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-red-500/20 text-[#9ca3af] hover:text-red-400 border border-[#2d3148] transition-colors">Löschen</button>
         </div>
@@ -933,6 +1012,11 @@ function CardPreviewModal({ card, onClose, onEdit }: { card: Flashcard; onClose:
         {card.mcQuestions && card.mcQuestions.length > 0 && (
           <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 font-semibold" title={`${card.mcQuestions.length} MC-Fragen verfügbar`}>
             🎯 {card.mcQuestions.length}
+          </span>
+        )}
+        {card.blacklisted && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 font-semibold" title="Parkiert — vom Lernen ausgeschlossen">
+            🚫 Parkiert
           </span>
         )}
           {card.customTags.map(t => <span key={t} className="text-xs text-[#6b7280]">#{t}</span>)}

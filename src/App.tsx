@@ -189,7 +189,9 @@ export default function App() {
 
     // Respect the active Focus-Modus so Tagesplan-Modal + "Jetzt lernen"
     // mirror the Dashboard's narrowed view. With focus='all' this is a no-op.
-    const focused = applyFocus(cards, settings.focusMode ?? 'all');
+    // Also exclude parkiert (blacklisted) cards — those are explicitly opted
+    // out of all study pools.
+    const focused = applyFocus(cards, settings.focusMode ?? 'all').filter(c => !c.blacklisted);
 
     // Reconciled via firstStudiedAt — same source of truth Dashboard uses,
     // so the modal's "Neu" tile and the Dashboard's "Neu heute" can never diverge.
@@ -346,6 +348,21 @@ export default function App() {
     cardIds.forEach(id => removeCard(id));
     showToast(`${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} gelöscht`, 'info');
   }, [removeCard, showToast]);
+
+  // Bulk set/unset blacklist (Parkiert) flag. Parkierte Karten sind aus
+  // allen Lern-Pools (Daily Plan, Lernen, Prüfungsmodus, MC) ausgeschlossen,
+  // bleiben aber in der Bibliothek sichtbar mit Badge.
+  const handleBulkSetBlacklist = useCallback(async (cardIds: string[], blacklisted: boolean) => {
+    if (cardIds.length === 0) return;
+    const patches = cardIds.map(id => ({ id, patch: { blacklisted } as Partial<Flashcard> }));
+    await bulkUpdate(patches);
+    showToast(
+      blacklisted
+        ? `🚫 ${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} parkiert`
+        : `✓ ${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} aktiviert`,
+      'success',
+    );
+  }, [bulkUpdate, showToast]);
 
   // Auto-classify all cards into A/B/C using the priority heuristic.
   // `overwrite=false` (default): preserve any user-set priorities, only fill
@@ -899,6 +916,8 @@ export default function App() {
             onBulkAssignSet={handleBulkAssignSet}
             onBulkCreateAndAssignSet={handleBulkCreateAndAssignSet}
             onBulkDelete={handleBulkDelete}
+            onBulkSetBlacklist={handleBulkSetBlacklist}
+            onUpdateCard={updateCard}
             onMergeCards={handleMergeCards}
             onSplitCard={handleSplitCard}
             onGenerateMC={handleGenerateMCForCards}

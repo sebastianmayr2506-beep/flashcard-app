@@ -78,6 +78,7 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
   const [tagsInput, setTagsInput] = useState(card?.customTags.join(', ') ?? '');
   const [selectedSetId, setSelectedSetId] = useState<string>(card?.setId ?? '');
   const [flagged, setFlagged] = useState<boolean>(card?.flagged ?? false);
+  const [blacklisted, setBlacklisted] = useState<boolean>(card?.blacklisted ?? false);
   // SRS status override (only used when editing an existing card and the user
   // actively picks a different stage than the current one). Saving without
   // changing this leaves the SRS fields completely untouched.
@@ -125,6 +126,7 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
       setTagsInput(card.customTags.join(', '));
       setSelectedSetId(card.setId ?? '');
       setFlagged(card.flagged ?? false);
+      setBlacklisted(card.blacklisted ?? false);
       setSrsStatus(getSRSStatus(card));
     }
   }, [card]);
@@ -153,6 +155,7 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
       subjects, examiners, difficulty, customTags,
       setId: selectedSetId || undefined,
       flagged,
+      blacklisted,
     }, srsOverride);
   };
 
@@ -423,17 +426,31 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
 
           <div>
             <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-1.5">Flaggen</label>
-            <button
-              type="button"
-              onClick={() => setFlagged(f => !f)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all ${
-                flagged
-                  ? 'bg-red-500/15 border-red-500/40 text-red-400'
-                  : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'
-              }`}
-            >
-              🚩 {flagged ? 'Geflaggt (zum Entfernen klicken)' : 'Karte flaggen'}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setFlagged(f => !f)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all ${
+                  flagged
+                    ? 'bg-red-500/15 border-red-500/40 text-red-400'
+                    : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'
+                }`}
+              >
+                🚩 {flagged ? 'Geflaggt (zum Entfernen klicken)' : 'Karte flaggen'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setBlacklisted(b => !b)}
+                title="Parkierte Karten werden aus allen Lern-Pools (Daily Plan, Lernen, Prüfungsmodus, MC) ausgeschlossen, bleiben aber in der Bibliothek sichtbar."
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all ${
+                  blacklisted
+                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                    : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'
+                }`}
+              >
+                🚫 {blacklisted ? 'Parkiert (zum Aktivieren klicken)' : 'Parkieren'}
+              </button>
+            </div>
           </div>
 
           {card && (

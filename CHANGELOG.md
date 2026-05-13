@@ -7,6 +7,57 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-13 — Parkieren / Blacklist: Karten temporär vom Lernen ausschließen
+
+**What:** Neues Feld `blacklisted: boolean` auf Karten. Parkierte Karten
+sind aus *allen* Lern-Pools ausgeschlossen (Daily Plan, "Jetzt lernen",
+Prüfungsmodus, MC-Modus, gefilterte Library-Sessions), bleiben aber in
+der Bibliothek sichtbar mit Badge — damit der User sie verwalten kann.
+Anders als Löschen: SRS, MC-Fragen und sonstige Statistiken bleiben
+erhalten; "Aktivieren" stellt die Karte ohne Datenverlust zurück.
+
+**Use-cases (User):**
+- "Frage kommt sicher nicht im Auswahlkatalog dran"
+- "Will ich gerade nicht lernen, später wieder rein"
+
+**Wo setzbar:**
+1. **Library:**
+   - Filter-Dropdown "Parkiert: alle / Nur parkierte / Parkierte ausblenden"
+   - Pro Karte ein 🚫-Button in der Action-Row (Grid + List View)
+   - Im Auswählen-Modus Bulk-Button "🚫 Parkieren" / "✓ Aktivieren"
+     (toggelt abhängig davon, ob alle Selected schon parkiert sind)
+   - Parkierte Karten haben `opacity-60` + amber Border + Badge
+2. **CardEditor:** Toggle-Button neben "Karte flaggen" (gelb wenn aktiv)
+3. **StudySession:** 🚫-Icon in der Action-Row der Antwort-Seite —
+   parkiert die aktuelle Karte und entfernt sie sofort aus
+   `sessionCards`; nächste Karte slidet rein, kein Rating wird vergeben.
+
+**Pool-Filter:** Eine zentrale `.filter(c => !c.blacklisted)`-Klausel
+wurde an allen Entry-Points eingefügt:
+- `App.tsx handleStartDailySession` (vor `applyFocus`)
+- `Dashboard.focusedCards`
+- `StudySession.availableCards` (preFilteredCards UND cards-Pool)
+- `ExamMode.candidateCards`
+
+**Storage:** Supabase-Migration `supabase_migration_blacklisted.sql`
+fügt `boolean blacklisted DEFAULT false` zur `cards`-Tabelle hinzu.
+`useCards.ts fromDb/toDb` mappt das Feld.
+
+**Files:**
+- `src/types/card.ts` — `blacklisted?: boolean` auf Flashcard
+- `src/hooks/useCards.ts` — fromDb/toDb mapping
+- `supabase_migration_blacklisted.sql` — neue Migration
+- `src/App.tsx` — `handleBulkSetBlacklist`, Library-Props erweitert,
+  Focus-Filter im DailyPlan
+- `src/pages/Library.tsx` — Filter-Dropdown, Bulk-Button, Badge,
+  per-card 🚫-Toggle, Dimming/Border für parkierte Karten
+- `src/pages/CardEditor.tsx` — Parkieren-Toggle neben Flag-Toggle
+- `src/pages/StudySession.tsx` — `handleParkCurrent` + 🚫-Button
+- `src/pages/Dashboard.tsx` — focusedCards filter
+- `src/pages/ExamMode.tsx` — candidateCards filter
+
+---
+
 ## 2026-05-13 — Phase 2: MC-Lernmodus (Multiple-Choice study session)
 
 **What:** New session mode in StudySession setup. Beside the existing

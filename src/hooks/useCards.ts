@@ -34,6 +34,7 @@ function fromDb(row: Record<string, any>): Flashcard {
     priority: (row.priority === 'A' || row.priority === 'B' || row.priority === 'C') ? row.priority : undefined,
     mcQuestions: Array.isArray(row.mc_questions) ? row.mc_questions as Flashcard['mcQuestions'] : undefined,
     mcQuestionsGeneratedAt: typeof row.mc_questions_generated_at === 'string' ? row.mc_questions_generated_at : undefined,
+    blacklisted: !!row.blacklisted,
   };
 }
 
@@ -65,6 +66,7 @@ function toDb(card: Flashcard, userId: string) {
     priority: card.priority ?? null,
     mc_questions: card.mcQuestions ?? null,
     mc_questions_generated_at: card.mcQuestionsGeneratedAt ?? null,
+    blacklisted: card.blacklisted ?? false,
   };
 }
 

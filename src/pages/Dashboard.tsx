@@ -56,12 +56,19 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
   // entry in CHANGELOG.
   const ratedToday = getCardsRatedToday(focusedCards);
 
+  // "Aktive" Karten = alle ohne Parkiert-Flag. Parkierte werden nirgends
+  // mehr mitberechnet (Total, Fokus-Anteil, Sidebar-Badge).
+  const activeCardsCount = useMemo(
+    () => cards.filter(c => !c.blacklisted).length,
+    [cards],
+  );
+
   const stats = useMemo(() => {
     const due = focusedCards.filter(isDueToday);
     const srsGroups = { neu: 0, lernend: 0, wiederholen: 0, beherrscht: 0 };
     focusedCards.forEach(c => srsGroups[getSRSStatus(c)]++);
-    return { due, srsGroups, total: focusedCards.length, grandTotal: cards.length };
-  }, [focusedCards, cards.length]);
+    return { due, srsGroups, total: focusedCards.length, grandTotal: activeCardsCount };
+  }, [focusedCards, activeCardsCount]);
 
   const topKlassiker = useMemo(() =>
     focusedCards
@@ -130,7 +137,7 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
             focusMode={focusMode}
             onSetFocusMode={onSetFocusMode}
             focusedCount={focusedCards.length}
-            totalCount={cards.length}
+            totalCount={activeCardsCount}
             isFocused={isFocused}
           />
 

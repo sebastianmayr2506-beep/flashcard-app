@@ -133,7 +133,8 @@ export default function App() {
   // Optional callback fired after split is confirmed (used by StudySession)
   const [splitAfterCallback, setSplitAfterCallback] = useState<((newCardIds: string[]) => void) | null>(null);
 
-  const dueCount = cards.filter(isDueToday).length;
+  // Parkierte Karten zählen nirgends mit — auch nicht im Sidebar-Badge.
+  const dueCount = cards.filter(c => !c.blacklisted && isDueToday(c)).length;
 
   const navigate = useCallback((target: string) => {
     if (target !== 'edit-card') setEditingCard(undefined);

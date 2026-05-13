@@ -7,6 +7,22 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-13 — Parkieren: Sidebar-Badge + Dashboard-Total schließen parkierte aus
+
+**What:** Follow-up auf das Parkieren-Feature. Parkierte Karten wurden
+zwar aus allen Lern-Pools entfernt, aber `dueCount` (rotes Badge in der
+Sidebar) und `totalCount`/`grandTotal` im Dashboard zählten sie noch
+mit — d.h. der User sah "5 fällig", konnte sie aber nirgends lernen.
+
+**Fix:**
+- `App.tsx dueCount` → `cards.filter(c => !c.blacklisted && isDueToday(c))`
+- `Dashboard.tsx` neuer `activeCardsCount` memo, ersetzt `cards.length`
+  als `grandTotal` und im `FocusToggleInline.totalCount`-Prop.
+
+**Files:** `src/App.tsx`, `src/pages/Dashboard.tsx`.
+
+---
+
 ## 2026-05-13 — Parkieren / Blacklist: Karten temporär vom Lernen ausschließen
 
 **What:** Neues Feld `blacklisted: boolean` auf Karten. Parkierte Karten

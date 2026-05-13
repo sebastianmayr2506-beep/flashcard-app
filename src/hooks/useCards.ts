@@ -32,6 +32,8 @@ function fromDb(row: Record<string, any>): Flashcard {
     nextReviewDate: row.next_review_date,
     firstStudiedAt: row.first_studied_at ?? undefined,
     priority: (row.priority === 'A' || row.priority === 'B' || row.priority === 'C') ? row.priority : undefined,
+    mcQuestions: Array.isArray(row.mc_questions) ? row.mc_questions as Flashcard['mcQuestions'] : undefined,
+    mcQuestionsGeneratedAt: typeof row.mc_questions_generated_at === 'string' ? row.mc_questions_generated_at : undefined,
   };
 }
 
@@ -61,6 +63,8 @@ function toDb(card: Flashcard, userId: string) {
     next_review_date: card.nextReviewDate,
     first_studied_at: card.firstStudiedAt ?? null,
     priority: card.priority ?? null,
+    mc_questions: card.mcQuestions ?? null,
+    mc_questions_generated_at: card.mcQuestionsGeneratedAt ?? null,
   };
 }
 

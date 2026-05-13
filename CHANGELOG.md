@@ -7,6 +7,44 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-13 — Persistent MC questions (Phase 1: storage + bulk generation)
+
+**Why:** The existing inline "MC Tipp generieren"-button regenerates 3
+fresh questions on every card visit. Wasteful (repeat API calls) and
+no way to build a "MC-Lernmodus" on top because the questions aren't
+durable. This commit lays the foundation: each card can carry its own
+adaptive set of 3–7 MC questions, generated once and persisted.
+
+**What ships:**
+- `mcQuestions` + `mcQuestionsGeneratedAt` fields on Flashcard
+- Supabase `cards.mc_questions` (jsonb) + `cards.mc_questions_generated_at`
+- `src/utils/persistentMC.ts` — adaptive count (3 for <500 chars,
+  5 for <1500, 7 for longer) + `generateMCBatch()` with concurrency=5
+  parallel generation, progress callback, error collection
+- Library: new bulk-action **"🎯 MC generieren"** for selected cards,
+  new filter "MC-Status" (Mit MC / Ohne MC), badge **"🎯 N"** on cards
+  that have MC stored
+- Bulk progress overlay in App.tsx with live "X von Y" + per-card fail
+  count
+
+**Reuses:** Existing `generateMCHintBundle()` from geminiMCHint.ts —
+same Gemini→Groq fallback pipeline, same MCHintResult schema. Just
+adapted for higher counts and parallel batches.
+
+**Migration:** Run `supabase_migration_mc_questions.sql` in Supabase
+SQL Editor before deploy.
+
+**Phase 2 (next):** MC-Lernmodus session — toggle at "Jetzt lernen"
+between Karteikarten and MC-Modus, pre-flight check for missing MC,
+auto-generation prompt, dedicated MC-session UI with question-by-
+question flow.
+
+**Files:** `src/types/card.ts`, `src/hooks/useCards.ts`,
+`src/utils/persistentMC.ts` (new), `src/App.tsx`,
+`src/pages/Library.tsx`, `supabase_migration_mc_questions.sql` (new)
+
+---
+
 ## 2026-05-02 — Dashboard verschlankt + Dynamic Daily Goal
 
 **Why:** Dashboard war überladen (7+ Widgets), mit widersprüchlichen

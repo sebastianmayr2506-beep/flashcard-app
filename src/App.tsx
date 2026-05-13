@@ -18,6 +18,7 @@ import { extractParentLinks } from './utils/import';
 import { calculateDailyPlan, getCardsRatedToday, getNewCardsDoneToday } from './utils/dailyGoal';
 import { classifyAll, applyFocus, type FocusMode } from './utils/priority';
 import { normalizeAll, type NormalizationSummary } from './utils/normalizeStats';
+import { generateMCBatch } from './utils/persistentMC';
 
 import Sidebar from './components/Sidebar';
 import ToastContainer from './components/ToastContainer';
@@ -366,6 +367,48 @@ export default function App() {
 
   // Note: single-card priority changes go through the regular updateCard
   // path (used by PriorityPicker on card fronts). No special handler needed.
+
+  // ── Generate MC questions in bulk and persist them on the cards ──────────
+  // Used by Library bulk-action + future Pre-Flight check in MC-Modus.
+  const [mcGenProgress, setMcGenProgress] = useState<{ completed: number; total: number; failed: number } | null>(null);
+  const handleGenerateMCForCards = useCallback(async (cardIds: string[]): Promise<void> => {
+    const targets = cards.filter(c => cardIds.includes(c.id));
+    if (targets.length === 0) return;
+    const keys = {
+      gemini: settings.geminiApiKey,
+      anthropic: settings.anthropicApiKey,
+      groq: settings.groqApiKey,
+    };
+    if (!keys.gemini?.trim() && !keys.anthropic?.trim() && !keys.groq?.trim()) {
+      showToast('Kein AI-Schlüssel konfiguriert. Bitte in den Einstellungen hinterlegen.', 'error');
+      return;
+    }
+    setMcGenProgress({ completed: 0, total: targets.length, failed: 0 });
+    try {
+      const { results, errors } = await generateMCBatch(targets, keys, (p) => {
+        setMcGenProgress({ completed: p.completed, total: p.total, failed: p.failed });
+      });
+      // Persist via bulkUpdate
+      const now = new Date().toISOString();
+      const patches = Array.from(results.entries()).map(([id, questions]) => ({
+        id,
+        patch: { mcQuestions: questions, mcQuestionsGeneratedAt: now } as Partial<Flashcard>,
+      }));
+      if (patches.length > 0) await bulkUpdate(patches);
+      const okCount = results.size;
+      const failCount = errors.size;
+      showToast(
+        failCount === 0
+          ? `🎯 MC-Fragen für ${okCount} Karten generiert`
+          : `🎯 ${okCount} erfolgreich, ${failCount} fehlgeschlagen`,
+        failCount === 0 ? 'success' : 'info',
+      );
+    } catch (err) {
+      showToast(`MC-Generierung fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      setMcGenProgress(null);
+    }
+  }, [cards, settings.geminiApiKey, settings.anthropicApiKey, settings.groqApiKey, bulkUpdate, showToast]);
 
   // One-time data normalization: extracts catalog-year tags into the
   // dedicated stats fields, mirrors examiners, derives timesAsked/
@@ -847,6 +890,7 @@ export default function App() {
             onBulkDelete={handleBulkDelete}
             onMergeCards={handleMergeCards}
             onSplitCard={handleSplitCard}
+            onGenerateMC={handleGenerateMCForCards}
             onNavigate={navigate}
             initialSrsFilter={libraryInitialSrs}
           />
@@ -943,6 +987,33 @@ export default function App() {
             <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
             <p className="text-white font-semibold">KI analysiert Karte…</p>
             <p className="text-[#9ca3af] text-sm">Das dauert einen Moment</p>
+          </div>
+        </div>
+      )}
+
+      {/* MC bulk generation progress overlay */}
+      {mcGenProgress && (
+        <div className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4">
+          <div className="bg-[#1a1d27] border border-[#2d3148] rounded-2xl px-6 py-5 flex flex-col items-center gap-3 shadow-2xl w-full max-w-sm">
+            <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+            <p className="text-white font-semibold">🎯 MC-Fragen werden generiert…</p>
+            <div className="w-full">
+              <div className="flex justify-between text-xs text-[#9ca3af] mb-1.5">
+                <span>{mcGenProgress.completed} von {mcGenProgress.total}</span>
+                {mcGenProgress.failed > 0 && (
+                  <span className="text-red-400">{mcGenProgress.failed} fehlgeschlagen</span>
+                )}
+              </div>
+              <div className="h-2 bg-[#252840] rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-indigo-500 transition-all duration-300"
+                  style={{ width: `${(mcGenProgress.completed / mcGenProgress.total) * 100}%` }}
+                />
+              </div>
+            </div>
+            <p className="text-[#6b7280] text-xs text-center">
+              Pro Karte 3–7 Fragen, KI nutzt Gemini/Groq Fallback. Karten unterschiedlicher Komplexität bekommen unterschiedlich viele Fragen.
+            </p>
           </div>
         </div>
       )}

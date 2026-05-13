@@ -24,13 +24,14 @@ interface Props {
   onBulkDelete: (cardIds: string[]) => void;
   onMergeCards: (cardIds: string[]) => void;
   onSplitCard: (cardId: string) => void;
+  onGenerateMC: (cardIds: string[]) => Promise<void>;
   onNavigate: (page: string) => void;
   initialSrsFilter?: string;
 }
 
 type ViewMode = 'grid' | 'list';
 
-export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onMergeCards, onSplitCard, onNavigate, initialSrsFilter }: Props) {
+export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onMergeCards, onSplitCard, onGenerateMC, onNavigate, initialSrsFilter }: Props) {
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminers, setFilterExaminers] = useState<Set<string>>(new Set());
@@ -50,6 +51,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
   const [filterDifficulty, setFilterDifficulty] = useState<Difficulty | ''>('');
   const [filterTag, setFilterTag] = useState('');
   const [filterPriority, setFilterPriority] = useState<'' | 'A' | 'B' | 'C' | 'none'>('');
+  const [filterMC, setFilterMC] = useState<'' | 'yes' | 'no'>('');
   const [filterSRS, setFilterSRS] = useState<SRSStatus | ''>(initialSrsFilter as SRSStatus | '' ?? '');
   const [showSrsFilterBanner, setShowSrsFilterBanner] = useState(!!initialSrsFilter);
   const [filterSet, setFilterSet] = useState('');
@@ -110,6 +112,8 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
         // 'A'|'B'|'C' = match exactly; 'none' = match cards without any priority
         if (filterPriority === 'none' ? !!c.priority : c.priority !== filterPriority) return false;
       }
+      if (filterMC === 'yes' && (!c.mcQuestions || c.mcQuestions.length === 0)) return false;
+      if (filterMC === 'no'  && c.mcQuestions && c.mcQuestions.length > 0)      return false;
       if (filterSRS && getSRSStatus(c) !== filterSRS) return false;
       if (filterSet && c.setId !== filterSet) return false;
       if (filterCatalog && !c.askedInCatalogs?.some(v => v.includes(filterCatalog))) return false;
@@ -122,13 +126,13 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
       result.sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0));
     }
     return result;
-  }, [cards, search, filterSubject, filterExaminers, filterDifficulty, filterTag, filterPriority, filterSRS, filterSet, filterCatalog, filterDue, filterFlagged, filterKlassiker, sortBy]);
+  }, [cards, search, filterSubject, filterExaminers, filterDifficulty, filterTag, filterPriority, filterMC, filterSRS, filterSet, filterCatalog, filterDue, filterFlagged, filterKlassiker, sortBy]);
 
-  const hasFilters = search || filterSubject || filterExaminers.size > 0 || filterDifficulty || filterTag || filterPriority || filterSRS || filterSet || filterCatalog || filterDue || filterFlagged || filterKlassiker || sortBy !== 'default';
+  const hasFilters = search || filterSubject || filterExaminers.size > 0 || filterDifficulty || filterTag || filterPriority || filterMC || filterSRS || filterSet || filterCatalog || filterDue || filterFlagged || filterKlassiker || sortBy !== 'default';
 
   const clearFilters = () => {
     setSearch(''); setFilterSubject(''); setFilterExaminers(new Set());
-    setFilterDifficulty(''); setFilterTag(''); setFilterPriority('');
+    setFilterDifficulty(''); setFilterTag(''); setFilterPriority(''); setFilterMC('');
     setFilterSRS(''); setFilterSet(''); setFilterCatalog('');
     setFilterDue(false); setFilterFlagged(false);
     setFilterKlassiker(false); setSortBy('default');
@@ -261,6 +265,14 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
                 🤖 Zusammenführen
               </button>
             )}
+            <button
+              onClick={() => onGenerateMC(Array.from(selectedIds))}
+              disabled={selectedCount === 0}
+              className="px-4 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-300 text-sm font-semibold transition-colors shrink-0"
+              title="MC-Fragen via KI für die ausgewählten Karten generieren und auf den Karten speichern"
+            >
+              🎯 MC generieren
+            </button>
             <button
               onClick={handleBulkDelete}
               disabled={selectedCount === 0}
@@ -425,6 +437,16 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
             <option value="B">🅱️ B · Sollte kennen</option>
             <option value="C">🅲 C · Nice to know</option>
             <option value="none">— Ohne Priorität</option>
+          </select>
+          <select
+            value={filterMC}
+            onChange={e => setFilterMC(e.target.value as '' | 'yes' | 'no')}
+            className="w-full sm:w-auto text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none appearance-none cursor-pointer"
+            title="Filter nach MC-Verfügbarkeit"
+          >
+            <option value="">MC-Status</option>
+            <option value="yes">✓ Mit MC</option>
+            <option value="no">✗ Ohne MC</option>
           </select>
           {allTags.length > 0 && <Select value={filterTag} onChange={setFilterTag} placeholder="Tag" options={allTags} />}
           <Select value={filterSRS} onChange={v => setFilterSRS(v as SRSStatus | '')} placeholder="SRS-Status"
@@ -696,6 +718,11 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
         {card.examiners?.map(e => <span key={e} className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">👤 {e}</span>)}
         <DifficultyBadge difficulty={card.difficulty} />
         <PriorityBadge value={card.priority} />
+        {card.mcQuestions && card.mcQuestions.length > 0 && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 font-semibold" title={`${card.mcQuestions.length} MC-Fragen verfügbar`}>
+            🎯 {card.mcQuestions.length}
+          </span>
+        )}
         <SRSBadge status={status} />
         {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
         {card.flagged && <span title={flagTooltip(card.id, flagAttempts, autoUnflagEnabled)} className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 cursor-help">🚩</span>}
@@ -784,6 +811,11 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
         {card.examiners?.map(e => <span key={e} className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">👤 {e}</span>)}
         <DifficultyBadge difficulty={card.difficulty} />
         <PriorityBadge value={card.priority} />
+        {card.mcQuestions && card.mcQuestions.length > 0 && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 font-semibold" title={`${card.mcQuestions.length} MC-Fragen verfügbar`}>
+            🎯 {card.mcQuestions.length}
+          </span>
+        )}
         <SRSBadge status={status} />
         {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
         {card.flagged && <span title={flagTooltip(card.id, flagAttempts, autoUnflagEnabled)} className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 cursor-help">🚩</span>}
@@ -898,6 +930,11 @@ function CardPreviewModal({ card, onClose, onEdit }: { card: Flashcard; onClose:
           {card.examiners?.map(e => <span key={e} className="text-xs px-2 py-0.5 rounded-full bg-[#1e2130] border border-[#2d3148] text-[#9ca3af]">👤 {e}</span>)}
           <DifficultyBadge difficulty={card.difficulty} />
         <PriorityBadge value={card.priority} />
+        {card.mcQuestions && card.mcQuestions.length > 0 && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 font-semibold" title={`${card.mcQuestions.length} MC-Fragen verfügbar`}>
+            🎯 {card.mcQuestions.length}
+          </span>
+        )}
           {card.customTags.map(t => <span key={t} className="text-xs text-[#6b7280]">#{t}</span>)}
         </div>
       </div>

@@ -5,6 +5,72 @@ import { supabase } from '../lib/supabase';
 import type { useGoogleDrive } from '../hooks/useGoogleDrive';
 import { previewClassification, inspectDistribution } from '../utils/priority';
 import { normalizeAll, type NormalizationSummary } from '../utils/normalizeStats';
+import InfoTooltip from '../components/InfoTooltip';
+
+// ─── Tageslimit-Presets ──────────────────────────────────────────────────────
+// Ein Preset setzt die 3 echten Settings (dailyNewCardGoal, ...Mode,
+// dailyReviewCap) auf eine sinnvolle Kombination. Reviews bleiben in allen
+// Presets ungebremst — ein zu niedriger Wdh.-Cap baut Backlog auf und
+// untergräbt SRS. Custom-Modus lässt den User trotzdem alles fein justieren.
+type PresetId = 'relaxed' | 'standard' | 'intensive' | 'auto' | 'custom';
+interface Preset {
+  id: PresetId;
+  emoji: string;
+  label: string;
+  tagline: string;       // Ein-Satz Untertitel auf der Karte
+  requiresExamDate?: boolean;
+  apply?: () => Partial<AppSettings>;  // undefined for 'custom' (no auto-apply)
+}
+const PRESETS: Preset[] = [
+  {
+    id: 'relaxed',
+    emoji: '🌿',
+    label: 'Entspannt',
+    tagline: '10 neue Karten / Tag',
+    apply: () => ({ dailyNewCardGoal: 10, dailyNewCardGoalMode: 'manual', dailyReviewCap: 9999 }),
+  },
+  {
+    id: 'standard',
+    emoji: '📚',
+    label: 'Standard',
+    tagline: '20 neue Karten / Tag',
+    apply: () => ({ dailyNewCardGoal: 20, dailyNewCardGoalMode: 'manual', dailyReviewCap: 9999 }),
+  },
+  {
+    id: 'intensive',
+    emoji: '⚡',
+    label: 'Intensiv',
+    tagline: '40 neue Karten / Tag',
+    apply: () => ({ dailyNewCardGoal: 40, dailyNewCardGoalMode: 'manual', dailyReviewCap: 9999 }),
+  },
+  {
+    id: 'auto',
+    emoji: '🎯',
+    label: 'Auto-Pace',
+    tagline: 'Schafft alles bis zur Prüfung',
+    requiresExamDate: true,
+    apply: () => ({ dailyNewCardGoalMode: 'auto', dailyReviewCap: 9999 }),
+  },
+  {
+    id: 'custom',
+    emoji: '⚙️',
+    label: 'Eigene Werte',
+    tagline: 'Selbst justieren',
+  },
+];
+
+/** Detect which preset the current settings match exactly. Falls back to 'custom'. */
+function detectActivePreset(s: AppSettings): PresetId {
+  const cap = s.dailyReviewCap ?? 9999;
+  const noReviewCap = cap >= 9999;
+  const mode = s.dailyNewCardGoalMode ?? 'manual';
+  if (!noReviewCap) return 'custom';
+  if (mode === 'auto') return 'auto';
+  if (mode === 'manual' && s.dailyNewCardGoal === 10) return 'relaxed';
+  if (mode === 'manual' && s.dailyNewCardGoal === 20) return 'standard';
+  if (mode === 'manual' && s.dailyNewCardGoal === 40) return 'intensive';
+  return 'custom';
+}
 
 const ADMIN_EMAIL = 'bastimayr@gmx.at';
 
@@ -99,173 +165,48 @@ export default function Settings({
         <p className="text-[#9ca3af] text-sm mt-1">Prüfung, Tagesziel, Fächer und Prüfer verwalten</p>
       </div>
 
-      {/* Exam countdown + daily goal */}
+      {/* ─── Exam date + daily-limit (preset picker) ─────────────────────── */}
       <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-5">
         <h3 className="font-semibold text-white flex items-center gap-2">🎯 Prüfungsvorbereitung</h3>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">
-              Prüfungsdatum
-            </label>
-            <input
-              type="date"
-              value={settings.examDate ?? ''}
-              onChange={e => handleExamDateChange(e.target.value)}
-              className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none [color-scheme:dark]"
-            />
-            {settings.examDate && (
-              <p className="text-xs text-indigo-400 mt-1.5">
-                {formatExamCountdown(settings.examDate)}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">
-              {hasExamDate ? 'Tagesmaximum (optional)' : 'Neue Karten pro Tag'}
-            </label>
-
-            {/* Mode toggle: manuell vs auto. Auto is only really useful when
-                an exam date is set (otherwise there's no horizon to plan against). */}
-            <div className="flex gap-1 p-0.5 mb-2 rounded-xl bg-[#15172a] border border-[#2d3148]">
-              {(['manual', 'auto'] as const).map(mode => {
-                const active = (settings.dailyNewCardGoalMode ?? 'manual') === mode;
-                return (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => onUpdateSettings({ dailyNewCardGoalMode: mode })}
-                    disabled={mode === 'auto' && !hasExamDate}
-                    title={mode === 'auto' && !hasExamDate ? 'Erst Prüfungsdatum setzen' : undefined}
-                    className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
-                      active
-                        ? 'bg-indigo-500 text-white'
-                        : 'text-[#9ca3af] hover:text-white hover:bg-white/5'
-                    }`}
-                  >
-                    {mode === 'manual' ? 'Manuell' : '⚡ Auto'}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min={1}
-                max={500}
-                value={dailyGoalInput}
-                onChange={e => setDailyGoalInput(e.target.value)}
-                onBlur={handleDailyGoalBlur}
-                onKeyDown={e => e.key === 'Enter' && handleDailyGoalBlur()}
-                disabled={settings.dailyNewCardGoalMode === 'auto'}
-                className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-              />
-              <span className="text-[#6b7280] text-sm shrink-0">/ Tag</span>
-            </div>
-            <p className="text-xs text-[#6b7280] mt-1.5 leading-relaxed">
-              {settings.dailyNewCardGoalMode === 'auto'
-                ? '⚡ Wert wird automatisch berechnet aus "verbleibende unseen Karten / (Tage bis Prüfung × 0.5)" — jede Karte hat damit ~2× Zeit für Wiederholung vor der Prüfung. Respektiert den aktiven Fokus.'
-                : hasExamDate
-                  ? 'Begrenzt die tägliche Anzahl nach oben. Schalte auf Auto für dynamische Berechnung basierend auf Prüfungsdatum.'
-                  : 'Wird ohne Prüfungsdatum als fixes Ziel verwendet.'}
+        {/* Step 1: Exam date */}
+        <div>
+          <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">
+            Prüfungsdatum
+          </label>
+          <input
+            type="date"
+            value={settings.examDate ?? ''}
+            onChange={e => handleExamDateChange(e.target.value)}
+            className="w-full sm:w-64 text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none [color-scheme:dark]"
+          />
+          {settings.examDate && (
+            <p className="text-xs text-indigo-400 mt-1.5">
+              {formatExamCountdown(settings.examDate)}
             </p>
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-2">
-              Max. Wiederholungen pro Tag
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min={1}
-                max={9999}
-                value={reviewCapInput}
-                onChange={e => setReviewCapInput(e.target.value)}
-                onBlur={handleReviewCapBlur}
-                onKeyDown={e => e.key === 'Enter' && handleReviewCapBlur()}
-                placeholder="Kein Limit"
-                className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#4b5563] focus:border-indigo-500 focus:outline-none"
-              />
-              <span className="text-[#6b7280] text-sm shrink-0">/ Tag</span>
-            </div>
+          )}
+          {!settings.examDate && (
             <p className="text-xs text-[#6b7280] mt-1.5">
-              Verhindert Überschwemmung durch importierte Karten mit altem SRS-Stand.
-              Leer lassen = kein Limit. Tipp: z.B. 20–30 am Anfang.
+              Optional. Mit Datum kann die App ein automatisches Lerntempo berechnen.
             </p>
-          </div>
+          )}
         </div>
 
-        {/* SM-2-aware pace panel */}
-        {hasExamDate && pace && (
-          <div className="space-y-3">
-            {/* Main recommendation */}
-            <div className={`rounded-xl px-4 py-3 flex items-start gap-3 ${
-              pace.requiredNewPerDay <= settings.dailyNewCardGoal
-                ? 'bg-emerald-500/10 border border-emerald-500/30'
-                : 'bg-amber-500/10 border border-amber-500/30'
-            }`}>
-              <span className="text-xl shrink-0 mt-0.5">
-                {pace.requiredNewPerDay <= settings.dailyNewCardGoal ? '✅' : '⚠️'}
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className={`text-sm font-semibold ${
-                  pace.requiredNewPerDay <= settings.dailyNewCardGoal ? 'text-emerald-400' : 'text-amber-400'
-                }`}>
-                  Empfohlenes Lerntempo: <span className="text-white">{pace.requiredNewPerDay} neue Karten / Tag</span>
-                </p>
-                <p className="text-xs text-[#9ca3af] mt-0.5">
-                  {unseenCount} ungesehene Karten ÷ {pace.effectiveDays} verfügbare Tage
-                  {' '}(SM-2 braucht ~15 Tage für 3 Wiederholungen je Karte)
-                </p>
-                {pace.requiredNewPerDay <= settings.dailyNewCardGoal
-                  ? <p className="text-xs text-emerald-400 mt-1">Du liegst im Plan 🎉</p>
-                  : <p className="text-xs text-amber-400 mt-1">Tagesmaximum zu niedrig — erhöhe auf mindestens {pace.requiredNewPerDay}</p>
-                }
-              </div>
-              {pace.requiredNewPerDay > settings.dailyNewCardGoal && (
-                <button
-                  onClick={() => {
-                    setDailyGoalInput(String(pace.requiredNewPerDay));
-                    onUpdateSettings({ dailyNewCardGoal: pace.requiredNewPerDay });
-                    showToast(`Tagesmaximum auf ${pace.requiredNewPerDay} gesetzt`, 'success');
-                  }}
-                  className="ml-auto shrink-0 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-400 text-xs font-semibold transition-colors"
-                >
-                  Übernehmen
-                </button>
-              )}
-            </div>
-
-            {/* Stats row */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-[#252840] rounded-xl px-3 py-2.5 text-center">
-                <p className="text-lg font-bold text-white">{pace.requiredNewPerDay}</p>
-                <p className="text-[10px] text-[#9ca3af] mt-0.5 uppercase tracking-wide">Neue / Tag</p>
-              </div>
-              <div className="bg-[#252840] rounded-xl px-3 py-2.5 text-center">
-                <p className="text-lg font-bold text-indigo-300">~{pace.estimatedDailyReviews}</p>
-                <p className="text-[10px] text-[#9ca3af] mt-0.5 uppercase tracking-wide">Wdh. / Tag</p>
-              </div>
-              <div className={`rounded-xl px-3 py-2.5 text-center ${
-                pace.masteryRateAtExam >= 90 ? 'bg-emerald-500/10' :
-                pace.masteryRateAtExam >= 70 ? 'bg-amber-500/10' : 'bg-red-500/10'
-              }`}>
-                <p className={`text-lg font-bold ${
-                  pace.masteryRateAtExam >= 90 ? 'text-emerald-400' :
-                  pace.masteryRateAtExam >= 70 ? 'text-amber-400' : 'text-red-400'
-                }`}>{pace.masteryRateAtExam}%</p>
-                <p className="text-[10px] text-[#9ca3af] mt-0.5 uppercase tracking-wide">Beherrscht</p>
-              </div>
-            </div>
-
-            <p className="text-[11px] text-[#6b7280]">
-              Wdh. / Tag = Simulation deiner Karten durch den Anki-Algorithmus (SM-2) · Beherrscht = ≥3 Wiederholungen bis Prüfungstag
-            </p>
-          </div>
-        )}
+        {/* Step 2: Daily-limit preset picker */}
+        <DailyLimitSection
+          settings={settings}
+          dailyGoalInput={dailyGoalInput}
+          setDailyGoalInput={setDailyGoalInput}
+          reviewCapInput={reviewCapInput}
+          setReviewCapInput={setReviewCapInput}
+          handleDailyGoalBlur={handleDailyGoalBlur}
+          handleReviewCapBlur={handleReviewCapBlur}
+          hasExamDate={hasExamDate}
+          pace={pace}
+          unseenCount={unseenCount}
+          onUpdateSettings={onUpdateSettings}
+          showToast={showToast}
+        />
       </div>
 
       <TagManager
@@ -1133,6 +1074,314 @@ function NormalizeStatsSection({
           <li>· <strong>Wahrscheinlichkeit</strong>: Wenn nicht importiert, berechnet aus
             "Katalogjahre der Karte / Gesamt-Katalogjahre × 100". Importierte Werte gewinnen.</li>
         </ul>
+      </details>
+    </div>
+  );
+}
+
+// ─── Daily-Limit Section ─────────────────────────────────────────────────────
+// Preset-Picker + optional Custom-Tuning. Erklärt Anfängern, was "neue Karten"
+// und "Wiederholungen" sind und warum man Reviews NICHT cappen sollte.
+function DailyLimitSection({
+  settings,
+  dailyGoalInput,
+  setDailyGoalInput,
+  reviewCapInput,
+  setReviewCapInput,
+  handleDailyGoalBlur,
+  handleReviewCapBlur,
+  hasExamDate,
+  pace,
+  unseenCount,
+  onUpdateSettings,
+  showToast,
+}: {
+  settings: AppSettings;
+  dailyGoalInput: string;
+  setDailyGoalInput: (v: string) => void;
+  reviewCapInput: string;
+  setReviewCapInput: (v: string) => void;
+  handleDailyGoalBlur: () => void;
+  handleReviewCapBlur: () => void;
+  hasExamDate: boolean;
+  pace: ReturnType<typeof calculatePaceMetrics> | null;
+  unseenCount: number;
+  onUpdateSettings: (u: Partial<AppSettings>) => void;
+  showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+}) {
+  const activePreset = detectActivePreset(settings);
+
+  const applyPreset = (p: Preset) => {
+    if (p.requiresExamDate && !hasExamDate) {
+      showToast('Erst Prüfungsdatum setzen für Auto-Pace', 'info');
+      return;
+    }
+    if (!p.apply) return;          // 'custom' → just opens the advanced block
+    const patch = p.apply();
+    onUpdateSettings(patch);
+    // Keep the local input states in sync so the custom-block (if user switches
+    // to it next) shows the just-applied values.
+    if (typeof patch.dailyNewCardGoal === 'number') setDailyGoalInput(String(patch.dailyNewCardGoal));
+    if (typeof patch.dailyReviewCap === 'number') {
+      setReviewCapInput(patch.dailyReviewCap >= 9999 ? '' : String(patch.dailyReviewCap));
+    }
+    showToast(`Modus: ${p.emoji} ${p.label}`, 'success');
+  };
+
+  // Custom is also "selected" — user is just always free to fine-tune. We
+  // explicitly show the custom block ONLY when it's the active preset, to
+  // avoid the previous mistake of showing 5 fields at once.
+  const showCustomBlock = activePreset === 'custom';
+
+  const newPerDayDisplay = settings.dailyNewCardGoalMode === 'auto' && pace
+    ? pace.requiredNewPerDay
+    : settings.dailyNewCardGoal;
+  const reviewCapDisplay = (settings.dailyReviewCap ?? 9999) >= 9999
+    ? 'unbegrenzt'
+    : `max. ${settings.dailyReviewCap}`;
+
+  // Warning when the configured pace can't finish all cards in time
+  const paceTooSlow = hasExamDate && pace && pace.requiredNewPerDay > newPerDayDisplay;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider">
+          Tageslimit
+        </label>
+        <InfoTooltip text="Wieviele Karten am Tag — bestimmt nur wieviele NEUE Karten eingeführt werden. Wiederholungen kommen immer wenn fällig, sonst staut sich der SRS-Rhythmus." />
+      </div>
+
+      {/* Preset picker */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+        {PRESETS.map(p => {
+          const active = activePreset === p.id;
+          const disabled = p.requiresExamDate && !hasExamDate;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => applyPreset(p)}
+              disabled={disabled}
+              title={disabled ? 'Erst Prüfungsdatum oben setzen' : undefined}
+              className={`text-left px-3 py-3 rounded-xl border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                active
+                  ? 'bg-indigo-500/15 border-indigo-500/60 ring-1 ring-indigo-500/30'
+                  : 'bg-[#252840] border-[#2d3148] hover:border-indigo-500/40'
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="text-lg">{p.emoji}</span>
+                <p className={`text-sm font-semibold ${active ? 'text-white' : 'text-[#d1d5db]'}`}>{p.label}</p>
+              </div>
+              <p className="text-[11px] text-[#9ca3af] mt-1 leading-snug">{p.tagline}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Status of current selection */}
+      <div className="bg-[#15172a] border border-[#2d3148] rounded-xl p-3 space-y-1">
+        <p className="text-[11px] uppercase tracking-wider text-[#6b7280] font-semibold">Aktuelle Konfiguration</p>
+        <ul className="text-sm text-[#d1d5db] space-y-0.5">
+          <li>→ <span className="text-white font-semibold">{newPerDayDisplay}</span> neue Karten / Tag
+            {settings.dailyNewCardGoalMode === 'auto' && (
+              <span className="text-[10px] text-amber-400 ml-1.5">(auto-berechnet)</span>
+            )}
+          </li>
+          <li>→ Wiederholungen: <span className="text-white font-semibold">{reviewCapDisplay}</span>
+            <span className="text-[11px] text-[#6b7280] ml-1.5">(was SRS fällig stellt)</span>
+          </li>
+          {hasExamDate && pace && (
+            <li>→ Prognose zum Examen: <span className={`font-semibold ${
+              pace.masteryRateAtExam >= 90 ? 'text-emerald-400' :
+              pace.masteryRateAtExam >= 70 ? 'text-amber-400' : 'text-red-400'
+            }`}>{pace.masteryRateAtExam}% beherrscht</span>
+          </li>
+          )}
+        </ul>
+      </div>
+
+      {/* Warning when configured pace can't finish in time */}
+      {paceTooSlow && pace && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-start gap-3">
+          <span className="text-xl shrink-0 mt-0.5">⚠️</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-amber-300">
+              Mit dem aktuellen Tempo schaffst du nicht alle Karten bis zur Prüfung
+            </p>
+            <p className="text-xs text-[#9ca3af] mt-0.5">
+              {unseenCount} ungesehene Karten ÷ {pace.effectiveDays} Tage = {pace.requiredNewPerDay} neue/Tag nötig.
+              Du hast aktuell {newPerDayDisplay} eingestellt.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              onUpdateSettings({ dailyNewCardGoalMode: 'auto', dailyReviewCap: 9999 });
+              showToast(`Modus: 🎯 Auto-Pace`, 'success');
+            }}
+            className="ml-auto shrink-0 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-semibold transition-colors"
+          >
+            Auto-Pace
+          </button>
+        </div>
+      )}
+
+      {/* Custom-tuning block — only when 'Eigene Werte' is active */}
+      {showCustomBlock && (
+        <div className="bg-[#15172a] border border-[#2d3148] rounded-xl p-4 space-y-4">
+          <p className="text-xs text-[#9ca3af] leading-relaxed">
+            ⚙️ Justiere selbst — diese Werte stecken auch hinter den Presets oben.
+          </p>
+
+          {/* Neue Karten / Tag */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider">
+                Neue Karten pro Tag
+              </label>
+              <InfoTooltip text="Karten, die du noch nie gesehen hast. Beim Lernen werden diese in den Tagesablauf gemischt." />
+            </div>
+
+            <div className="flex gap-1 p-0.5 mb-2 rounded-xl bg-[#252840] border border-[#2d3148]">
+              {(['manual', 'auto'] as const).map(mode => {
+                const active = (settings.dailyNewCardGoalMode ?? 'manual') === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => onUpdateSettings({ dailyNewCardGoalMode: mode })}
+                    disabled={mode === 'auto' && !hasExamDate}
+                    title={mode === 'auto' && !hasExamDate ? 'Erst Prüfungsdatum oben setzen' : undefined}
+                    className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                      active ? 'bg-indigo-500 text-white' : 'text-[#9ca3af] hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    {mode === 'manual' ? 'Fester Wert' : '⚡ Auto-Pace'}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={500}
+                value={dailyGoalInput}
+                onChange={e => setDailyGoalInput(e.target.value)}
+                onBlur={handleDailyGoalBlur}
+                onKeyDown={e => e.key === 'Enter' && handleDailyGoalBlur()}
+                disabled={settings.dailyNewCardGoalMode === 'auto'}
+                className="w-full sm:w-32 text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <span className="text-[#6b7280] text-sm">/ Tag</span>
+            </div>
+            <p className="text-xs text-[#6b7280] mt-1.5 leading-relaxed">
+              {settings.dailyNewCardGoalMode === 'auto'
+                ? '⚡ Wird automatisch berechnet. Passt sich an, wenn du im Plan vor oder zurückliegst.'
+                : 'Fester Wert. Wenn keine neuen Karten mehr da sind, kommen nur noch fällige Wiederholungen.'}
+            </p>
+          </div>
+
+          {/* Wiederholungs-Cap */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider">
+                Max. Wiederholungen pro Tag
+              </label>
+              <InfoTooltip text="Wir empfehlen 'leer lassen' = kein Limit. Wenn du Wiederholungen cappst, verfallen sie nicht — sie stapeln sich nur jeden Tag mehr. Nur sinnvoll, wenn du gerade einen alten Backup importiert hast und Anfangs nicht überrollt werden willst." />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={9999}
+                value={reviewCapInput}
+                onChange={e => setReviewCapInput(e.target.value)}
+                onBlur={handleReviewCapBlur}
+                onKeyDown={e => e.key === 'Enter' && handleReviewCapBlur()}
+                placeholder="Kein Limit"
+                className="w-full sm:w-32 text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#4b5563] focus:border-indigo-500 focus:outline-none"
+              />
+              <span className="text-[#6b7280] text-sm">/ Tag</span>
+            </div>
+            <p className="text-xs text-amber-400/80 mt-1.5 leading-relaxed">
+              💡 Empfehlung: leer lassen. Ein Cap auf Wiederholungen baut Tag für Tag Backlog auf und schwächt den SRS-Effekt.
+              Nur sinnvoll für die ersten Tage nach einem Import mit vielen alten Karten.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Detail panel — SM-2 metrics, collapsible */}
+      {hasExamDate && pace && (
+        <details className="bg-[#15172a] border border-[#2d3148] rounded-xl">
+          <summary className="cursor-pointer hover:bg-[#1a1d2e] p-3 text-xs font-semibold text-[#9ca3af] uppercase tracking-wider transition-colors">
+            🔬 Details zum berechneten Lerntempo
+          </summary>
+          <div className="px-3 pb-3 space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-[#252840] rounded-lg px-3 py-2.5 text-center">
+                <p className="text-base font-bold text-white">{pace.requiredNewPerDay}</p>
+                <p className="text-[10px] text-[#9ca3af] mt-0.5 uppercase tracking-wide">Neue/Tag empfohlen</p>
+              </div>
+              <div className="bg-[#252840] rounded-lg px-3 py-2.5 text-center">
+                <p className="text-base font-bold text-indigo-300">~{pace.estimatedDailyReviews}</p>
+                <p className="text-[10px] text-[#9ca3af] mt-0.5 uppercase tracking-wide">Wdh./Tag geschätzt</p>
+              </div>
+              <div className={`rounded-lg px-3 py-2.5 text-center ${
+                pace.masteryRateAtExam >= 90 ? 'bg-emerald-500/10' :
+                pace.masteryRateAtExam >= 70 ? 'bg-amber-500/10' : 'bg-red-500/10'
+              }`}>
+                <p className={`text-base font-bold ${
+                  pace.masteryRateAtExam >= 90 ? 'text-emerald-400' :
+                  pace.masteryRateAtExam >= 70 ? 'text-amber-400' : 'text-red-400'
+                }`}>{pace.masteryRateAtExam}%</p>
+                <p className="text-[10px] text-[#9ca3af] mt-0.5 uppercase tracking-wide">Beherrscht zum Tag X</p>
+              </div>
+            </div>
+            <p className="text-[11px] text-[#6b7280] leading-relaxed">
+              Berechnung: {unseenCount} ungesehene Karten ÷ {pace.effectiveDays} verfügbare Tage
+              (SM-2 braucht ~15 Tage für 3 Wiederholungen je Karte, daher wird das vom Examenstag abgezogen).
+              „Wdh./Tag" ist eine Simulation deiner Bibliothek durch den Anki-Algorithmus.
+              „Beherrscht" = Karten mit ≥3 erfolgreichen Wiederholungen am Examenstag.
+            </p>
+          </div>
+        </details>
+      )}
+
+      {/* New-user explainer */}
+      <details className="bg-[#0f1117] border border-[#2d3148] rounded-xl">
+        <summary className="cursor-pointer hover:bg-[#15172a] p-3 text-xs font-semibold text-indigo-400 uppercase tracking-wider transition-colors">
+          💡 Wie funktioniert das Tageslimit?
+        </summary>
+        <div className="px-3 pb-3 space-y-2 text-xs text-[#d1d5db] leading-relaxed">
+          <p>
+            <strong className="text-white">Neue Karten</strong> sind Karten, die du noch nie gesehen hast.
+            Sie werden langsam in dein Lernpensum eingeführt — du legst fest, wieviele pro Tag.
+          </p>
+          <p>
+            <strong className="text-white">Wiederholungen</strong> sind Karten, die du schon gelernt hast und
+            nach dem SRS-Algorithmus heute wieder ansehen solltest, damit sie nicht in Vergessenheit geraten.
+            Wieviele das jeden Tag sind, ergibt sich automatisch aus dem, was du in den Tagen davor gelernt hast.
+          </p>
+          <p>
+            <strong className="text-white">Warum gibt's kein „Maximum 5 Karten heute"-Setting?</strong>
+            {' '}Weil Wiederholungen nicht warten können — wenn du sie weglässt, vergisst du was du schon kannst.
+            Cap nur die neuen Karten — Wiederholungen kommen geduldig durch wie sie sollen.
+          </p>
+          <p className="pt-1 border-t border-[#2d3148] mt-2">
+            <strong className="text-indigo-400">Welcher Modus passt zu mir?</strong>
+          </p>
+          <ul className="space-y-1 pl-1">
+            <li>🌿 <strong>Entspannt</strong> — wenn du keinen Druck hast und langsam aufbauen willst</li>
+            <li>📚 <strong>Standard</strong> — gut für die meisten Lern-Routinen</li>
+            <li>⚡ <strong>Intensiv</strong> — kurz vor der Prüfung oder bei großem Karten-Stapel</li>
+            <li>🎯 <strong>Auto-Pace</strong> — wenn du ein Examensdatum gesetzt hast und die App selbst rechnen lassen willst</li>
+            <li>⚙️ <strong>Eigene Werte</strong> — für alle die's genau einstellen wollen</li>
+          </ul>
+        </div>
       </details>
     </div>
   );

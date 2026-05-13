@@ -7,6 +7,44 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-13 — Settings: Tageslimit-Redesign mit Presets + klarer Erklärung
+
+**Symptom:** User-Feedback „ich sehe zwei Maximum-Werte pro Tag und kann
+auch eingeben wieviel ich am Tag haben will — verwirrend." Settings-Block
+„Prüfungsvorbereitung" hatte 5 UI-Elemente für eine Entscheidung
+(Tagesmaximum-Input, Manuell/Auto-Toggle, Wdh.-Cap, Empfehlungs-Box mit
+Übernehmen-Button, Stats-Tiles) — Anfänger verloren.
+
+**Was geändert wurde — NUR UI, kein neues Datenmodell:**
+
+Neue Sektion `📅 Tageslimit` mit Preset-Picker:
+- 🌿 **Entspannt** (10 neu/Tag, kein Wdh-Cap)
+- 📚 **Standard** (20 neu/Tag, kein Wdh-Cap)
+- ⚡ **Intensiv** (40 neu/Tag, kein Wdh-Cap)
+- 🎯 **Auto-Pace** (auto-Modus, deaktiviert ohne Examensdatum)
+- ⚙️ **Eigene Werte** (öffnet Advanced-Block mit allen Feldern)
+
+Klick auf Preset → setzt `dailyNewCardGoal` + `dailyNewCardGoalMode` +
+`dailyReviewCap` auf die jeweilige Kombination. Detection per Exact-Match,
+sodass die UI immer richtig anzeigt, was gerade aktiv ist.
+
+**Erklär-Ebenen:**
+- „Aktuelle Konfiguration"-Karte zeigt klartextlich, was eingestellt ist
+- ⚠️-Banner wenn das Tempo nicht reicht (mit 1-Klick-„Auto-Pace"-Button)
+- 🔬 „Details zum berechneten Tempo" (collapsible)
+- 💡 „Wie funktioniert das Tageslimit?" — Anfänger-Erklärung was neue Karten
+  vs. Wiederholungen sind und warum man Reviews NICHT cappen sollte
+- Wdh.-Cap-Hinweis amber gefärbt mit Tipp „leer lassen"
+
+**Migrations-Sicherheit:** Keine Setting-Felder umbenannt oder gelöscht.
+Existierende User sehen entweder „ihren" Preset (wenn Werte exakt passen)
+oder „Eigene Werte" mit ihren bestehenden Zahlen — Lern-Verhalten ändert
+sich nicht, bis sie aktiv klicken.
+
+**Files:** `src/pages/Settings.tsx`.
+
+---
+
 ## 2026-05-13 — Share-Export strippt jetzt auch firstStudiedAt + blacklisted
 
 **What:** `exportShareJSON` (Karten teilen → Empfänger startet bei Null)

@@ -4,6 +4,7 @@ import { isDueToday, STUDY_RATINGS } from '../types/card';
 import DifficultyBadge from '../components/DifficultyBadge';
 import MarkdownText from '../components/MarkdownText';
 import PriorityPicker from '../components/PriorityPicker';
+import MicPulseVisualizer from '../components/MicPulseVisualizer';
 import { LinkedCardsPanel } from '../components/LinkedCards';
 import QuickEditModal from '../components/QuickEditModal';
 import { getNewCardsDoneToday } from '../utils/dailyGoal';
@@ -11,7 +12,7 @@ import { generateMCHintBundle } from '../utils/geminiMCHint';
 import type { MCHintResult } from '../utils/geminiMCHint';
 import { checkAnswerWithAI, probeAnswerForGaps, finalGradeWithProbes } from '../utils/aiAnswerCheck';
 import type { AnswerCheckResult, ProbeAnswer } from '../utils/aiAnswerCheck';
-import { isSpeechRecognitionSupported, createRecognizer } from '../utils/speechRecognition';
+import { isSpeechRecognitionSupported, createRecognizer, dedupeTranscript } from '../utils/speechRecognition';
 import type { RecognizerHandle } from '../utils/speechRecognition';
 
 export interface DailyPlanSession {
@@ -546,11 +547,13 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
       keepAlive: true, // mobile browsers auto-end on silence; restart silently
       onResult: (chunk, isFinal) => {
         if (isFinal) {
-          micFinalRef.current += chunk + ' ';
+          // Dedupe the committed buffer — defends against mobile browsers
+          // that occasionally repeat earlier final chunks despite our
+          // index-guard. Idempotent so no harm calling each time.
+          micFinalRef.current = dedupeTranscript(micFinalRef.current + chunk + ' ') + ' ';
           writeText(micFinalRef.current.trim());
         } else {
-          // interim — show as preview after the committed text
-          writeText((micFinalRef.current + chunk).trim());
+          writeText(dedupeTranscript(micFinalRef.current + chunk));
         }
       },
       onEnd: () => {
@@ -2184,13 +2187,17 @@ function AICheckWidget({
                   <>🎤 Aufnahme starten</>
                 )}
               </button>
-              <textarea
-                value={state.text}
-                onChange={e => onSetText(e.target.value)}
-                placeholder={state.listening ? 'Sprich jetzt — Transkript erscheint hier live…' : 'Klicke auf "Aufnahme starten" oder tippe direkt hier…'}
-                rows={4}
-                className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
-              />
+              {state.listening ? (
+                <MicPulseVisualizer />
+              ) : (
+                <textarea
+                  value={state.text}
+                  onChange={e => onSetText(e.target.value)}
+                  placeholder='Klicke auf "Aufnahme starten" oder tippe direkt hier…'
+                  rows={4}
+                  className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
+                />
+              )}
             </div>
           )}
 
@@ -2282,13 +2289,17 @@ function AICheckWidget({
                   <>🎤 Antwort einsprechen</>
                 )}
               </button>
-              <textarea
-                value={state.currentText}
-                onChange={e => onSetText(e.target.value)}
-                placeholder={state.listening ? 'Sprich jetzt — Transkript erscheint hier live…' : 'Klicke auf "Antwort einsprechen" oder tippe direkt hier…'}
-                rows={3}
-                className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
-              />
+              {state.listening ? (
+                <MicPulseVisualizer barCount={5} />
+              ) : (
+                <textarea
+                  value={state.currentText}
+                  onChange={e => onSetText(e.target.value)}
+                  placeholder='Klicke auf "Antwort einsprechen" oder tippe direkt hier…'
+                  rows={3}
+                  className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
+                />
+              )}
             </div>
           )}
 

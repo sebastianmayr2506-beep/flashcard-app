@@ -97,12 +97,25 @@ export function createRecognizer(opts: RecognizerOptions): RecognizerHandle | nu
     r.continuous = true;       // keep listening until user stops
     r.interimResults = true;   // show partial transcripts live
 
+    // Track which result indices we've already emitted as final. Some
+    // mobile browsers (notably Samsung Internet, occasionally iOS Safari)
+    // re-emit older final results when later results change, even though
+    // the spec says resultIndex should only point at NEW changes. Without
+    // this guard we'd append the same text multiple times, producing the
+    // "naja ich denke naja ich denke" duplication users see.
+    let lastFinalIndex = -1;
+
     r.onresult = (e) => {
-      // Walk new results since resultIndex; pass each chunk up.
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const result = e.results[i];
         const transcript = result[0]?.transcript ?? '';
-        opts.onResult(transcript, result.isFinal);
+        if (result.isFinal) {
+          if (i <= lastFinalIndex) continue; // already emitted, skip
+          lastFinalIndex = i;
+          opts.onResult(transcript, true);
+        } else {
+          opts.onResult(transcript, false);
+        }
       }
     };
     r.onend = () => {
@@ -157,4 +170,31 @@ export function createRecognizer(opts: RecognizerOptions): RecognizerHandle | nu
       try { rec?.stop(); } catch { /* ignore */ }
     },
   };
+}
+
+/**
+ * Collapse consecutive repeated word-sequences in a transcript. Catches:
+ *   "naja ich denke naja ich denke naja ich denke" → "naja ich denke"
+ *   "so so so also so also so also"               → "so also"
+ *   "uhh uhh uhh"                                  → "uhh"
+ *
+ * Iterates phrase-lengths from long (5 words) down to short (1 word) so
+ * "X Y X Y" collapses before "X X". Idempotent; safe to call multiple
+ * times. Used as a safety net even after the index-tracking fix in
+ * onresult — mobile browsers occasionally still emit pathological
+ * sequences that slip through.
+ */
+export function dedupeTranscript(text: string): string {
+  if (!text) return text;
+  let result = text;
+  for (let n = 5; n >= 1; n--) {
+    // Build a pattern that matches a phrase of n words, followed by one
+    // or more repetitions of the same phrase separated by whitespace.
+    // We capture the first occurrence and replace with just it.
+    const word = '[\\wäöüÄÖÜß]+';
+    const phrase = `(?:${word}\\s+){${n - 1}}${word}`;
+    const re = new RegExp(`(${phrase})(?:\\s+\\1\\b)+`, 'gi');
+    result = result.replace(re, '$1');
+  }
+  return result.replace(/\s+/g, ' ').trim();
 }

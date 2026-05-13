@@ -23,8 +23,10 @@ import {
 import {
   createRecognizer,
   isSpeechRecognitionSupported,
+  dedupeTranscript,
   type RecognizerHandle,
 } from '../utils/speechRecognition';
+import MicPulseVisualizer from './MicPulseVisualizer';
 
 type AICheckMode = 'text' | 'mic';
 type AIProbeMode = 'strict' | 'probe';
@@ -133,10 +135,10 @@ export default function AICheckPanel({
       keepAlive: true,
       onResult: (chunk, isFinal) => {
         if (isFinal) {
-          micFinalRef.current += chunk + ' ';
+          micFinalRef.current = dedupeTranscript(micFinalRef.current + chunk + ' ') + ' ';
           writeText(micFinalRef.current.trim());
         } else {
-          writeText((micFinalRef.current + chunk).trim());
+          writeText(dedupeTranscript(micFinalRef.current + chunk));
         }
       },
       onEnd: () => {
@@ -348,13 +350,17 @@ export default function AICheckPanel({
                   </>
                 ) : <>🎤 Aufnahme starten</>}
               </button>
-              <textarea
-                value={state.text}
-                onChange={e => setText(e.target.value)}
-                placeholder={state.listening ? 'Sprich jetzt — Transkript erscheint hier live…' : 'Klicke auf "Aufnahme starten" oder tippe direkt hier…'}
-                rows={4}
-                className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
-              />
+              {state.listening ? (
+                <MicPulseVisualizer />
+              ) : (
+                <textarea
+                  value={state.text}
+                  onChange={e => setText(e.target.value)}
+                  placeholder='Klicke auf "Aufnahme starten" oder tippe direkt hier…'
+                  rows={4}
+                  className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
+                />
+              )}
             </div>
           )}
 
@@ -437,13 +443,17 @@ export default function AICheckPanel({
                   </>
                 ) : <>🎤 Antwort einsprechen</>}
               </button>
-              <textarea
-                value={state.currentText}
-                onChange={e => setText(e.target.value)}
-                placeholder={state.listening ? 'Sprich jetzt…' : 'Klicke auf "Antwort einsprechen" oder tippe direkt hier…'}
-                rows={3}
-                className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
-              />
+              {state.listening ? (
+                <MicPulseVisualizer barCount={5} />
+              ) : (
+                <textarea
+                  value={state.currentText}
+                  onChange={e => setText(e.target.value)}
+                  placeholder='Klicke auf "Antwort einsprechen" oder tippe direkt hier…'
+                  rows={3}
+                  className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
+                />
+              )}
             </div>
           )}
 

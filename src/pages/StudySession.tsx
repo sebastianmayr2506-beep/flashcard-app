@@ -96,6 +96,8 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   type MCSessionAnswerLocal = { selected: string[]; isCorrect: boolean };
   const restoredSession = useMemo<{
     mode: 'classic' | 'mc';
+    /** 'studying' = land directly in the session view, 'setup' = land on setup with paused state visible via banner */
+    initialState: 'studying' | 'setup';
     sessionCards: Flashcard[];
     // Classic fields
     currentIdx: number;
@@ -106,7 +108,9 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     mcAnswers: Map<string, MCSessionAnswerLocal[]>;
   } | null>(() => {
     try {
-      const raw = sessionStorage.getItem('studySession:state');
+      // Use localStorage so paused MC sessions survive tab-close. Cleared
+      // explicitly via Verwerfen-button or session completion.
+      const raw = localStorage.getItem('studySession:state');
       if (!raw) return null;
       const obj = JSON.parse(raw) as {
         sessionState?: SessionState;
@@ -118,7 +122,11 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
         mcQuestionIdx?: number;
         mcAnswersEntries?: Array<[string, MCSessionAnswerLocal[]]>;
       };
-      if (obj.sessionState !== 'studying' || !Array.isArray(obj.cardIds)) return null;
+      // Accept BOTH 'studying' (active mid-session) and 'setup' (paused after
+      // Beenden) — both need state restored. Setup-stored state implies the
+      // user paused MC; the banner picks it up.
+      if (!Array.isArray(obj.cardIds)) return null;
+      if (obj.sessionState !== 'studying' && obj.sessionState !== 'setup') return null;
       const resolved = obj.cardIds
         .map(id => cards.find(c => c.id === id))
         .filter((c): c is Flashcard => !!c);
@@ -126,6 +134,7 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
       const mode: 'classic' | 'mc' = obj.sessionMode === 'mc' ? 'mc' : 'classic';
       return {
         mode,
+        initialState: obj.sessionState === 'studying' ? 'studying' : 'setup',
         sessionCards: resolved,
         currentIdx: Math.min(Math.max(obj.currentIdx ?? 0, 0), resolved.length - 1),
         ratings: obj.ratings ?? { nochmal: 0, schwer: 0, gut: 0, einfach: 0 },
@@ -137,7 +146,9 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally one-shot — only attempt restoration on first mount
 
-  const [sessionState, setSessionState] = useState<SessionState>(restoredSession ? 'studying' : 'setup');
+  const [sessionState, setSessionState] = useState<SessionState>(
+    restoredSession?.initialState ?? 'setup'
+  );
   const [studyOrder, setStudyOrder] = useState<StudyOrder>(
     () => (localStorage.getItem('study_order') as StudyOrder) ?? 'review-first'
   );
@@ -667,31 +678,42 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   // any sync updates) plus position and rating counts.
   useEffect(() => {
     try {
-      if (sessionState === 'studying' && sessionCards.length > 0) {
-        const base = {
-          sessionState,
-          sessionMode,
-          cardIds: sessionCards.map(c => c.id),
-        };
-        if (sessionMode === 'mc') {
-          // Serialize Map as entries-array so it survives JSON round-trip.
-          sessionStorage.setItem('studySession:state', JSON.stringify({
-            ...base,
-            mcCardIdx,
-            mcQuestionIdx,
-            mcAnswersEntries: Array.from(mcAnswers.entries()),
-          }));
-        } else {
-          sessionStorage.setItem('studySession:state', JSON.stringify({
-            ...base,
-            currentIdx,
-            ratings,
-          }));
-        }
-      } else {
-        sessionStorage.removeItem('studySession:state');
+      // Persist when:
+      //  - actively studying (any mode) with cards → so reload mid-session resumes
+      //  - on setup AND MC has paused progress → so resume banner survives tab close
+      // Clear when:
+      //  - on summary (session completed)
+      //  - on setup AND no paused progress (= classic flow naturally cleared)
+      const isPausedMC = sessionState === 'setup' &&
+        sessionMode === 'mc' &&
+        mcAnswers.size > 0 &&
+        sessionCards.length > 0;
+      const isActive = sessionState === 'studying' && sessionCards.length > 0;
+      if (!isActive && !isPausedMC) {
+        localStorage.removeItem('studySession:state');
+        return;
       }
-    } catch { /* sessionStorage unavailable / quota — fail silently */ }
+      const base = {
+        sessionState,
+        sessionMode,
+        cardIds: sessionCards.map(c => c.id),
+      };
+      if (sessionMode === 'mc') {
+        // Serialize Map as entries-array so it survives JSON round-trip.
+        localStorage.setItem('studySession:state', JSON.stringify({
+          ...base,
+          mcCardIdx,
+          mcQuestionIdx,
+          mcAnswersEntries: Array.from(mcAnswers.entries()),
+        }));
+      } else {
+        localStorage.setItem('studySession:state', JSON.stringify({
+          ...base,
+          currentIdx,
+          ratings,
+        }));
+      }
+    } catch { /* localStorage unavailable / quota — fail silently */ }
   }, [sessionState, sessionCards, currentIdx, ratings, sessionMode, mcCardIdx, mcQuestionIdx, mcAnswers]);
 
   const handleRate = (rating: RatingValue) => {

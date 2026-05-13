@@ -919,8 +919,11 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
               {/* MC Hint + KI Prüfung action area — pinned to bottom of card-face
                   so action buttons stay visible regardless of question length.
                   Panel can grow up to 60% of card height when expanded; above
-                  that it scrolls internally. */}
-                {(settings.geminiApiKey || settings.anthropicApiKey || settings.groqApiKey) && (
+                  that it scrolls internally.
+                  Buttons are ALWAYS rendered (even without API keys configured)
+                  so users see what's available. Clicking without a key surfaces
+                  a clear "Kein AI-Schlüssel konfiguriert"-message via onApiError,
+                  which is friendlier than hiding the feature silently. */}
                   <div
                     className="shrink-0 border-t border-[#2d3148]/60 px-6 md:px-10 py-2 max-h-[60%] overflow-y-auto"
                     onClick={e => e.stopPropagation()}
@@ -1019,7 +1022,6 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                       </div>
                     )}
                   </div>
-                )}
               {!isFlipped && !effectiveMcHint && (
                 <div className="shrink-0 pb-3 text-center">
                   <p className="text-xs text-[#6b7280] animate-pulse">Klicke zum Umdrehen</p>

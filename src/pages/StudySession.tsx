@@ -915,6 +915,56 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
             </button>
           </div>
         </div>
+
+        {/* MC Pre-Flight modal: appears when user starts MC mode and some
+            cards lack mcQuestions. Fixed overlay above the setup screen. */}
+        {mcPreFlight && (
+          <div className="fixed inset-0 z-[80] bg-black/80 flex items-center justify-center p-4">
+            <div className="bg-[#1a1d27] border border-[#2d3148] rounded-2xl p-6 max-w-md w-full space-y-4">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">🎯 MC-Fragen werden noch benötigt</h3>
+              <p className="text-sm text-[#d1d5db] leading-relaxed">
+                <strong className="text-white">{mcPreFlight.missing.length}</strong> von{' '}
+                <strong className="text-white">{mcPreFlight.allCards.length}</strong> Karten haben noch keine MC-Fragen.
+                Die KI generiert sie jetzt automatisch — das dauert ca.{' '}
+                <strong className="text-white">{Math.ceil(mcPreFlight.missing.length * 2.5)}</strong> Sekunden.
+              </p>
+              <div className="bg-[#252840] rounded-xl p-3 text-xs text-[#9ca3af] leading-relaxed">
+                💡 Du kannst die Karten auch vorab in der Library bulk-generieren ("🎯 MC generieren"-Button bei Auswahl).
+                Dann startest du MC-Sessions in Zukunft sofort ohne Wartezeit.
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => { setMcPreFlight(null); }}
+                  disabled={mcGenerating}
+                  className="flex-1 px-4 py-2 rounded-xl border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm transition-colors disabled:opacity-40"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  onClick={handleFallbackToClassic}
+                  disabled={mcGenerating}
+                  className="flex-1 px-4 py-2 rounded-xl bg-[#252840] hover:bg-[#2d3148] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm transition-colors disabled:opacity-40"
+                >
+                  📝 Stattdessen Karteikarten
+                </button>
+                <button
+                  onClick={handleConfirmGenerateMissingMC}
+                  disabled={mcGenerating || !onGenerateMC}
+                  className="flex-1 px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors flex items-center justify-center gap-1.5"
+                >
+                  {mcGenerating ? (
+                    <>
+                      <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Generiere…
+                    </>
+                  ) : (
+                    <>🤖 Jetzt generieren</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1043,56 +1093,6 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
             </button>
           </div>
         </div>
-
-        {/* MC Pre-Flight modal: shown when user starts MC session and some
-            cards are missing MC questions. */}
-        {mcPreFlight && (
-          <div className="fixed inset-0 z-[80] bg-black/80 flex items-center justify-center p-4">
-            <div className="bg-[#1a1d27] border border-[#2d3148] rounded-2xl p-6 max-w-md w-full space-y-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">🎯 MC-Fragen werden noch benötigt</h3>
-              <p className="text-sm text-[#d1d5db] leading-relaxed">
-                <strong className="text-white">{mcPreFlight.missing.length}</strong> von{' '}
-                <strong className="text-white">{mcPreFlight.allCards.length}</strong> Karten haben noch keine MC-Fragen.
-                Die KI generiert sie jetzt automatisch — das dauert ca.{' '}
-                <strong className="text-white">{Math.ceil(mcPreFlight.missing.length * 2.5)}</strong> Sekunden.
-              </p>
-              <div className="bg-[#252840] rounded-xl p-3 text-xs text-[#9ca3af] leading-relaxed">
-                💡 Du kannst die Karten auch vorab in der Library bulk-generieren ("🎯 MC generieren"-Button bei Auswahl).
-                Dann startest du MC-Sessions in Zukunft sofort ohne Wartezeit.
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  onClick={() => { setMcPreFlight(null); }}
-                  disabled={mcGenerating}
-                  className="flex-1 px-4 py-2 rounded-xl border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm transition-colors disabled:opacity-40"
-                >
-                  Abbrechen
-                </button>
-                <button
-                  onClick={handleFallbackToClassic}
-                  disabled={mcGenerating}
-                  className="flex-1 px-4 py-2 rounded-xl bg-[#252840] hover:bg-[#2d3148] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm transition-colors disabled:opacity-40"
-                >
-                  📝 Stattdessen Karteikarten
-                </button>
-                <button
-                  onClick={handleConfirmGenerateMissingMC}
-                  disabled={mcGenerating || !onGenerateMC}
-                  className="flex-1 px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors flex items-center justify-center gap-1.5"
-                >
-                  {mcGenerating ? (
-                    <>
-                      <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Generiere…
-                    </>
-                  ) : (
-                    <>🤖 Jetzt generieren</>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   }

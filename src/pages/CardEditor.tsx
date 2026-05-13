@@ -26,6 +26,11 @@ interface Props {
   onCancel: () => void;
   onAddLink: (cardId: string, linkedCardId: string, linkType: 'child' | 'related') => void;
   onRemoveLink: (linkId: string) => void;
+  /** Triggers KI-generation of MC for THIS card. Re-uses the bulk handler
+   *  (single-card array). Updates persist via Supabase live-sync. */
+  onGenerateMC?: (cardIds: string[]) => Promise<void>;
+  /** Sets mcQuestions to undefined on the card. */
+  onDeleteMC?: (cardId: string) => void;
   onApiError?: (message: string) => void;
 }
 
@@ -62,7 +67,7 @@ function srsStatusToFields(status: SRSStatus): SRSOverride {
   }
 }
 
-export default function CardEditor({ card, settings, sets, allCards, links, onSave, onCancel, onAddLink, onRemoveLink, onApiError }: Props) {
+export default function CardEditor({ card, settings, sets, allCards, links, onSave, onCancel, onAddLink, onRemoveLink, onGenerateMC, onDeleteMC, onApiError }: Props) {
   const [front, setFront] = useState(card?.front ?? '');
   const [back, setBack] = useState(card?.back ?? '');
   const [frontImage, setFrontImage] = useState<CardImage | undefined>(card?.frontImage);
@@ -481,6 +486,16 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
             })()
           )}
 
+          {/* MC-Fragen — Read-only Anzeige mit Regenerate/Delete-Buttons.
+              Werden via Bulk-Action in Library oder hier per Klick generiert. */}
+          {card && (
+            <MCQuestionsSection
+              card={card}
+              onGenerate={onGenerateMC ? () => onGenerateMC([card.id]) : undefined}
+              onDelete={onDeleteMC ? () => onDeleteMC(card.id) : undefined}
+            />
+          )}
+
           {card && (
             <LinkedCards
               card={card}
@@ -508,6 +523,151 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+// ─── MC Questions display ───────────────────────────────────────────────────
+function MCQuestionsSection({
+  card,
+  onGenerate,
+  onDelete,
+}: {
+  card: Flashcard;
+  onGenerate?: () => Promise<void>;
+  onDelete?: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const questions = card.mcQuestions ?? [];
+  const hasMC = questions.length > 0;
+
+  // Detect stale MC: card was edited after MC generation
+  const stale = hasMC &&
+    card.mcQuestionsGeneratedAt &&
+    new Date(card.updatedAt).getTime() > new Date(card.mcQuestionsGeneratedAt).getTime() + 5000; // 5s grace for clock skew
+
+  const handleGenerate = async () => {
+    if (!onGenerate || busy) return;
+    if (hasMC) {
+      const ok = window.confirm('Bestehende MC-Fragen werden überschrieben. Fortfahren?');
+      if (!ok) return;
+    }
+    setBusy(true);
+    try { await onGenerate(); }
+    finally { setBusy(false); }
+  };
+
+  const handleDelete = () => {
+    if (!onDelete) return;
+    const ok = window.confirm(`${questions.length} MC-Fragen wirklich löschen?`);
+    if (ok) onDelete();
+  };
+
+  return (
+    <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="font-semibold text-white flex items-center gap-2">
+          🎯 MC-Fragen
+          {hasMC && (
+            <span className="text-xs font-normal text-[#9ca3af]">
+              {questions.length} Frage{questions.length !== 1 ? 'n' : ''}
+            </span>
+          )}
+          {stale && (
+            <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              veraltet
+            </span>
+          )}
+        </h3>
+        <div className="flex gap-2">
+          {hasMC && onDelete && (
+            <button
+              onClick={handleDelete}
+              disabled={busy}
+              className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-red-500/10 border border-[#2d3148] hover:border-red-500/30 text-[#9ca3af] hover:text-red-400 transition-colors disabled:opacity-40"
+            >
+              🗑 Löschen
+            </button>
+          )}
+          {onGenerate && (
+            <button
+              onClick={handleGenerate}
+              disabled={busy}
+              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors flex items-center gap-1.5"
+            >
+              {busy ? (
+                <>
+                  <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  …
+                </>
+              ) : hasMC ? (
+                <>🔄 Neu generieren</>
+              ) : (
+                <>🤖 Generieren</>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {stale && (
+        <p className="text-[11px] text-amber-300/80 leading-relaxed">
+          ⚠️ Die Karte wurde nach MC-Generierung editiert. Inhalte könnten veraltet sein —
+          ggf. "Neu generieren" klicken.
+        </p>
+      )}
+
+      {!hasMC ? (
+        <p className="text-sm text-[#6b7280]">
+          Noch keine MC-Fragen für diese Karte. Klick auf "Generieren" um sie automatisch via KI zu erstellen
+          (3–7 Fragen je nach Komplexität).
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {questions.map((q, qi) => (
+            <details key={qi} className="bg-[#252840] rounded-xl border border-[#2d3148] overflow-hidden group">
+              <summary className="px-3 py-2 cursor-pointer hover:bg-[#2a2d45] transition-colors flex items-start gap-2">
+                <span className="text-[10px] font-bold text-indigo-400 px-1.5 py-0.5 rounded bg-indigo-500/10 shrink-0 mt-0.5">
+                  {qi + 1}
+                </span>
+                <span className="flex-1 text-sm text-white">{q.question}</span>
+                <span className="text-[10px] text-[#6b7280] shrink-0">
+                  {q.type === 'single' ? 'Single' : 'Multi'} · {q.topic}
+                </span>
+              </summary>
+              <div className="px-3 pb-3 pt-1 space-y-2">
+                <div className="space-y-1">
+                  {q.options.map(opt => (
+                    <div
+                      key={opt.id}
+                      className={`flex items-start gap-2 px-2 py-1.5 rounded-lg text-xs ${
+                        opt.correct
+                          ? 'bg-green-500/10 border border-green-500/30 text-green-300'
+                          : 'bg-[#1e2130] border border-[#2d3148] text-[#9ca3af]'
+                      }`}
+                    >
+                      <span className="font-mono text-[10px] mt-0.5 shrink-0">{opt.id.toUpperCase()}</span>
+                      <span className="flex-1">{opt.text}</span>
+                      {opt.correct && <span className="text-[10px]">✓</span>}
+                    </div>
+                  ))}
+                </div>
+                {q.explanation && (
+                  <p className="text-[11px] text-[#9ca3af] leading-relaxed italic px-1">
+                    💡 {q.explanation}
+                  </p>
+                )}
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
+
+      {card.mcQuestionsGeneratedAt && (
+        <p className="text-[10px] text-[#6b7280]">
+          Generiert: {new Date(card.mcQuestionsGeneratedAt).toLocaleString('de-DE')}
+        </p>
+      )}
     </div>
   );
 }

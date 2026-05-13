@@ -906,6 +906,8 @@ export default function App() {
             onCancel={() => navigate('library')}
             onAddLink={addLink}
             onRemoveLink={removeLink}
+            onGenerateMC={handleGenerateMCForCards}
+            onDeleteMC={(id) => updateCard(id, { mcQuestions: undefined, mcQuestionsGeneratedAt: undefined })}
             onApiError={msg => showToast(msg, 'error')}
           />
         )}

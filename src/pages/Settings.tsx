@@ -1109,14 +1109,27 @@ function DailyLimitSection({
   onUpdateSettings: (u: Partial<AppSettings>) => void;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }) {
-  const activePreset = detectActivePreset(settings);
+  const detectedPreset = detectActivePreset(settings);
+  // "Custom" can be either detected (current values match no preset) or
+  // explicitly chosen by the user (they clicked "Eigene Werte" to tune even
+  // though their values happen to match a preset). The local state lets us
+  // open the custom block on demand without modifying settings.
+  const [forceCustom, setForceCustom] = useState(false);
+  const activePreset: PresetId = forceCustom ? 'custom' : detectedPreset;
 
   const applyPreset = (p: Preset) => {
     if (p.requiresExamDate && !hasExamDate) {
       showToast('Erst Prüfungsdatum setzen für Auto-Pace', 'info');
       return;
     }
-    if (!p.apply) return;          // 'custom' → just opens the advanced block
+    if (p.id === 'custom') {
+      // Open the custom block. Don't touch any settings — user's existing
+      // values stay as they are, they're just free to tune them now.
+      setForceCustom(true);
+      return;
+    }
+    if (!p.apply) return;
+    setForceCustom(false);          // reverting to a preset clears the override
     const patch = p.apply();
     onUpdateSettings(patch);
     // Keep the local input states in sync so the custom-block (if user switches
@@ -1128,9 +1141,6 @@ function DailyLimitSection({
     showToast(`Modus: ${p.emoji} ${p.label}`, 'success');
   };
 
-  // Custom is also "selected" — user is just always free to fine-tune. We
-  // explicitly show the custom block ONLY when it's the active preset, to
-  // avoid the previous mistake of showing 5 fields at once.
   const showCustomBlock = activePreset === 'custom';
 
   const newPerDayDisplay = settings.dailyNewCardGoalMode === 'auto' && pace

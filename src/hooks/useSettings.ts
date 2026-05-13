@@ -31,10 +31,14 @@ function fromDb(row: Record<string, any>): AppSettings {
     autoUnflagEnabled: row.auto_unflag_enabled ?? true,
     autoUnflagNotification: row.auto_unflag_notification ?? undefined,
     focusMode: (row.focus_mode === 'A' || row.focus_mode === 'AB' || row.focus_mode === 'all') ? row.focus_mode : 'all',
-    // API keys are stored in localStorage only (no DB column needed)
-    anthropicApiKey: localStorage.getItem('anthropic_api_key') ?? undefined,
-    geminiApiKey: localStorage.getItem('gemini_api_key') ?? undefined,
-    groqApiKey: localStorage.getItem('groq_api_key') ?? undefined,
+    // API keys sync across devices via user_settings. localStorage stays as a
+    // fallback so users who entered keys before the migration aren't suddenly
+    // locked out — fromDb prefers Supabase, but falls back if the DB column
+    // is empty. A separate migration step in load() then uploads the
+    // localStorage value to Supabase so it propagates to all devices.
+    anthropicApiKey: ((typeof row.anthropic_api_key === 'string' && row.anthropic_api_key) || localStorage.getItem('anthropic_api_key')) ?? undefined,
+    geminiApiKey:    ((typeof row.gemini_api_key === 'string' && row.gemini_api_key)       || localStorage.getItem('gemini_api_key')) ?? undefined,
+    groqApiKey:      ((typeof row.groq_api_key === 'string' && row.groq_api_key)           || localStorage.getItem('groq_api_key')) ?? undefined,
   };
 }
 
@@ -54,7 +58,9 @@ function toDb(settings: AppSettings, userId: string) {
     auto_unflag_enabled: settings.autoUnflagEnabled,
     auto_unflag_notification: settings.autoUnflagNotification ?? null,
     focus_mode: settings.focusMode ?? null,
-    // anthropicApiKey lives in localStorage only — not sent to Supabase
+    anthropic_api_key: settings.anthropicApiKey ?? null,
+    gemini_api_key: settings.geminiApiKey ?? null,
+    groq_api_key: settings.groqApiKey ?? null,
     updated_at: new Date().toISOString(),
   };
 }
@@ -81,6 +87,18 @@ export function useSettings(userId: string | null) {
           const s = fromDb(data as Record<string, unknown>);
           setSettings(s);
           settingsRef.current = s;
+
+          // One-time migration: if Supabase has no API keys but the user has
+          // them in localStorage from before the sync feature, push them up
+          // so all the user's devices pick them up via live-sync.
+          const dbRow = data as Record<string, unknown>;
+          const needsKeyMigration =
+            (!dbRow.anthropic_api_key && s.anthropicApiKey) ||
+            (!dbRow.gemini_api_key && s.geminiApiKey) ||
+            (!dbRow.groq_api_key && s.groqApiKey);
+          if (needsKeyMigration) {
+            await supabase.from('user_settings').upsert(toDb(s, userId), { onConflict: 'user_id' });
+          }
         } else if (error?.code === 'PGRST116') {
           // Row truly doesn't exist yet (new user) — seed from localStorage
           const local = getLocalSettings();

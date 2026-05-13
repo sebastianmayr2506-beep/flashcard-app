@@ -7,6 +7,44 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-13 — Phase 2: MC-Lernmodus (Multiple-Choice study session)
+
+**What:** New session mode in StudySession setup. Beside the existing
+flashcard flow, users can now study a session as multiple-choice — each
+card cycles through its persisted `mcQuestions` (Phase 1) with a guided
+"pick → reveal → explanation → next" loop.
+
+**Flow:**
+1. Setup-Phase: new toggle "📝 Karteikarten · 🎯 MC-Modus" beside
+   Reihenfolge (persisted in localStorage as `session_mode`).
+2. Click "Lernen starten" with MC selected:
+   - If every card already has MC questions → start MC session.
+   - Else → Pre-Flight-Modal: "X von Y Karten brauchen MC. Generieren?"
+     - "🤖 Jetzt generieren" → uses existing `onGenerateMC` handler,
+       progress overlay in App.tsx kicks in, then session starts with
+       freshly populated MC arrays
+     - "📝 Stattdessen Karteikarten" → falls back to classic mode
+     - "Abbrechen" → back to setup
+3. MC-Studying-View: per-card progress, question/options layout,
+   submit → reveal correct options + explanation → next. Walks
+   through all questions of a card, then the next card. Type 'single'
+   = exclusive selection; 'multiple' = checkbox-style toggle.
+4. Summary: dedicated MC summary with hit-rate and **"📝 Jetzt im
+   Karteikarten-Modus festigen"** button that restarts the same cards
+   in classic mode (Erkennung → Wiedergabe).
+
+**Important:** MC bewertet das SRS NICHT. Karteikarten-Modus bleibt
+das offizielle Bewertungs-Tool. MC = Warmup/Recognition.
+
+**State persistence:** classic sessions resume on reload (existing
+behaviour). MC sessions don't — reload mid-question = back to setup.
+Justified by their short length; restoring mid-question would be
+confusing.
+
+**Files:** `src/pages/StudySession.tsx`, `src/App.tsx`
+
+---
+
 ## 2026-05-13 — Persistent MC questions (Phase 1: storage + bulk generation)
 
 **Why:** The existing inline "MC Tipp generieren"-button regenerates 3

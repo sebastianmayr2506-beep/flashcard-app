@@ -31,6 +31,9 @@ interface Props {
   onUpdateCard: (id: string, data: Partial<Flashcard>) => void;
   onDeleteCard: (id: string) => void;
   onSplitCard?: (cardId: string, afterSplit: (newCardIds: string[]) => void) => void;
+  /** Bulk-generate persistent MC questions for the given cards.
+   *  Used for the Pre-Flight step in MC-Lernmodus. */
+  onGenerateMC?: (cardIds: string[]) => Promise<void>;
   onSessionComplete: () => void;
   onNavigate: (page: string) => void;
   onApiError?: (message: string) => void;
@@ -78,7 +81,7 @@ interface RatingCount {
   nochmal: number; schwer: number; gut: number; einfach: number;
 }
 
-export default function StudySession({ cards, settings, sets, links, preFilteredCards, dailyPlan, onRate, onUpdateCard, onDeleteCard, onSplitCard, onSessionComplete, onNavigate, onApiError }: Props) {
+export default function StudySession({ cards, settings, sets, links, preFilteredCards, dailyPlan, onRate, onUpdateCard, onDeleteCard, onSplitCard, onGenerateMC, onSessionComplete, onNavigate, onApiError }: Props) {
   const isDailyMode = !!dailyPlan;
 
   // Restore in-progress study session from sessionStorage on mount.
@@ -120,6 +123,24 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   const [studyOrder, setStudyOrder] = useState<StudyOrder>(
     () => (localStorage.getItem('study_order') as StudyOrder) ?? 'review-first'
   );
+
+  // ── MC-Lernmodus state ──────────────────────────────────────────────────
+  // sessionMode: 'classic' = SRS flashcards (default), 'mc' = MC-Lernmodus.
+  // Persisted in localStorage so the toggle remembers across sessions.
+  const [sessionMode, setSessionMode] = useState<'classic' | 'mc'>(
+    () => (localStorage.getItem('session_mode') === 'mc' ? 'mc' : 'classic')
+  );
+  // MC session progress: which card and which question within it.
+  // mcAnswers[cardIdx]?.[questionIdx] = { selected: string[], isCorrect: boolean }
+  const [mcCardIdx, setMcCardIdx] = useState(0);
+  const [mcQuestionIdx, setMcQuestionIdx] = useState(0);
+  const [mcSelected, setMcSelected] = useState<string[]>([]);
+  const [mcSubmitted, setMcSubmitted] = useState(false);
+  type MCSessionAnswer = { selected: string[]; isCorrect: boolean };
+  const [mcAnswers, setMcAnswers] = useState<Map<string, MCSessionAnswer[]>>(new Map());
+  // Pre-flight: cards lacking MC questions; null when no check pending
+  const [mcPreFlight, setMcPreFlight] = useState<{ missing: Flashcard[]; allCards: Flashcard[] } | null>(null);
+  const [mcGenerating, setMcGenerating] = useState(false);
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminers, setFilterExaminers] = useState<string[]>([]);
   const [filterDifficulty, setFilterDifficulty] = useState('');
@@ -220,6 +241,81 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     }
 
     if (ordered.length === 0) return;
+
+    // MC-Modus Pre-Flight: prüfen welche Karten MC-Fragen haben
+    if (sessionMode === 'mc') {
+      const missing = ordered.filter(c => !c.mcQuestions || c.mcQuestions.length === 0);
+      if (missing.length > 0) {
+        // Pre-Flight modal: user confirms generation or downgrades to classic
+        setMcPreFlight({ missing, allCards: ordered });
+        return;
+      }
+      // All cards have MC → start MC session directly
+      startMCSession(ordered);
+      return;
+    }
+
+    // Classic mode
+    setSessionCards(ordered);
+    setCurrentIdx(0);
+    setIsFlipped(false);
+    setRatings({ nochmal: 0, schwer: 0, gut: 0, einfach: 0 });
+    setSessionState('studying');
+  };
+
+  // Start MC session with given (possibly newly-generated) cards
+  const startMCSession = (ordered: Flashcard[]) => {
+    setSessionCards(ordered);
+    setMcCardIdx(0);
+    setMcQuestionIdx(0);
+    setMcSelected([]);
+    setMcSubmitted(false);
+    setMcAnswers(new Map());
+    setRatings({ nochmal: 0, schwer: 0, gut: 0, einfach: 0 });
+    setSessionState('studying');
+  };
+
+  // Handle the Pre-Flight modal "Generate now" action
+  const handleConfirmGenerateMissingMC = async () => {
+    if (!mcPreFlight || !onGenerateMC) return;
+    setMcGenerating(true);
+    try {
+      await onGenerateMC(mcPreFlight.missing.map(c => c.id));
+      // After generation, re-fetch the cards from the live `cards` prop —
+      // the bulkUpdate has populated mcQuestions on each. Map ordered cards
+      // through current `cards` to pick up the fresh MC arrays.
+      const refreshedCards = mcPreFlight.allCards.map(c => cards.find(cc => cc.id === c.id) ?? c);
+      setMcPreFlight(null);
+      startMCSession(refreshedCards);
+    } finally {
+      setMcGenerating(false);
+    }
+  };
+
+  // Pre-Flight: user wants to fall back to classic without generating
+  const handleFallbackToClassic = () => {
+    if (!mcPreFlight) return;
+    const ordered = mcPreFlight.allCards;
+    setMcPreFlight(null);
+    setSessionMode('classic');
+    localStorage.setItem('session_mode', 'classic');
+    setSessionCards(ordered);
+    setCurrentIdx(0);
+    setIsFlipped(false);
+    setRatings({ nochmal: 0, schwer: 0, gut: 0, einfach: 0 });
+    setSessionState('studying');
+  };
+
+  // After MC session: restart the same cards in classic mode for SRS rating
+  const handleFestigenInClassicMode = () => {
+    const ordered = sessionCards; // same cards
+    setSessionMode('classic');
+    localStorage.setItem('session_mode', 'classic');
+    setMcAnswers(new Map());
+    setMcCardIdx(0);
+    setMcQuestionIdx(0);
+    setMcSelected([]);
+    setMcSubmitted(false);
     setSessionCards(ordered);
     setCurrentIdx(0);
     setIsFlipped(false);
@@ -518,7 +614,9 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   // any sync updates) plus position and rating counts.
   useEffect(() => {
     try {
-      if (sessionState === 'studying' && sessionCards.length > 0) {
+      // Only persist classic-mode sessions — MC sessions are short, restoring
+      // mid-question would be confusing. Reload mid-MC = back to setup.
+      if (sessionState === 'studying' && sessionCards.length > 0 && sessionMode === 'classic') {
         sessionStorage.setItem('studySession:state', JSON.stringify({
           sessionState,
           cardIds: sessionCards.map(c => c.id),
@@ -526,11 +624,10 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
           ratings,
         }));
       } else {
-        // setup or summary — clear; nothing useful to resume
         sessionStorage.removeItem('studySession:state');
       }
     } catch { /* sessionStorage unavailable / quota — fail silently */ }
-  }, [sessionState, sessionCards, currentIdx, ratings]);
+  }, [sessionState, sessionCards, currentIdx, ratings, sessionMode]);
 
   const handleRate = (rating: RatingValue) => {
     const card = sessionCards[currentIdx];
@@ -616,6 +713,40 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                 <p className="text-xs text-[#9ca3af] mt-0.5">∑ Gesamt</p>
               </div>
             </div>
+
+            {/* Mode selector — Karteikarten vs MC-Lernmodus */}
+            <p className="text-xs font-semibold text-[#9ca3af] uppercase tracking-wider mb-2">Lernmodus</p>
+            <div className="flex gap-1 p-1 rounded-xl bg-[#15172a] border border-[#2d3148] mb-4">
+              {([
+                { value: 'classic', icon: '📝', label: 'Karteikarten' },
+                { value: 'mc',      icon: '🎯', label: 'MC-Modus' },
+              ] as const).map(opt => {
+                const active = sessionMode === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => {
+                      setSessionMode(opt.value);
+                      localStorage.setItem('session_mode', opt.value);
+                    }}
+                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${
+                      active
+                        ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30'
+                        : 'text-[#9ca3af] hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <span>{opt.icon}</span>
+                    <span>{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {sessionMode === 'mc' && (
+              <p className="text-xs text-[#9ca3af] mb-4 leading-relaxed">
+                Multiple-Choice-Fragen pro Karte. Karten ohne MC werden vor dem Start automatisch generiert.
+                Bewertet das SRS nicht — fürs Festigen anschließend in den Karteikarten-Modus wechseln.
+              </p>
+            )}
 
             {/* Order selector */}
             <p className="text-xs font-semibold text-[#9ca3af] uppercase tracking-wider mb-2">Reihenfolge</p>
@@ -789,6 +920,67 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   }
 
   if (sessionState === 'summary') {
+    // ── MC summary branch ────────────────────────────────────────────
+    if (sessionMode === 'mc') {
+      const totalAnswered = Array.from(mcAnswers.values())
+        .reduce((s, arr) => s + arr.filter(Boolean).length, 0);
+      const correct = Array.from(mcAnswers.values())
+        .reduce((s, arr) => s + arr.filter(a => a?.isCorrect).length, 0);
+      const mcPct = totalAnswered > 0 ? Math.round((correct / totalAnswered) * 100) : 0;
+      const cardsTouched = sessionCards.length;
+
+      return (
+        <div className="p-4 md:p-6 lg:p-8 fade-in">
+          <div className="max-w-md mx-auto text-center">
+            <div className="text-6xl mb-4">{mcPct >= 80 ? '🎯' : mcPct >= 50 ? '📚' : '💪'}</div>
+            <h2 className="text-2xl font-bold text-white mb-1">MC-Session abgeschlossen!</h2>
+            <p className="text-[#9ca3af] text-sm mb-5">{cardsTouched} Karten · {totalAnswered} Fragen beantwortet</p>
+
+            <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 mb-5">
+              <div className="text-4xl font-bold text-white mb-1">{mcPct}%</div>
+              <p className="text-[#9ca3af] text-sm mb-4">{correct} von {totalAnswered} richtig</p>
+              <div className="w-full h-3 bg-[#252840] rounded-full overflow-hidden">
+                <div className={`h-full rounded-full transition-all duration-700 ${
+                  mcPct >= 80 ? 'bg-gradient-to-r from-green-500 to-emerald-400' :
+                  mcPct >= 50 ? 'bg-gradient-to-r from-amber-500 to-yellow-400' :
+                  'bg-gradient-to-r from-red-500 to-red-400'
+                }`} style={{ width: `${mcPct}%` }} />
+              </div>
+            </div>
+
+            <div className="bg-purple-500/10 border border-purple-500/30 rounded-2xl p-4 mb-5 text-left">
+              <p className="text-sm text-purple-200 font-semibold flex items-center gap-2 mb-1">
+                💡 Jetzt im Karteikarten-Modus festigen?
+              </p>
+              <p className="text-xs text-[#d1d5db] leading-relaxed">
+                Du hast die Inhalte als MC erkannt — jetzt im klassischen Karteikarten-Modus laut/aktiv reproduzieren
+                und fürs SRS bewerten. Erkennung → Wiedergabe ist der bewährte Lern-Loop.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <button
+                onClick={handleFestigenInClassicMode}
+                className="w-full py-3 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-semibold transition-colors"
+              >
+                📝 Jetzt im Karteikarten-Modus festigen
+              </button>
+              <div className="flex gap-3">
+                <button onClick={startSession}
+                  className="flex-1 py-2.5 rounded-xl border border-[#2d3148] text-[#9ca3af] hover:text-white transition-colors text-sm font-medium">
+                  🎯 MC-Session wiederholen
+                </button>
+                <button onClick={() => { onSessionComplete(); onNavigate('dashboard'); }}
+                  className="flex-1 py-2.5 rounded-xl bg-[#252840] hover:bg-[#2d3148] text-[#9ca3af] hover:text-white transition-colors text-sm font-medium">
+                  Fertig
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     const total = sessionCards.length;
     const good = ratings.gut + ratings.einfach;
     const pct = Math.round((good / total) * 100);
@@ -850,6 +1042,239 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
               Fertig
             </button>
           </div>
+        </div>
+
+        {/* MC Pre-Flight modal: shown when user starts MC session and some
+            cards are missing MC questions. */}
+        {mcPreFlight && (
+          <div className="fixed inset-0 z-[80] bg-black/80 flex items-center justify-center p-4">
+            <div className="bg-[#1a1d27] border border-[#2d3148] rounded-2xl p-6 max-w-md w-full space-y-4">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">🎯 MC-Fragen werden noch benötigt</h3>
+              <p className="text-sm text-[#d1d5db] leading-relaxed">
+                <strong className="text-white">{mcPreFlight.missing.length}</strong> von{' '}
+                <strong className="text-white">{mcPreFlight.allCards.length}</strong> Karten haben noch keine MC-Fragen.
+                Die KI generiert sie jetzt automatisch — das dauert ca.{' '}
+                <strong className="text-white">{Math.ceil(mcPreFlight.missing.length * 2.5)}</strong> Sekunden.
+              </p>
+              <div className="bg-[#252840] rounded-xl p-3 text-xs text-[#9ca3af] leading-relaxed">
+                💡 Du kannst die Karten auch vorab in der Library bulk-generieren ("🎯 MC generieren"-Button bei Auswahl).
+                Dann startest du MC-Sessions in Zukunft sofort ohne Wartezeit.
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => { setMcPreFlight(null); }}
+                  disabled={mcGenerating}
+                  className="flex-1 px-4 py-2 rounded-xl border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm transition-colors disabled:opacity-40"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  onClick={handleFallbackToClassic}
+                  disabled={mcGenerating}
+                  className="flex-1 px-4 py-2 rounded-xl bg-[#252840] hover:bg-[#2d3148] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm transition-colors disabled:opacity-40"
+                >
+                  📝 Stattdessen Karteikarten
+                </button>
+                <button
+                  onClick={handleConfirmGenerateMissingMC}
+                  disabled={mcGenerating || !onGenerateMC}
+                  className="flex-1 px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors flex items-center justify-center gap-1.5"
+                >
+                  {mcGenerating ? (
+                    <>
+                      <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Generiere…
+                    </>
+                  ) : (
+                    <>🤖 Jetzt generieren</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── MC-Modus Studying View ────────────────────────────────────────────
+  // Branches off here so the classic flashcard render below is unchanged.
+  if (sessionState === 'studying' && sessionMode === 'mc') {
+    const mcCurrent = sessionCards[mcCardIdx];
+    if (!mcCurrent || !mcCurrent.mcQuestions || mcCurrent.mcQuestions.length === 0) {
+      // Defensive: should never happen because pre-flight ensures all cards have MC
+      return (
+        <div className="p-8 text-center text-[#9ca3af]">
+          Keine MC-Fragen vorhanden für aktuelle Karte. Zurück zum Setup.
+          <button onClick={() => setSessionState('setup')} className="mt-4 text-indigo-400 underline block mx-auto">
+            Zurück
+          </button>
+        </div>
+      );
+    }
+    const mcQuestion = mcCurrent.mcQuestions[mcQuestionIdx];
+    const correctIds = mcQuestion.options.filter(o => o.correct).map(o => o.id);
+    const isMulti = mcQuestion.type === 'multiple';
+
+    const toggleOption = (id: string) => {
+      if (mcSubmitted) return;
+      if (isMulti) {
+        setMcSelected(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
+      } else {
+        setMcSelected([id]);
+      }
+    };
+
+    const submit = () => {
+      if (mcSelected.length === 0) return;
+      const isCorrect =
+        mcSelected.length === correctIds.length &&
+        mcSelected.every(id => correctIds.includes(id));
+      setMcAnswers(prev => {
+        const next = new Map(prev);
+        const cardAnswers = next.get(mcCurrent.id) ?? [];
+        cardAnswers[mcQuestionIdx] = { selected: [...mcSelected], isCorrect };
+        next.set(mcCurrent.id, cardAnswers);
+        return next;
+      });
+      setMcSubmitted(true);
+    };
+
+    const next = () => {
+      const lastQuestion = mcQuestionIdx + 1 >= mcCurrent.mcQuestions!.length;
+      const lastCard = mcCardIdx + 1 >= sessionCards.length;
+      if (lastQuestion && lastCard) {
+        // Done — go to summary
+        setSessionState('summary');
+        return;
+      }
+      if (lastQuestion) {
+        setMcCardIdx(i => i + 1);
+        setMcQuestionIdx(0);
+      } else {
+        setMcQuestionIdx(i => i + 1);
+      }
+      setMcSelected([]);
+      setMcSubmitted(false);
+    };
+
+    const totalCards = sessionCards.length;
+    const totalQuestionsThisCard = mcCurrent.mcQuestions.length;
+    const overallProgress = Math.round(
+      (Array.from(mcAnswers.values()).reduce((s, arr) => s + arr.filter(Boolean).length, 0) /
+        sessionCards.reduce((s, c) => s + (c.mcQuestions?.length ?? 0), 0)) * 100
+    );
+
+    return (
+      <div className="flex flex-col h-screen max-h-screen bg-[#0f1117] fade-in">
+        {/* Header */}
+        <div className="shrink-0">
+          <div className="flex items-center justify-between px-4 md:px-8 py-3 border-b border-[#2d3148]">
+            <button onClick={() => setSessionState('setup')} className="text-[#9ca3af] hover:text-white text-sm transition-colors">
+              ✕ Beenden
+            </button>
+            <span className="text-sm text-[#9ca3af] font-medium">
+              Karte {mcCardIdx + 1} / {totalCards} · Frage {mcQuestionIdx + 1} / {totalQuestionsThisCard}
+            </span>
+            <span className="text-xs px-2 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-semibold">
+              🎯 MC-Modus
+            </span>
+          </div>
+          <div className="h-1 bg-[#2d3148]">
+            <div className="h-full bg-indigo-500 transition-all duration-500" style={{ width: `${overallProgress}%` }} />
+          </div>
+        </div>
+
+        {/* MC content */}
+        <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-3xl w-full mx-auto">
+          {/* Card-Context: the original question text — so user knows what topic */}
+          <div className="mb-5 bg-[#1e2130] border border-[#2d3148] rounded-2xl p-4">
+            <p className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider mb-1.5">Karten-Frage</p>
+            <p className="text-sm text-[#d1d5db] leading-relaxed">
+              <MarkdownText text={mcCurrent.front} />
+            </p>
+            <p className="text-[10px] text-[#6b7280] mt-2">
+              Aspekt: <span className="text-indigo-300">{mcQuestion.topic}</span>
+            </p>
+          </div>
+
+          {/* MC question */}
+          <div className="bg-[#1e2130] border border-indigo-500/30 rounded-2xl p-5 space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-indigo-400 uppercase tracking-wider mb-2">
+                MC-Frage {mcQuestionIdx + 1}
+                {isMulti && <span className="ml-2 text-[10px] text-amber-300">(mehrere Antworten möglich)</span>}
+              </p>
+              <p className="text-base text-white font-medium leading-snug">{mcQuestion.question}</p>
+            </div>
+
+            <div className="space-y-2">
+              {mcQuestion.options.map(opt => {
+                const selected = mcSelected.includes(opt.id);
+                const showResult = mcSubmitted;
+                const isCorrectOpt = opt.correct;
+                let cls = '';
+                if (showResult) {
+                  if (isCorrectOpt) cls = 'bg-green-500/15 border-green-500/50 text-green-200';
+                  else if (selected) cls = 'bg-red-500/15 border-red-500/50 text-red-200';
+                  else cls = 'bg-[#252840] border-[#2d3148] text-[#9ca3af]';
+                } else {
+                  cls = selected
+                    ? 'bg-indigo-500/15 border-indigo-500/50 text-white'
+                    : 'bg-[#252840] border-[#2d3148] text-[#d1d5db] hover:border-[#3d4168]';
+                }
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => toggleOption(opt.id)}
+                    disabled={mcSubmitted}
+                    className={`w-full text-left px-4 py-3 rounded-xl border transition-all flex items-start gap-3 ${cls} ${mcSubmitted ? 'cursor-default' : 'cursor-pointer hover:scale-[1.01]'}`}
+                  >
+                    <span className={`shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
+                      mcSubmitted && isCorrectOpt ? 'border-green-400 bg-green-400/20' :
+                      mcSubmitted && selected   ? 'border-red-400 bg-red-400/20' :
+                      selected ? 'border-indigo-400 bg-indigo-400/20' :
+                      'border-[#3d4168]'
+                    }`}>
+                      {opt.id.toUpperCase()}
+                    </span>
+                    <span className="flex-1 text-sm leading-snug">{opt.text}</span>
+                    {mcSubmitted && isCorrectOpt && <span className="text-green-400 text-base">✓</span>}
+                    {mcSubmitted && selected && !isCorrectOpt && <span className="text-red-400 text-base">✗</span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            {mcSubmitted && mcQuestion.explanation && (
+              <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-3">
+                <p className="text-[10px] font-semibold text-purple-300 uppercase tracking-wider mb-1">💡 Erklärung</p>
+                <p className="text-sm text-purple-100 leading-relaxed">{mcQuestion.explanation}</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom action */}
+        <div className="shrink-0 px-4 md:px-8 pb-6 pt-3 border-t border-[#2d3148]">
+          {!mcSubmitted ? (
+            <button
+              onClick={submit}
+              disabled={mcSelected.length === 0}
+              className="w-full py-3.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors text-base"
+            >
+              ✓ Auflösen
+            </button>
+          ) : (
+            <button
+              onClick={next}
+              className="w-full py-3.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-semibold transition-colors text-base flex items-center justify-center gap-2"
+            >
+              {mcQuestionIdx + 1 >= totalQuestionsThisCard
+                ? mcCardIdx + 1 >= totalCards ? '🎉 Session abschließen' : 'Nächste Karte →'
+                : 'Weiter →'}
+            </button>
+          )}
         </div>
       </div>
     );

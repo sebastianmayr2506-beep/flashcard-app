@@ -310,7 +310,31 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     if (sessionMode === 'mc') {
       const missing = ordered.filter(c => !c.mcQuestions || c.mcQuestions.length === 0);
       if (missing.length > 0) {
-        // Pre-Flight modal: user confirms generation or downgrades to classic
+        // Small batches (≤3 cards) — usually just today's new cards or a single
+        // failed card from a previous run. Skip the modal and auto-generate
+        // inline; reduces friction since the user has to confirm "yes" anyway
+        // and the wait is only ~5–8 seconds.
+        if (missing.length <= 3 && onGenerateMC) {
+          (async () => {
+            setMcGenerating(true);
+            try {
+              await onGenerateMC(missing.map(c => c.id));
+              const refreshed = ordered.map(c => cards.find(cc => cc.id === c.id) ?? c);
+              // Check again after generation: any still missing means a hard
+              // failure. Inform the user via toast and fall back.
+              const stillMissing = refreshed.filter(c => !c.mcQuestions || c.mcQuestions.length === 0);
+              if (stillMissing.length > 0) {
+                onApiError?.(`MC-Generierung für ${stillMissing.length} Karte(n) fehlgeschlagen — siehe Konsole. Karte(n): ${stillMissing.map(c => c.front.slice(0, 60)).join(' · ')}`);
+              }
+              const ready = refreshed.filter(c => c.mcQuestions && c.mcQuestions.length > 0);
+              if (ready.length > 0) startMCSession(ready);
+            } finally {
+              setMcGenerating(false);
+            }
+          })();
+          return;
+        }
+        // Larger batches → keep the modal so user is aware of the wait
         setMcPreFlight({ missing, allCards: ordered });
         return;
       }

@@ -397,11 +397,21 @@ export default function App() {
       if (patches.length > 0) await bulkUpdate(patches);
       const okCount = results.size;
       const failCount = errors.size;
+      if (failCount > 0) {
+        // Surface failed cards in the console with their front text so the
+        // user can identify problematic cards (often: very long content,
+        // malformed JSON from the AI, or rate-limit).
+        console.warn('[MC] Generation failures:');
+        for (const [cardId, msg] of errors) {
+          const card = cards.find(c => c.id === cardId);
+          console.warn(`  · "${card?.front.slice(0, 80) ?? cardId}" → ${msg}`);
+        }
+      }
       showToast(
         failCount === 0
           ? `🎯 MC-Fragen für ${okCount} Karten generiert`
-          : `🎯 ${okCount} erfolgreich, ${failCount} fehlgeschlagen`,
-        failCount === 0 ? 'success' : 'info',
+          : `🎯 ${okCount} ok, ${failCount} fehlgeschlagen (Details in Konsole)`,
+        failCount === 0 ? 'success' : 'error',
       );
     } catch (err) {
       showToast(`MC-Generierung fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`, 'error');

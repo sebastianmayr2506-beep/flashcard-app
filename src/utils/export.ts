@@ -42,6 +42,9 @@ export function exportShareJSON(cards: Flashcard[]): void {
     easeFactor: _e,
     nextReviewDate: _n,
     flagged: _f,
+    // Persönliche Felder die der Empfänger nicht erben soll:
+    firstStudiedAt: _fsa,    // Timestamp deines ersten Lernens
+    blacklisted: _bl,        // deine persönliche „Parkiert"-Auswahl
     ...rest
   }) => ({
     ...rest,
@@ -50,6 +53,7 @@ export function exportShareJSON(cards: Flashcard[]): void {
     easeFactor: 2.5,
     nextReviewDate: new Date().toISOString(),
     flagged: false,
+    blacklisted: false,
   }));
   downloadFile(JSON.stringify(freshCards, null, 2), filename, 'application/json');
 }

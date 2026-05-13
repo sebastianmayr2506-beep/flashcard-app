@@ -7,6 +7,25 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-13 — Share-Export strippt jetzt auch firstStudiedAt + blacklisted
+
+**What:** `exportShareJSON` (Karten teilen → Empfänger startet bei Null)
+hat zwei persönliche Felder mitgeleakt: `firstStudiedAt` (Timestamp
+deines ersten Lernens) und `blacklisted` (deine Parkiert-Auswahl).
+
+**Fix:** Beide werden jetzt explizit aus der Share-Payload destrukturiert
+und auf Defaults gesetzt (`blacklisted: false`, `firstStudiedAt` entfällt).
+SRS, flagged, id, setId waren bereits korrekt gestrippt.
+
+**Was weiterhin geteilt wird (gewollt):** Inhalt, Tags, Schwierigkeit,
+Exam-Statistik (`timesAsked`, `askedByExaminers`, `askedInCatalogs`,
+`probabilityPercent`), `priority` (A/B/C) und `mcQuestions`. Damit muss
+der Empfänger nichts neu klassifizieren oder MC-generieren.
+
+**Files:** `src/utils/export.ts`.
+
+---
+
 ## 2026-05-13 — Bulk-Delete: 1029 parallele Requests → einzige chunked Query
 
 **Symptom:** Bei großen Selections (z.B. „alle 1029 löschen") blieben

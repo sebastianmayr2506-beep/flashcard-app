@@ -61,7 +61,7 @@ CREATE POLICY "users delete own card_chats"
 CREATE OR REPLACE FUNCTION public.card_chats_cleanup() RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
-AS $$
+AS $func$
 DECLARE
   deleted_count integer;
 BEGIN
@@ -70,17 +70,17 @@ BEGIN
   GET DIAGNOSTICS deleted_count = ROW_COUNT;
   RETURN deleted_count;
 END;
-$$;
+$func$;
 
 -- Trigger to keep updated_at fresh on every change.
 CREATE OR REPLACE FUNCTION public.card_chats_touch_updated_at() RETURNS trigger
 LANGUAGE plpgsql
-AS $$
+AS $func$
 BEGIN
   NEW.updated_at := now();
   RETURN NEW;
 END;
-$$;
+$func$;
 
 DROP TRIGGER IF EXISTS card_chats_touch_updated_at_trg ON public.card_chats;
 CREATE TRIGGER card_chats_touch_updated_at_trg

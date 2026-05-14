@@ -117,39 +117,81 @@ export async function suggestBackImprovement(
     '}',
   ].join('\n');
 
+  // Gemini Response-Schema: erzwingt server-seitig die Felder. Verhindert
+  // dass die KI bei langen Karten-Inhalten ins reine Markdown abdriftet.
+  const responseSchema = {
+    type: 'object',
+    properties: {
+      back: { type: 'string', description: 'Neue Rückseite der Karteikarte' },
+      rationale: { type: 'string', description: '1-Satz Begründung' },
+      changeType: {
+        type: 'string',
+        enum: ['clarify', 'simplify', 'rephrase', 'expand', 'none'],
+      },
+    },
+    required: ['back', 'rationale', 'changeType'],
+  };
+
   const geminiBody = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.3, maxOutputTokens: 4096, responseMimeType: 'application/json' },
+    generationConfig: {
+      temperature: 0.3,
+      maxOutputTokens: 8192,
+      responseMimeType: 'application/json',
+      responseSchema,
+    },
   };
 
   const { text } = await callAIWithFallback(keys, geminiBody, prompt);
 
-  // Robustes JSON-Parsing — die KI rendert manchmal Backticks, ```-Fences,
-  // oder Prosa um den JSON-Block. Strategie:
-  // 1) Code-Fences entfernen
-  // 2) JSON-Slice zwischen erstem '{' und letztem '}' extrahieren
-  // 3) Häufige Encoding-Issues fixen (Markdown-Backticks in "back" etc.)
+  // Robustes JSON-Parsing in drei Stufen:
+  //  1) Schema-konformes JSON parsen (Happy-Path mit Gemini responseSchema)
+  //  2) JSON-Slice zwischen erstem '{' und letztem '}' (für Groq/Claude
+  //     die ggf. Prosa drum rum schreiben)
+  //  3) Graceful fallback: wenn gar kein JSON erkennbar, den gesamten Output
+  //     als neue "back"-Antwort akzeptieren. Besser ein leichter Hack-Vorschlag
+  //     als gar keiner.
+  const tryParse = (raw: string): BackSuggestion | null => {
+    try {
+      const obj = JSON.parse(raw) as BackSuggestion;
+      if (typeof obj.back === 'string' && typeof obj.rationale === 'string') {
+        return obj;
+      }
+    } catch { /* fall through */ }
+    return null;
+  };
+
   let cleaned = text.trim();
   cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  const firstBrace = cleaned.indexOf('{');
-  const lastBrace = cleaned.lastIndexOf('}');
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+
+  let parsed = tryParse(cleaned);
+  if (!parsed) {
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      parsed = tryParse(cleaned.slice(firstBrace, lastBrace + 1));
+    }
+  }
+  if (!parsed) {
+    // Letzte Rettung: der Output ist vermutlich der reine neue Back-Text.
+    // Nur akzeptieren wenn er sich vom alten unterscheidet UND nicht trivial
+    // kurz ist (verhindert dass eine "ok" oder ähnlich kurze Phrase als
+    // back übernommen wird).
+    if (cleaned.length > 30 && cleaned !== card.back) {
+      console.warn('[suggestBackImprovement] non-JSON response, treating as raw back text');
+      console.warn('[suggestBackImprovement] raw response:', text);
+      parsed = {
+        back: cleaned,
+        rationale: 'KI hat einen neuen Antwort-Text vorgeschlagen (ohne explizite Begründung).',
+        changeType: 'rephrase',
+      };
+    } else {
+      console.warn('[suggestBackImprovement] response is neither JSON nor a useful back text');
+      console.warn('[suggestBackImprovement] raw response:', text);
+      throw new Error('KI hat keine verwendbare Antwort zurückgegeben — versuch es nochmal oder formuliere im Chat konkreter was unklar war.');
+    }
   }
 
-  let parsed: BackSuggestion;
-  try {
-    parsed = JSON.parse(cleaned) as BackSuggestion;
-  } catch (parseErr) {
-    // Debug-Hilfe — die kompletten Rohdaten in der Konsole damit man sieht
-    // wo's geklemmt hat. Im UI kriegt der User eine freundliche Message.
-    console.warn('[suggestBackImprovement] JSON parse failed:', parseErr);
-    console.warn('[suggestBackImprovement] raw response:', text);
-    throw new Error('KI hat keine gültige Struktur zurückgegeben — versuch es nochmal oder stell eine konkretere Frage im Chat.');
-  }
-  if (typeof parsed.back !== 'string' || typeof parsed.rationale !== 'string') {
-    throw new Error('KI-Antwort ist unvollständig — Felder fehlen.');
-  }
   // Normalize changeType
   const valid = ['clarify', 'simplify', 'rephrase', 'expand', 'none'] as const;
   if (!(valid as readonly string[]).includes(parsed.changeType)) {

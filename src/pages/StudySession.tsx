@@ -285,12 +285,9 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
   // it on sessionStorage. So even after reload + abort, we can resume.
   const hasPausedMCSession = sessionMode === 'mc' && mcAnswers.size > 0 && sessionCards.length > 0;
 
-  // Compute the CURRENT daily plan's card-set so we can detect when a
-  // paused MC session has drifted from what the user would expect (e.g.
-  // the user changed Tageslimit while a session was paused → the daily
-  // plan now has fewer/different cards than the frozen MC list).
-  // Only relevant when a paused MC session is present. We honour the
-  // current focusMode + daily limit settings.
+  // Compute the CURRENT daily plan (used for size-based adapt + ID-set membership
+  // to decide which answers to preserve). Only relevant when a paused MC session
+  // exists. Honours focusMode + daily limit + blacklist filters.
   const currentDailyPlanIds = useMemo<Set<string> | null>(() => {
     if (!hasPausedMCSession) return null;
     const focused = applyFocus(cards, settings.focusMode ?? 'all').filter(c => !c.blacklisted);
@@ -298,13 +295,14 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
     return new Set([...plan.reviewCards, ...plan.newCards].map(c => c.id));
   }, [cards, settings, hasPausedMCSession]);
 
-  // Detect divergence between paused MC and current daily plan.
+  // Divergence = the paused session size differs from the current daily plan size.
+  // Card-IDs müssen NICHT identisch sein — wir wollen nur den User benachrichtigen
+  // wenn die SIZE auseinanderläuft (er hat das Limit hoch/runter gestellt) damit
+  // er die Möglichkeit hat anzupassen.
   const pausedMcDiverged = useMemo(() => {
     if (!currentDailyPlanIds || !hasPausedMCSession) return null;
-    const currentIds = new Set(sessionCards.map(c => c.id));
-    if (currentIds.size !== currentDailyPlanIds.size) return { paused: currentIds.size, plan: currentDailyPlanIds.size };
-    for (const id of currentIds) if (!currentDailyPlanIds.has(id)) return { paused: currentIds.size, plan: currentDailyPlanIds.size };
-    return null; // identical → no divergence
+    if (sessionCards.length === currentDailyPlanIds.size) return null;
+    return { paused: sessionCards.length, plan: currentDailyPlanIds.size };
   }, [sessionCards, currentDailyPlanIds, hasPausedMCSession]);
 
   const resumePausedMCSession = () => {
@@ -335,61 +333,83 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
   };
 
   /**
-   * Adapt a paused MC session to the current daily plan.
-   *  - Cards that disappear from the plan (e.g. Tageslimit gesenkt) → dropped along with their MC-Antworten
-   *  - Cards that newly enter the plan → added at the end, fresh
-   *  - Cards still in the plan → keep their answer-Progress
+   * Adapt a paused MC session to the current daily plan SIZE.
    *
-   * Pointer-Strategie:
-   *  1. War der User auf einer Karte die noch im neuen Plan ist? → dahin springen
-   *  2. Falls die aktuelle Frage dort schon beantwortet ist → ab da nächste unbeantwortete suchen
-   *  3. Sonst (alte Karte nicht mehr im Plan) → erste unbeantwortete im neuen Plan
-   *  4. Wenn alles beantwortet → letzte Karte (Summary kommt dann beim Weiterklicken)
+   * Mental model: don't swap the card-set out — just grow or shrink the
+   * **unanswered tail** so the session's total length matches the new plan.
    *
-   *  Die `card.mcQuestions` selbst werden NIE angefasst — die bleiben auf der Karte
-   *  in der DB und stehen für zukünftige Sessions ohne Re-Generierung bereit.
+   * Algorithmus:
+   *  1. Behalte ALLE schon-beantworteten Karten in der Original-Reihenfolge.
+   *     Diese sind unantastbar — der User hat sie schon erledigt.
+   *  2. Compute Ziel-Größe = aktuelle Daily-Plan-Größe (z.B. 19).
+   *  3. Fülle bis zur Ziel-Größe auf mit unbeantworteten Karten:
+   *     a) erst aus dem alten Session-Pool (= Karten die der User schon
+   *        gesehen hat aber noch nicht beantwortet hat — Reihenfolge bleibt)
+   *     b) wenn das nicht reicht → frische Karten aus dem aktuellen Daily Plan
+   *  4. Wenn Ziel-Größe < Anzahl schon-beantworteter Karten → Überlauf akzeptieren
+   *     (User-Progress wird nicht weggeworfen — wir gehen lieber über das Ziel
+   *     hinaus als Geleistetes zu verlieren).
+   *
+   *  `card.mcQuestions` wird NIE angefasst — bleibt persistent auf der Karte.
+   *  Pointer landet auf der ersten unbeantworteten Karte/Frage.
    */
   const adaptPausedMCToCurrentPlan = () => {
     if (!currentDailyPlanIds) return;
-    // Resolve new card list, preserving daily plan order (review-first then new)
+    // 1. Ziel-Größe = aktuelle Daily Plan-Größe
     const focused = applyFocus(cards, settings.focusMode ?? 'all').filter(c => !c.blacklisted);
     const plan = calculateDailyPlan(focused, settings, getNewCardsDoneToday(focused, settings));
-    const newOrdered = [...plan.reviewCards, ...plan.newCards]
+    const planOrdered = [...plan.reviewCards, ...plan.newCards]
       .map(c => cards.find(cc => cc.id === c.id))
       .filter((c): c is Flashcard => !!c);
-
-    if (newOrdered.length === 0) {
-      onApiError?.('Daily plan ist leer — Session bleibt unverändert.');
+    const targetSize = planOrdered.length;
+    if (targetSize === 0) {
+      onApiError?.('Daily Plan ist leer — Session bleibt unverändert.');
       return;
     }
 
-    // Prune answers for dropped cards (preserve everything for cards still in plan)
+    // 2. Split der alten Session in "schon angefasst" und "noch nicht"
+    const hasAnyAnswer = (cardId: string) => {
+      const arr = mcAnswers.get(cardId);
+      return !!arr && arr.some(Boolean);
+    };
+    const oldAnswered = sessionCards.filter(c => hasAnyAnswer(c.id));
+    const oldUnanswered = sessionCards.filter(c => !hasAnyAnswer(c.id));
+
+    // 3. Neue Liste zusammenbauen
+    const newOrdered: Flashcard[] = [...oldAnswered];        // 3a — alle beantworteten bleiben
+    const remainingSlots = Math.max(0, targetSize - newOrdered.length);
+
+    if (remainingSlots > 0) {
+      // 3b — erst unbeantwortete aus alter Session weiterführen
+      const keptFromOld = oldUnanswered.slice(0, remainingSlots);
+      newOrdered.push(...keptFromOld);
+      // 3c — wenn dann noch immer Platz ist (User hat Limit erhöht) →
+      // frische Karten aus dem aktuellen Daily Plan dazu
+      const stillNeeded = remainingSlots - keptFromOld.length;
+      if (stillNeeded > 0) {
+        const alreadyIn = new Set(newOrdered.map(c => c.id));
+        const fresh = planOrdered.filter(c => !alreadyIn.has(c.id)).slice(0, stillNeeded);
+        newOrdered.push(...fresh);
+      }
+    }
+    // Note: wenn `targetSize < oldAnswered.length` (User hat Limit unter
+    // die Anzahl bereits beantworteter Karten gesenkt) lassen wir die
+    // Session über das neue Ziel hinausgehen. Keine schon-beantwortete Karte
+    // wird verworfen.
+
+    // 4. Antworten für die finale Liste übernehmen
     const newAnswers = new Map<string, { selected: string[]; isCorrect: boolean }[]>();
-    for (const [cardId, answers] of mcAnswers) {
-      if (currentDailyPlanIds.has(cardId)) newAnswers.set(cardId, answers);
+    for (const card of newOrdered) {
+      const answers = mcAnswers.get(card.id);
+      if (answers) newAnswers.set(card.id, answers);
     }
 
-    // Resumption: try to land near where the user was.
-    const previousCardId = sessionCards[mcCardIdx]?.id;
-    const previousQ = mcQuestionIdx;
-    const previousIdxInNew = previousCardId
-      ? newOrdered.findIndex(c => c.id === previousCardId)
-      : -1;
-
-    let resume: { cardIdx: number; questionIdx: number } | null = null;
-    if (previousIdxInNew >= 0) {
-      // Old current card still in plan — start from there, then skip ahead
-      // if their current question is already answered.
-      resume = findNextUnanswered(previousIdxInNew, previousQ, newOrdered, newAnswers);
-    }
+    // 5. Pointer: erste unbeantwortete Position (Karte 14 / 19 = mcCardIdx=13)
+    let resume = findNextUnanswered(0, 0, newOrdered, newAnswers);
     if (!resume) {
-      // Old card gone OR everything from there is answered — find from start.
-      resume = findNextUnanswered(0, 0, newOrdered, newAnswers);
-    }
-    if (!resume) {
-      // Everything answered — land on last card / last question (next click → summary)
+      // Alles erledigt → letzter Slot, nächster Klick öffnet Summary
       const lastIdx = newOrdered.length - 1;
-      const lastTotal = newOrdered[lastIdx].mcQuestions?.length ?? 1;
+      const lastTotal = newOrdered[lastIdx]?.mcQuestions?.length ?? 1;
       resume = { cardIdx: lastIdx, questionIdx: Math.max(0, lastTotal - 1) };
     }
 
@@ -400,10 +420,11 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
     setMcSelected([]);
     setMcSubmitted(false);
 
+    const answeredCount = oldAnswered.length;
     const totalQuestions = newOrdered.reduce((s, c) => s + (c.mcQuestions?.length ?? 0), 0);
-    const answeredCount = Array.from(newAnswers.values()).reduce((s, arr) => s + arr.filter(Boolean).length, 0);
+    const answeredQuestions = Array.from(newAnswers.values()).reduce((s, arr) => s + arr.filter(Boolean).length, 0);
     onApiError?.(
-      `📋 Session angepasst: ${newOrdered.length} Karten · ${answeredCount} / ${totalQuestions} Fragen schon beantwortet · fortgesetzt bei Karte ${resume.cardIdx + 1}`,
+      `📋 Session angepasst: ${newOrdered.length} Karten · ${answeredCount} schon beantwortet (${answeredQuestions}/${totalQuestions} Fragen) · weiter bei Karte ${resume.cardIdx + 1}`,
     );
   };
 

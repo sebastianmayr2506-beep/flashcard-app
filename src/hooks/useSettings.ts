@@ -39,6 +39,7 @@ function fromDb(row: Record<string, any>): AppSettings {
     anthropicApiKey: ((typeof row.anthropic_api_key === 'string' && row.anthropic_api_key) || localStorage.getItem('anthropic_api_key')) ?? undefined,
     geminiApiKey:    ((typeof row.gemini_api_key === 'string' && row.gemini_api_key)       || localStorage.getItem('gemini_api_key')) ?? undefined,
     groqApiKey:      ((typeof row.groq_api_key === 'string' && row.groq_api_key)           || localStorage.getItem('groq_api_key')) ?? undefined,
+    pausedSession: (row.paused_session && typeof row.paused_session === 'object') ? row.paused_session : undefined,
   };
 }
 
@@ -61,6 +62,7 @@ function toDb(settings: AppSettings, userId: string) {
     anthropic_api_key: settings.anthropicApiKey ?? null,
     gemini_api_key: settings.geminiApiKey ?? null,
     groq_api_key: settings.groqApiKey ?? null,
+    paused_session: settings.pausedSession ?? null,
     updated_at: new Date().toISOString(),
   };
 }

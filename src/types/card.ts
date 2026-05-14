@@ -122,6 +122,25 @@ export interface AppSettings {
   // focusing on 200 must-know cards is realistic and gives a "done today"
   // feeling that the global view can't.
   focusMode?: 'all' | 'A' | 'AB';
+  // Cross-device paused-session state. Mirror of the `studySession:state`
+  // localStorage blob. Synced via user_settings so a session paused on the
+  // phone shows up on the laptop. On restore: the newer (by pausedAt) wins
+  // between local and remote.
+  pausedSession?: PausedSession;
+}
+
+export interface PausedSession {
+  mode: 'classic' | 'mc';
+  sessionState: 'setup' | 'studying';
+  cardIds: string[];
+  pausedAt: number;     // Date.now() — used for newer-wins conflict resolution
+  // Classic-mode fields
+  currentIdx?: number;
+  ratings?: { nochmal: number; schwer: number; gut: number; einfach: number };
+  // MC-mode fields
+  mcCardIdx?: number;
+  mcQuestionIdx?: number;
+  mcAnswersEntries?: Array<[string, Array<{ selected: string[]; isCorrect: boolean }>]>;
 }
 
 export interface FlagAttempt {

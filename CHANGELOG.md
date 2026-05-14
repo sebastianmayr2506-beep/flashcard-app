@@ -7,6 +7,41 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-14 — Cross-Device-Resume für pausierte Sessions
+
+**What:** Eine MC-Session (oder klassische Lern-Session) die du am Handy
+pausiert hast, taucht jetzt auch am Laptop als „Fortsetzen"-Banner auf.
+Vorher war der Pause-Stand nur in `localStorage` → an das jeweilige Gerät
+gebunden.
+
+**Architektur:** Mirror in `user_settings.paused_session` (jsonb).
+- **Speichern**: Effect schreibt weiterhin sofort in localStorage (instant
+  bei Refresh / Tab-Close), zusätzlich debounced (1.5s) per `updateSettings`
+  nach Supabase.
+- **Laden**: Erst localStorage (synchron im useMemo). Wenn nichts lokal +
+  setup-Screen, dann ein `useEffect` der auf `settings.pausedSession` lauscht
+  und von remote rehydriert.
+- **Verwerfen**: das bestehende discardPausedMCSession leert die State-Variablen,
+  woraufhin der Save-Effect localStorage UND remote leert.
+- **Realtime**: nutzt die existierende `user_settings`-Subscription — keine
+  zusätzliche Channel-Logik nötig.
+
+Beide Modi (klassisch + MC) werden mitgenommen. Karten-IDs werden gespeichert,
+die vollen Card-Objekte beim Restore aus dem aktuellen `cards`-Array
+aufgelöst — Edits / MC-Regenerationen kommen automatisch korrekt rein.
+
+**DB-Migration:** `supabase_migration_paused_session.sql`:
+```sql
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS paused_session jsonb;
+```
+
+**Files:** `src/types/card.ts` (neuer `PausedSession`-Type),
+`src/hooks/useSettings.ts` (fromDb/toDb), `src/pages/StudySession.tsx`
+(save-Effekt + Remote-Restore-Effekt), `src/App.tsx` (`onUpdateSettings`-
+prop durchgereicht).
+
+---
+
 ## 2026-05-14 — MC-Modus: Karten-Aktionen direkt im Quiz
 
 **Was:** Im MC-Modus kann der User die zugrundeliegende Karte jetzt direkt

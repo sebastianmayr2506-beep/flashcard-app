@@ -35,6 +35,8 @@ interface Props {
   /** Bulk-generate persistent MC questions for the given cards.
    *  Used for the Pre-Flight step in MC-Lernmodus. */
   onGenerateMC?: (cardIds: string[]) => Promise<{ okIds: string[]; failedIds: string[] }>;
+  /** Update user_settings — used to push paused-session state cross-device. */
+  onUpdateSettings?: (patch: Partial<AppSettings>) => void;
   onSessionComplete: () => void;
   onNavigate: (page: string) => void;
   onApiError?: (message: string) => void;
@@ -82,7 +84,7 @@ interface RatingCount {
   nochmal: number; schwer: number; gut: number; einfach: number;
 }
 
-export default function StudySession({ cards, settings, sets, links, preFilteredCards, dailyPlan, onRate, onUpdateCard, onDeleteCard, onSplitCard, onGenerateMC, onSessionComplete, onNavigate, onApiError }: Props) {
+export default function StudySession({ cards, settings, sets, links, preFilteredCards, dailyPlan, onRate, onUpdateCard, onDeleteCard, onSplitCard, onGenerateMC, onUpdateSettings, onSessionComplete, onNavigate, onApiError }: Props) {
   const isDailyMode = !!dailyPlan;
 
   // Restore in-progress study session from sessionStorage on mount.
@@ -278,6 +280,41 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   const resumePausedMCSession = () => {
     setSessionState('studying');
   };
+
+  // Cross-device resume: when no LOCAL paused session was restored on mount
+  // (sessionCards empty, sitting on setup), check whether a REMOTE one came
+  // in via settings.pausedSession (synced from another device through
+  // user_settings + Realtime). If so, hydrate state from it so the resume
+  // banner appears.
+  const remoteRestoreDoneRef = useRef(false);
+  useEffect(() => {
+    if (remoteRestoreDoneRef.current) return;
+    if (sessionCards.length > 0) return;       // local already hydrated or active
+    if (sessionState !== 'setup') return;
+    const remote = settings.pausedSession;
+    if (!remote || !Array.isArray(remote.cardIds) || remote.cardIds.length === 0) return;
+    // Resolve to live card objects — picks up edits/MC-regenerations.
+    const resolved = remote.cardIds
+      .map(id => cards.find(c => c.id === id))
+      .filter((c): c is Flashcard => !!c);
+    if (resolved.length === 0) return;
+    remoteRestoreDoneRef.current = true;
+    setSessionMode(remote.mode);
+    setSessionCards(resolved);
+    if (remote.mode === 'mc') {
+      setMcCardIdx(Math.min(Math.max(remote.mcCardIdx ?? 0, 0), resolved.length - 1));
+      setMcQuestionIdx(Math.max(remote.mcQuestionIdx ?? 0, 0));
+      setMcAnswers(new Map(remote.mcAnswersEntries ?? []));
+    } else {
+      setCurrentIdx(Math.min(Math.max(remote.currentIdx ?? 0, 0), resolved.length - 1));
+      setRatings(remote.ratings ?? { nochmal: 0, schwer: 0, gut: 0, einfach: 0 });
+    }
+    // For active 'studying' sessions, land directly in the session view.
+    // For paused-after-Beenden, stay on setup so the resume banner is visible.
+    if (remote.sessionState === 'studying') {
+      setSessionState('studying');
+    }
+  }, [settings.pausedSession, cards, sessionCards.length, sessionState]);
 
   const discardPausedMCSession = () => {
     setMcAnswers(new Map());
@@ -732,11 +769,13 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     return () => { if (recognizerRef.current) stopRecognizer(); };
   }, []);
 
-  // Persist the in-progress 'studying' state to sessionStorage so a reload
-  // (refresh, foldable unfold, tab restore) can resume at the same card
-  // instead of dumping the user back on the dashboard. We persist only
-  // card IDs (full data is re-resolved from `cards` on restore — picks up
-  // any sync updates) plus position and rating counts.
+  // Persist the in-progress 'studying' state to localStorage (immediate, for
+  // tab-close survival on the same device) AND to user_settings.paused_session
+  // (debounced, for cross-device resume — pick up on the laptop where you
+  // left off on the phone).
+  //
+  // We persist only card IDs (full data re-resolved on restore from current
+  // `cards` so we pick up any sync updates) plus position and rating counts.
   useEffect(() => {
     try {
       // Persist when:
@@ -752,30 +791,58 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
       const isActive = sessionState === 'studying' && sessionCards.length > 0;
       if (!isActive && !isPausedMC) {
         localStorage.removeItem('studySession:state');
+        // Also clear the remote paused-session — but only if there IS one
+        // (avoid an unnecessary write on every state change). Use settingsRef
+        // ... actually, we don't have one — just check via current prop. Calls
+        // are debounced below anyway.
+        if (onUpdateSettings && settings.pausedSession) {
+          onUpdateSettings({ pausedSession: undefined });
+        }
         return;
       }
-      const base = {
-        sessionState,
-        sessionMode,
-        cardIds: sessionCards.map(c => c.id),
-      };
-      if (sessionMode === 'mc') {
-        // Serialize Map as entries-array so it survives JSON round-trip.
-        localStorage.setItem('studySession:state', JSON.stringify({
-          ...base,
-          mcCardIdx,
-          mcQuestionIdx,
-          mcAnswersEntries: Array.from(mcAnswers.entries()),
-        }));
-      } else {
-        localStorage.setItem('studySession:state', JSON.stringify({
-          ...base,
-          currentIdx,
-          ratings,
-        }));
+      const pausedAt = Date.now();
+      const localPayload =
+        sessionMode === 'mc'
+          ? {
+              sessionState, sessionMode,
+              cardIds: sessionCards.map(c => c.id),
+              mcCardIdx, mcQuestionIdx,
+              mcAnswersEntries: Array.from(mcAnswers.entries()),
+            }
+          : {
+              sessionState, sessionMode,
+              cardIds: sessionCards.map(c => c.id),
+              currentIdx, ratings,
+            };
+      localStorage.setItem('studySession:state', JSON.stringify(localPayload));
+
+      // Cross-device mirror: shape matches PausedSession type (uses `mode`
+      // instead of localStorage's `sessionMode`). Debounced ~1.5s so we don't
+      // spam the DB on every MC click.
+      if (onUpdateSettings) {
+        const remotePayload = sessionMode === 'mc'
+          ? {
+              mode: 'mc' as const,
+              sessionState,
+              cardIds: sessionCards.map(c => c.id),
+              pausedAt,
+              mcCardIdx, mcQuestionIdx,
+              mcAnswersEntries: Array.from(mcAnswers.entries()),
+            }
+          : {
+              mode: 'classic' as const,
+              sessionState,
+              cardIds: sessionCards.map(c => c.id),
+              pausedAt,
+              currentIdx, ratings,
+            };
+        const timer = setTimeout(() => {
+          onUpdateSettings({ pausedSession: remotePayload });
+        }, 1500);
+        return () => clearTimeout(timer);
       }
     } catch { /* localStorage unavailable / quota — fail silently */ }
-  }, [sessionState, sessionCards, currentIdx, ratings, sessionMode, mcCardIdx, mcQuestionIdx, mcAnswers]);
+  }, [sessionState, sessionCards, currentIdx, ratings, sessionMode, mcCardIdx, mcQuestionIdx, mcAnswers, onUpdateSettings, settings.pausedSession]);
 
   const handleRate = (rating: RatingValue) => {
     const card = sessionCards[currentIdx];

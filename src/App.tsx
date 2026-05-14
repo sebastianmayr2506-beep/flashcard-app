@@ -904,6 +904,7 @@ export default function App() {
           onDeleteCard={handleDeleteCard}
           onSplitCard={handleSplitCard}
           onGenerateMC={handleGenerateMCForCards}
+          onUpdateSettings={updateSettings}
           onSessionComplete={handleSessionComplete}
           onNavigate={navigate}
           onApiError={msg => showToast(msg, 'error')}

@@ -8,7 +8,8 @@ import MicPulseVisualizer from '../components/MicPulseVisualizer';
 import { LinkedCardsPanel } from '../components/LinkedCards';
 import QuickEditModal from '../components/QuickEditModal';
 import CardChatDrawer from '../components/CardChatDrawer';
-import { getNewCardsDoneToday } from '../utils/dailyGoal';
+import { getNewCardsDoneToday, calculateDailyPlan } from '../utils/dailyGoal';
+import { applyFocus } from '../utils/priority';
 import { generateMCHintBundle } from '../utils/geminiMCHint';
 import type { MCHintResult } from '../utils/geminiMCHint';
 import { checkAnswerWithAI, probeAnswerForGaps, finalGradeWithProbes } from '../utils/aiAnswerCheck';
@@ -284,8 +285,81 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
   // it on sessionStorage. So even after reload + abort, we can resume.
   const hasPausedMCSession = sessionMode === 'mc' && mcAnswers.size > 0 && sessionCards.length > 0;
 
+  // Compute the CURRENT daily plan's card-set so we can detect when a
+  // paused MC session has drifted from what the user would expect (e.g.
+  // the user changed Tageslimit while a session was paused → the daily
+  // plan now has fewer/different cards than the frozen MC list).
+  // Only relevant when a paused MC session is present. We honour the
+  // current focusMode + daily limit settings.
+  const currentDailyPlanIds = useMemo<Set<string> | null>(() => {
+    if (!hasPausedMCSession) return null;
+    const focused = applyFocus(cards, settings.focusMode ?? 'all').filter(c => !c.blacklisted);
+    const plan = calculateDailyPlan(focused, settings, getNewCardsDoneToday(focused, settings));
+    return new Set([...plan.reviewCards, ...plan.newCards].map(c => c.id));
+  }, [cards, settings, hasPausedMCSession]);
+
+  // Detect divergence between paused MC and current daily plan.
+  const pausedMcDiverged = useMemo(() => {
+    if (!currentDailyPlanIds || !hasPausedMCSession) return null;
+    const currentIds = new Set(sessionCards.map(c => c.id));
+    if (currentIds.size !== currentDailyPlanIds.size) return { paused: currentIds.size, plan: currentDailyPlanIds.size };
+    for (const id of currentIds) if (!currentDailyPlanIds.has(id)) return { paused: currentIds.size, plan: currentDailyPlanIds.size };
+    return null; // identical → no divergence
+  }, [sessionCards, currentDailyPlanIds, hasPausedMCSession]);
+
   const resumePausedMCSession = () => {
     setSessionState('studying');
+  };
+
+  /**
+   * Adapt a paused MC session to the current daily plan.
+   *  - Cards that disappear from the plan (e.g. Tageslimit gesenkt) → dropped along with their MC-Antworten
+   *  - Cards that newly enter the plan → added at the end, fresh
+   *  - Cards still in the plan → keep their answer-Progress
+   * Pointer (mcCardIdx, mcQuestionIdx) is reset to the first card in the new
+   * list that doesn't have all its questions answered yet.
+   */
+  const adaptPausedMCToCurrentPlan = () => {
+    if (!currentDailyPlanIds) return;
+    // Resolve new card list, preserving daily plan order (review-first then new)
+    const focused = applyFocus(cards, settings.focusMode ?? 'all').filter(c => !c.blacklisted);
+    const plan = calculateDailyPlan(focused, settings, getNewCardsDoneToday(focused, settings));
+    const newOrdered = [...plan.reviewCards, ...plan.newCards]
+      .map(c => cards.find(cc => cc.id === c.id))
+      .filter((c): c is Flashcard => !!c);
+
+    // Prune answers for dropped cards
+    const newAnswers = new Map<string, { selected: string[]; isCorrect: boolean }[]>();
+    for (const [cardId, answers] of mcAnswers) {
+      if (currentDailyPlanIds.has(cardId)) newAnswers.set(cardId, answers);
+    }
+
+    // Find resumption point: first card with unanswered questions
+    let newCardIdx = 0;
+    let newQuestionIdx = 0;
+    for (let i = 0; i < newOrdered.length; i++) {
+      const c = newOrdered[i];
+      const total = c.mcQuestions?.length ?? 0;
+      const answered = newAnswers.get(c.id)?.length ?? 0;
+      if (answered < total) {
+        newCardIdx = i;
+        newQuestionIdx = answered;
+        break;
+      }
+      if (i === newOrdered.length - 1) {
+        // all done → land on last card
+        newCardIdx = i;
+        newQuestionIdx = Math.max(0, total - 1);
+      }
+    }
+
+    setSessionCards(newOrdered);
+    setMcAnswers(newAnswers);
+    setMcCardIdx(newCardIdx);
+    setMcQuestionIdx(newQuestionIdx);
+    setMcSelected([]);
+    setMcSubmitted(false);
+    onApiError?.(`📋 Session an aktuelles Tageslimit angepasst: ${newOrdered.length} Karten`);
   };
 
   // Cross-device resume with timestamp-based conflict resolution.
@@ -1002,6 +1076,26 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                       </p>
                     </div>
                   </div>
+
+                  {/* Divergence notice: daily plan changed since pause */}
+                  {pausedMcDiverged && (
+                    <div className="bg-[#15172a] border border-amber-500/40 rounded-lg px-3 py-2 flex items-start gap-2">
+                      <span className="text-sm shrink-0">⚠️</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] text-amber-200 leading-relaxed">
+                          Tageslimit hat sich geändert: <strong>{pausedMcDiverged.paused} → {pausedMcDiverged.plan}</strong> Karten.
+                          Session-Karten und Karteikarten-Plan passen nicht mehr zusammen.
+                        </p>
+                        <button
+                          onClick={adaptPausedMCToCurrentPlan}
+                          className="mt-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-md bg-amber-500/25 hover:bg-amber-500/40 border border-amber-500/50 text-amber-100 transition-colors"
+                        >
+                          Auf {pausedMcDiverged.plan} Karten anpassen
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex gap-2">
                     <button
                       onClick={discardPausedMCSession}

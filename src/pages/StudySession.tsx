@@ -104,6 +104,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
     /** 'studying' = land directly in the session view, 'setup' = land on setup with paused state visible via banner */
     initialState: 'studying' | 'setup';
     sessionCards: Flashcard[];
+    pausedAt: number;            // when this local state was last saved — for cross-device conflict resolution
     // Classic fields
     currentIdx: number;
     ratings: RatingCount;
@@ -121,6 +122,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
         sessionState?: SessionState;
         sessionMode?: 'classic' | 'mc';
         cardIds?: string[];
+        pausedAt?: number;
         currentIdx?: number;
         ratings?: RatingCount;
         mcCardIdx?: number;
@@ -141,6 +143,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
         mode,
         initialState: obj.sessionState === 'studying' ? 'studying' : 'setup',
         sessionCards: resolved,
+        pausedAt: typeof obj.pausedAt === 'number' ? obj.pausedAt : 0,
         currentIdx: Math.min(Math.max(obj.currentIdx ?? 0, 0), resolved.length - 1),
         ratings: obj.ratings ?? { nochmal: 0, schwer: 0, gut: 0, einfach: 0 },
         mcCardIdx: Math.min(Math.max(obj.mcCardIdx ?? 0, 0), resolved.length - 1),
@@ -285,24 +288,35 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
     setSessionState('studying');
   };
 
-  // Cross-device resume: when no LOCAL paused session was restored on mount
-  // (sessionCards empty, sitting on setup), check whether a REMOTE one came
-  // in via settings.pausedSession (synced from another device through
-  // user_settings + Realtime). If so, hydrate state from it so the resume
-  // banner appears.
+  // Cross-device resume with timestamp-based conflict resolution.
+  //
+  // Scenario A: no local state, remote exists → restore from remote.
+  // Scenario B: local exists, remote is newer (e.g. paused on phone, made
+  //   progress on PC, came back to phone) → override local with remote.
+  // Scenario C: local exists, remote is same/older → keep local (current
+  //   device is the source of truth).
+  // Scenario D: nothing anywhere → do nothing.
+  //
+  // We only consider switching while sessionState is 'setup' to avoid
+  // disrupting an actively studying session.
   const remoteRestoreDoneRef = useRef(false);
+  const localPausedAt = restoredSession?.pausedAt ?? 0;
   useEffect(() => {
     if (remoteRestoreDoneRef.current) return;
-    if (sessionCards.length > 0) return;       // local already hydrated or active
     if (sessionState !== 'setup') return;
     const remote = settings.pausedSession;
     if (!remote || !Array.isArray(remote.cardIds) || remote.cardIds.length === 0) return;
+    // Only override local state if remote is strictly newer. Small slack
+    // (1s) to avoid flickering when this device's own debounced upload
+    // bounces back through Realtime.
+    if (remote.pausedAt <= localPausedAt + 1000) return;
     // Resolve to live card objects — picks up edits/MC-regenerations.
     const resolved = remote.cardIds
       .map(id => cards.find(c => c.id === id))
       .filter((c): c is Flashcard => !!c);
     if (resolved.length === 0) return;
     remoteRestoreDoneRef.current = true;
+    console.log(`[StudySession] swapping to newer remote state (local=${localPausedAt}, remote=${remote.pausedAt})`);
     setSessionMode(remote.mode);
     setSessionCards(resolved);
     if (remote.mode === 'mc') {
@@ -318,7 +332,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
     if (remote.sessionState === 'studying') {
       setSessionState('studying');
     }
-  }, [settings.pausedSession, cards, sessionCards.length, sessionState]);
+  }, [settings.pausedSession, cards, sessionState, localPausedAt]);
 
   const discardPausedMCSession = () => {
     setMcAnswers(new Map());
@@ -805,16 +819,19 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
         return;
       }
       const pausedAt = Date.now();
+      // Local payload mirrors the remote shape — keeps cross-device conflict
+      // resolution simple: both sides have the same pausedAt timestamp on
+      // the same content.
       const localPayload =
         sessionMode === 'mc'
           ? {
-              sessionState, sessionMode,
+              sessionState, sessionMode, pausedAt,
               cardIds: sessionCards.map(c => c.id),
               mcCardIdx, mcQuestionIdx,
               mcAnswersEntries: Array.from(mcAnswers.entries()),
             }
           : {
-              sessionState, sessionMode,
+              sessionState, sessionMode, pausedAt,
               cardIds: sessionCards.map(c => c.id),
               currentIdx, ratings,
             };

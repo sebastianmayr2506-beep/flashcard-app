@@ -7,6 +7,30 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-14 — Manual-Mode-Tagesziel respektiert wirklich das User-Setting
+
+**Symptom:** User hat in Settings „20 neue Karten / Tag" manuell gesetzt.
+Im Dashboard mit Fokus „Nur A" zeigte es plötzlich nur **2 neu/Tag** an,
+mit Fokus „Alle" wieder 20.
+
+**Ursache:** In `calculateDailyPlan` wurde der `effectiveGoal` (= das was
+der User in Settings konfiguriert hat) zusätzlich auf `pace.requiredNewPerDay`
+gekappt — egal ob Manual- oder Auto-Mode. Im A-Fokus sind viele Karten
+schon gelernt, der „nötige" Pace beträgt nur ~1–2/Tag → 20 wurde fälschlich
+runtergedrückt.
+
+**Fix:**
+- **Manual-Mode**: Setting wird 1:1 angewendet (`newCardsPerDay = effectiveGoal`).
+  Wenn nicht so viele ungesehene Karten existieren wie das Setting verlangt,
+  zeigt der `unseenCards.slice(0, X)`-Schritt sowieso nur die tatsächlich
+  verfügbaren — das ist die richtige Ebene für „Wir haben nicht mehr".
+- **Auto-Mode**: bleibt wie bisher (`min(setting, required)`), damit der
+  vom User gesetzte Obergrenze-Cap erhalten bleibt.
+
+**Files:** `src/utils/dailyGoal.ts`.
+
+---
+
 ## 2026-05-14 — MC-Generierung: Mobile-Overlay sichtbar + keine falschen Fehlermeldungen
 
 **Symptom 1:** User klickt auf MC-Modus → „los geht's" auf dem Handy, es

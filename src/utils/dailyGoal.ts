@@ -192,7 +192,20 @@ export function calculateDailyPlan(
     // Pass the effective goal so the mastery projection reflects what we'll
     // really do — not the raw manual value.
     const pace = calculatePaceMetrics(cards, daysUntilExam, effectiveGoal);
-    newCardsPerDay = Math.min(effectiveGoal, pace.requiredNewPerDay);
+    // SEMANTICS:
+    //   manual: respect the user's setting — they asked for X/Tag, give them X
+    //   auto:   use the computed required pace (Math.min keeps the existing
+    //           "auto capped by upper-bound" behaviour, mirroring
+    //           getEffectiveDailyNewCardGoal's contract)
+    // Previously both modes were capped to pace.requiredNewPerDay, which
+    // caused "Manual=20 → Dashboard zeigt 2/Tag" when most cards in the
+    // current focus were already learned. That's misleading — Manual is
+    // supposed to be a literal user choice.
+    if (settings.dailyNewCardGoalMode === 'auto') {
+      newCardsPerDay = Math.min(effectiveGoal, pace.requiredNewPerDay);
+    } else {
+      newCardsPerDay = effectiveGoal;
+    }
     if (pace.requiredNewPerDay <= effectiveGoal) isAheadOfSchedule = true;
     estimatedDailyReviews = pace.estimatedDailyReviews;
     masteryRateAtExam = pace.masteryRateAtExam;

@@ -7,6 +7,65 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-14 — KI-Chat zur Karteikarte + automatische Antwort-Verbesserung
+
+**What:** Pro Karte gibt's jetzt einen AI-Chat. Während der Lern-Session
+(klassisch + MC) ein 💬-Button in der Action-Reihe öffnet einen Side-Drawer.
+In der Library: erst Karte umdrehen → Antwort sehen → „💬 KI fragen"-Button
+oben im Preview-Modal öffnet denselben Drawer.
+
+**Use-Case:** Du verstehst etwas nicht (Formulierung, Kontext, Begriff) →
+fragst die KI direkt zur Karte, ohne Tab-Switch zu Claude/ChatGPT.
+Karten-Inhalt geht automatisch als Kontext mit, KI weiß worum's geht.
+
+**„Antwort verbessern"-Flow:**
+Nach ≥1 KI-Antwort erscheint Button im Drawer „✨ Antwort der Karte
+verbessern lassen". KI analysiert den Chat und schlägt eine **bessere
+Rückseiten-Antwort** vor — kann je nach Kontext:
+- 🔍 schärfer formulieren (bei Unklarheit)
+- ✂️ vereinfachen (bei Überforderung)
+- 🔄 umformulieren (anderer Aufbau)
+- ➕ erweitern (Kontext fehlt)
+- ✓ nichts ändern (KI sagt: alt war gut)
+
+Diff-Modal zeigt Vorher/Nachher + 1-Satz-Begründung. User klickt
+„Übernehmen" oder „Verwerfen". Bei Übernehmen + existierenden MC-Fragen:
+Confirm-Dialog „MC-Fragen aktualisieren?" → re-uses `onGenerateMC`.
+
+**Cross-Device + Persistenz:**
+- Eigene Tabelle `card_chats` (user_id, card_id, messages jsonb, updated_at)
+- RLS strict per user
+- Lazy-loaded — nur wenn Drawer geöffnet wird
+- Cap auf 30 Messages/Karte (warnt bei 25)
+- Auto-Cleanup ≥90 Tage via `card_chats_cleanup()` PostgreSQL-Funktion
+- Cross-device automatisch durch DB
+
+**Token-Schutz:**
+- An KI gehen: Karten-Front+Back + letzte 6 Messages + Hinweis bei
+  ausgelassenen älteren
+- Verhindert Token-Explosion bei langen Chats
+
+**Anzeige bestehender Chats:**
+- 💬-Badge in der Library-Preview wenn Karte schon einen Chat hat
+- Drawer zeigt „⏪ Letzter Chat vor X Tagen" + Verlauf-Toggle (collapsed by default)
+- Warnung wenn Karte seit Chat editiert wurde („alte Antworten beziehen
+  sich evtl. auf eine frühere Version")
+
+**Provider:** Gemini → Groq → Claude Fallback (gleiche Kette wie MC).
+
+**DB-Migration:** `supabase_migration_card_chats.sql` — neue Tabelle + RLS
+Policies + Cleanup-Funktion + updated_at-Trigger.
+
+**Files:** `src/types/card.ts` (`ChatMessage`, `CardChat`),
+`src/utils/cardChatAI.ts` (askCardChat + suggestBackImprovement),
+`src/hooks/useCardChat.ts` (lazy fetch/save + useChatExistsSet),
+`src/components/CardChatDrawer.tsx` (Side-Drawer + Diff-Modal),
+`src/pages/StudySession.tsx` (Buttons in Klassik + MC),
+`src/pages/Library.tsx` (Preview-Modal Button + Badge),
+`src/App.tsx` (userId-Prop durchgereicht).
+
+---
+
 ## 2026-05-14 — Cross-Device-Resume für pausierte Sessions
 
 **What:** Eine MC-Session (oder klassische Lern-Session) die du am Handy

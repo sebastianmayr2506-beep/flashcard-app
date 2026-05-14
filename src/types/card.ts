@@ -129,6 +129,23 @@ export interface AppSettings {
   pausedSession?: PausedSession;
 }
 
+// ── Card chat (AI dialogue per card) ─────────────────────────────────────
+// Stored in `card_chats` table — lazy-loaded per card. See migration
+// `supabase_migration_card_chats.sql` and `src/hooks/useCardChat.ts`.
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  text: string;
+  ts: number;  // Date.now() at send-time
+}
+
+export interface CardChat {
+  id: string;
+  cardId: string;
+  messages: ChatMessage[];
+  updatedAt: string;
+  createdAt: string;
+}
+
 export interface PausedSession {
   mode: 'classic' | 'mc';
   sessionState: 'setup' | 'studying';

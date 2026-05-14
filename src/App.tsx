@@ -897,6 +897,7 @@ export default function App() {
           settings={settings}
           sets={sets}
           links={links}
+          userId={user.id}
           preFilteredCards={studyFilteredCards}
           dailyPlan={activeDailyPlan}
           onRate={handleRate}
@@ -958,6 +959,7 @@ export default function App() {
             sets={sets}
             links={links}
             flagAttempts={flagAttempts}
+            userId={user.id}
             onEdit={handleEditCard}
             onDelete={handleDeleteCard}
             onStudyFiltered={handleStudyFiltered}

@@ -8,7 +8,9 @@ import MarkdownText from '../components/MarkdownText';
 import ProbabilityBadge from '../components/ProbabilityBadge';
 import { exportJSON } from '../utils/export';
 import DuplicateFinderModal from '../components/DuplicateFinderModal';
+import CardChatDrawer from '../components/CardChatDrawer';
 import { PriorityBadge } from '../components/PriorityPicker';
+import { useChatExistsSet } from '../hooks/useCardChat';
 
 interface Props {
   cards: Flashcard[];
@@ -16,6 +18,7 @@ interface Props {
   sets: CardSet[];
   links: CardLink[];
   flagAttempts: FlagAttempt[];
+  userId: string | null;
   onEdit: (card: Flashcard) => void;
   onDelete: (id: string) => void;
   onStudyFiltered: (cards: Flashcard[]) => void;
@@ -32,7 +35,7 @@ interface Props {
 
 type ViewMode = 'grid' | 'list';
 
-export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onBulkSetBlacklist, onUpdateCard, onMergeCards, onGenerateMC, onNavigate, initialSrsFilter }: Props) {
+export default function Library({ cards, settings, sets, links, flagAttempts, userId, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onBulkSetBlacklist, onUpdateCard, onMergeCards, onGenerateMC, onNavigate, initialSrsFilter }: Props) {
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminers, setFilterExaminers] = useState<Set<string>>(new Set());
@@ -81,6 +84,8 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
 
   // Preview
   const [previewCard, setPreviewCard] = useState<Flashcard | null>(null);
+  // Which cards have a saved AI chat — for the 💬-badge in preview
+  const chatCardIds = useChatExistsSet(userId);
 
   // Examiners available given current catalog filter (or all if no catalog selected)
   const activeExaminers = useMemo(() => {
@@ -643,7 +648,20 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
       )}
 
       {previewCard && createPortal(
-        <CardPreviewModal card={previewCard} onClose={() => setPreviewCard(null)} onEdit={onEdit} />,
+        <CardPreviewModal
+          card={previewCard}
+          onClose={() => setPreviewCard(null)}
+          onEdit={onEdit}
+          userId={userId}
+          hasChat={chatCardIds.has(previewCard.id)}
+          onUpdateCard={onUpdateCard}
+          onGenerateMC={onGenerateMC}
+          apiKeys={{
+            gemini: settings.geminiApiKey,
+            anthropic: settings.anthropicApiKey,
+            groq: settings.groqApiKey,
+          }}
+        />,
         document.body
       )}
 
@@ -924,8 +942,27 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
 
 // ─── Card Preview Modal ───────────────────────────────────────
 
-function CardPreviewModal({ card, onClose, onEdit }: { card: Flashcard; onClose: () => void; onEdit: (c: Flashcard) => void }) {
+function CardPreviewModal({
+  card,
+  onClose,
+  onEdit,
+  userId,
+  hasChat,
+  onUpdateCard,
+  onGenerateMC,
+  apiKeys,
+}: {
+  card: Flashcard;
+  onClose: () => void;
+  onEdit: (c: Flashcard) => void;
+  userId: string | null;
+  hasChat: boolean;
+  onUpdateCard: (id: string, patch: Partial<Flashcard>) => void;
+  onGenerateMC: (cardIds: string[]) => Promise<{ okIds: string[]; failedIds: string[] }>;
+  apiKeys: { gemini?: string; anthropic?: string; groq?: string };
+}) {
   const [isFlipped, setIsFlipped] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
     setIsFlipped(false);
@@ -955,6 +992,17 @@ function CardPreviewModal({ card, onClose, onEdit }: { card: Flashcard; onClose:
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-[#9ca3af] uppercase tracking-widest">Vorschau</span>
           <div className="flex items-center gap-2">
+            {/* Chat-Button erscheint nur wenn die Karte umgedreht ist — der User
+                hat dann die Antwort gesehen und kann gezielt nachfragen. */}
+            {isFlipped && (
+              <button
+                onClick={() => setChatOpen(true)}
+                title="KI fragen"
+                className="text-sm px-3 py-1.5 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/40 text-purple-300 transition-colors"
+              >
+                💬 {hasChat ? 'Chat fortsetzen' : 'KI fragen'}
+              </button>
+            )}
             <button
               onClick={() => { onClose(); onEdit(card); }}
               className="text-sm px-3 py-1.5 rounded-xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/30 transition-colors"
@@ -1023,9 +1071,25 @@ function CardPreviewModal({ card, onClose, onEdit }: { card: Flashcard; onClose:
             🚫 Blacklist
           </span>
         )}
+        {hasChat && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/40 text-purple-300 font-semibold" title="Existierender KI-Chat — Antwort der Karte anschauen, dann fortsetzen">
+            💬 Chat
+          </span>
+        )}
           {card.customTags.map(t => <span key={t} className="text-xs text-[#6b7280]">#{t}</span>)}
         </div>
       </div>
+
+      {/* AI Chat drawer — opens via 💬-button when card is flipped */}
+      <CardChatDrawer
+        card={card}
+        userId={userId}
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        onUpdateCard={onUpdateCard}
+        onRegenerateMC={async (id) => { await onGenerateMC([id]); }}
+        apiKeys={apiKeys}
+      />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import PriorityPicker from '../components/PriorityPicker';
 import MicPulseVisualizer from '../components/MicPulseVisualizer';
 import { LinkedCardsPanel } from '../components/LinkedCards';
 import QuickEditModal from '../components/QuickEditModal';
+import CardChatDrawer from '../components/CardChatDrawer';
 import { getNewCardsDoneToday } from '../utils/dailyGoal';
 import { generateMCHintBundle } from '../utils/geminiMCHint';
 import type { MCHintResult } from '../utils/geminiMCHint';
@@ -26,6 +27,7 @@ interface Props {
   settings: AppSettings;
   sets: CardSet[];
   links: CardLink[];
+  userId: string | null;
   preFilteredCards?: Flashcard[] | null;
   dailyPlan?: DailyPlanSession | null;
   onRate: (id: string, rating: RatingValue) => void;
@@ -84,7 +86,7 @@ interface RatingCount {
   nochmal: number; schwer: number; gut: number; einfach: number;
 }
 
-export default function StudySession({ cards, settings, sets, links, preFilteredCards, dailyPlan, onRate, onUpdateCard, onDeleteCard, onSplitCard, onGenerateMC, onUpdateSettings, onSessionComplete, onNavigate, onApiError }: Props) {
+export default function StudySession({ cards, settings, sets, links, userId, preFilteredCards, dailyPlan, onRate, onUpdateCard, onDeleteCard, onSplitCard, onGenerateMC, onUpdateSettings, onSessionComplete, onNavigate, onApiError }: Props) {
   const isDailyMode = !!dailyPlan;
 
   // Restore in-progress study session from sessionStorage on mount.
@@ -202,6 +204,8 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   );
   const [zoomedImg, setZoomedImg] = useState<string | null>(null);
   const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
+  // Card chat drawer — only open when explicitly toggled by user
+  const [chatOpen, setChatOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [splitInProgress, setSplitInProgress] = useState(false);
   const [mcHint, setMcHint] = useState<MCHintState | null>(null);
@@ -1445,8 +1449,15 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
           <div className="mb-5 bg-[#1e2130] border border-[#2d3148] rounded-2xl p-4">
             <div className="flex items-start justify-between gap-3 mb-1.5">
               <p className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider">Karten-Frage</p>
-              {/* Action icons: Vorschau · Bearbeiten · Blacklist · MC neu generieren */}
+              {/* Action icons: Chat · Vorschau · Bearbeiten · Blacklist · MC neu generieren */}
               <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => setChatOpen(true)}
+                  title="KI fragen"
+                  className="text-xs px-2 py-1 rounded-lg border border-transparent text-[#6b7280] hover:text-indigo-400 hover:bg-[#252840] transition-colors"
+                >
+                  💬
+                </button>
                 <button
                   onClick={() => setMcShowBack(v => !v)}
                   title={mcShowBack ? 'Antwort verstecken' : 'Antwort einblenden'}
@@ -1660,6 +1671,25 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
             onApiError={onApiError}
           />
         )}
+
+        {/* AI Chat drawer — opens on 💬 click */}
+        <CardChatDrawer
+          card={mcCurrent}
+          userId={userId}
+          open={chatOpen}
+          onClose={() => setChatOpen(false)}
+          onApiError={onApiError}
+          onUpdateCard={(id, patch) => {
+            onUpdateCard(id, patch);
+            setSessionCards(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
+          }}
+          onRegenerateMC={onGenerateMC ? async (id) => { await onGenerateMC([id]); } : undefined}
+          apiKeys={{
+            gemini: settings.geminiApiKey,
+            anthropic: settings.anthropicApiKey,
+            groq: settings.groqApiKey,
+          }}
+        />
       </div>
     );
   }
@@ -1888,6 +1918,13 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                     );
                   })()}
                   <button
+                    onClick={e => { e.stopPropagation(); setChatOpen(true); }}
+                    title="KI fragen"
+                    className="text-base px-2 py-1.5 rounded-lg border border-transparent text-[#6b7280] hover:text-indigo-400 hover:bg-[#252840] transition-colors"
+                  >
+                    💬
+                  </button>
+                  <button
                     onClick={e => { e.stopPropagation(); handleParkCurrent(); }}
                     title="Auf Blacklist setzen — Karte aus allen Lern-Pools ausschließen (bleibt in Bibliothek)"
                     className="text-base px-2 py-1.5 rounded-lg border border-transparent text-[#6b7280] hover:text-amber-300 hover:bg-[#252840] transition-colors"
@@ -2010,6 +2047,24 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
           onApiError={onApiError}
         />
       )}
+
+      <CardChatDrawer
+        card={currentCard}
+        userId={userId}
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        onApiError={onApiError}
+        onUpdateCard={(id, patch) => {
+          onUpdateCard(id, patch);
+          setSessionCards(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
+        }}
+        onRegenerateMC={onGenerateMC ? async (id) => { await onGenerateMC([id]); } : undefined}
+        apiKeys={{
+          gemini: settings.geminiApiKey,
+          anthropic: settings.anthropicApiKey,
+          groq: settings.groqApiKey,
+        }}
+      />
     </div>
   );
 }

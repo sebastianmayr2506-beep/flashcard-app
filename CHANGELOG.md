@@ -7,6 +7,25 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-14 — Karten-Karten in Library aufgeräumt: 3 statt 6 Buttons
+
+**Was raus:**
+- 👁 Preview-Button (Karte ist klickbar → öffnet Preview)
+- ✂️ Split-Button (selten genutzt, andere User haben oft kein Claude-Key)
+- 📦 Single-Card-Export (via Auswählen-Modus möglich)
+- „Fällig"-Pill (subtile Border-Highlightung links bleibt als visuelles Signal)
+
+**Was bleibt** (3-Button-Reihe):
+- Bearbeiten · 🚫 Blacklist · Löschen
+
+Grid- und List-View bekommen die gleiche Behandlung. `onSplitCard`-Prop
+ist aus Library entfernt, bleibt aber in StudySession verfügbar (dort wird
+Split aus der laufenden Session gestartet).
+
+**Files:** `src/pages/Library.tsx`, `src/App.tsx`.
+
+---
+
 ## 2026-05-14 — Library-Filter aufgeräumt + Parkiert → Blacklist rename
 
 **Filter-Cleanup:** Bibliothek hatte 14 sichtbare Filter — zu viel. User-Feedback,

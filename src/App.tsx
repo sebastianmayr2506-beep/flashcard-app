@@ -966,7 +966,6 @@ export default function App() {
             onBulkSetBlacklist={handleBulkSetBlacklist}
             onUpdateCard={updateCard}
             onMergeCards={handleMergeCards}
-            onSplitCard={handleSplitCard}
             onGenerateMC={handleGenerateMCForCards}
             onNavigate={navigate}
             initialSrsFilter={libraryInitialSrs}

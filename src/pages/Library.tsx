@@ -25,7 +25,6 @@ interface Props {
   onBulkSetBlacklist: (cardIds: string[], blacklisted: boolean) => void;
   onUpdateCard: (id: string, patch: Partial<Flashcard>) => void;
   onMergeCards: (cardIds: string[]) => void;
-  onSplitCard: (cardId: string) => void;
   onGenerateMC: (cardIds: string[]) => Promise<{ okIds: string[]; failedIds: string[] }>;
   onNavigate: (page: string) => void;
   initialSrsFilter?: string;
@@ -33,7 +32,7 @@ interface Props {
 
 type ViewMode = 'grid' | 'list';
 
-export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onBulkSetBlacklist, onUpdateCard, onMergeCards, onSplitCard, onGenerateMC, onNavigate, initialSrsFilter }: Props) {
+export default function Library({ cards, settings, sets, links, flagAttempts, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onBulkSetBlacklist, onUpdateCard, onMergeCards, onGenerateMC, onNavigate, initialSrsFilter }: Props) {
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminers, setFilterExaminers] = useState<Set<string>>(new Set());
@@ -620,7 +619,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
               selectionMode={selectionMode}
               selected={selectedIds.has(card.id)}
               onToggleSelect={() => toggleSelection(card.id)}
-              onEdit={onEdit} onDelete={onDelete} onSplit={onSplitCard}
+              onEdit={onEdit} onDelete={onDelete}
               onPreview={setPreviewCard}
               onToggleBlacklist={(c) => onUpdateCard(c.id, { blacklisted: !c.blacklisted })}
             />
@@ -635,7 +634,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
               selectionMode={selectionMode}
               selected={selectedIds.has(card.id)}
               onToggleSelect={() => toggleSelection(card.id)}
-              onEdit={onEdit} onDelete={onDelete} onSplit={onSplitCard}
+              onEdit={onEdit} onDelete={onDelete}
               onPreview={setPreviewCard}
               onToggleBlacklist={(c) => onUpdateCard(c.id, { blacklisted: !c.blacklisted })}
             />
@@ -702,7 +701,6 @@ interface CardItemProps {
   onToggleSelect: () => void;
   onEdit: (c: Flashcard) => void;
   onDelete: (id: string) => void;
-  onSplit: (id: string) => void;
   onPreview: (c: Flashcard) => void;
   onToggleBlacklist: (c: Flashcard) => void;
 }
@@ -717,7 +715,7 @@ function flagTooltip(cardId: string, flagAttempts: FlagAttempt[], autoUnflagEnab
   return '🚩 Flagge wird bald automatisch entfernt';
 }
 
-function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete, onSplit, onPreview, onToggleBlacklist }: CardItemProps) {
+function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete, onPreview, onToggleBlacklist }: CardItemProps) {
   const status = getSRSStatus(card);
   const due = isDueToday(card);
   const linkCount = links.filter(l => l.cardId === card.id || l.linkedCardId === card.id).length;
@@ -765,7 +763,6 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
           </span>
         )}
         <SRSBadge status={status} />
-        {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
         {card.flagged && <span title={flagTooltip(card.id, flagAttempts, autoUnflagEnabled)} className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 cursor-help">🚩</span>}
         {linkCount > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">🔗 {linkCount}</span>}
         <SetDot setId={card.setId} sets={sets} />
@@ -782,28 +779,16 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
         </div>
       )}
       {!selectionMode && (
-        // Mobile has no hover, so always show. On desktop, transition-opacity still
-        // provides subtle hover feedback via the per-button colour change.
+        // Slim action row: Bearbeiten · Blacklist · Löschen. Preview is via
+        // clicking the card itself; Split and single-card Export removed —
+        // both rarely used, available via selection-mode bulk actions if
+        // needed. Slimmer card → less visual clutter in the library grid.
         <div className="flex gap-2">
-          <button
-            onClick={e => { e.stopPropagation(); onPreview(card); }}
-            className="text-xs py-1.5 px-2 rounded-lg bg-[#252840] hover:bg-purple-500/20 text-[#9ca3af] hover:text-purple-400 border border-[#2d3148] hover:border-purple-500/30 transition-colors"
-            title="Vorschau"
-          >
-            👁
-          </button>
           <button
             onClick={e => { e.stopPropagation(); onEdit(card); }}
             className="flex-1 text-xs py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] hover:border-indigo-500/30 transition-colors"
           >
             Bearbeiten
-          </button>
-          <button
-            onClick={e => { e.stopPropagation(); onSplit(card.id); }}
-            className="text-xs py-1.5 px-2 rounded-lg bg-[#252840] hover:bg-violet-500/20 text-[#9ca3af] hover:text-violet-400 border border-[#2d3148] hover:border-violet-500/30 transition-colors"
-            title="Mit KI in mehrere Karten trennen"
-          >
-            ✂️
           </button>
           <button
             onClick={e => { e.stopPropagation(); onToggleBlacklist(card); }}
@@ -817,13 +802,6 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
             {card.blacklisted ? '✓' : '🚫'}
           </button>
           <button
-            onClick={e => { e.stopPropagation(); exportJSON([card], `karte_${card.id.slice(0,8)}.json`); }}
-            className="text-xs py-1.5 px-2 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] hover:border-indigo-500/30 transition-colors"
-            title="JSON exportieren"
-          >
-            📦
-          </button>
-          <button
             onClick={e => { e.stopPropagation(); onDelete(card.id); }}
             className="flex-1 text-xs py-1.5 rounded-lg bg-[#252840] hover:bg-red-500/20 text-[#9ca3af] hover:text-red-400 border border-[#2d3148] hover:border-red-500/30 transition-colors"
           >
@@ -835,7 +813,7 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
   );
 }
 
-function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete, onSplit, onPreview, onToggleBlacklist }: CardItemProps) {
+function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, selectionMode, selected, onToggleSelect, onEdit, onDelete, onPreview, onToggleBlacklist }: CardItemProps) {
   const status = getSRSStatus(card);
   const due = isDueToday(card);
   const linkCount = links.filter(l => l.cardId === card.id || l.linkedCardId === card.id).length;
@@ -875,7 +853,6 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
           </span>
         )}
         <SRSBadge status={status} />
-        {due && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Fällig</span>}
         {card.flagged && <span title={flagTooltip(card.id, flagAttempts, autoUnflagEnabled)} className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 cursor-help">🚩</span>}
         {linkCount > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">🔗 {linkCount}</span>}
         {card.probabilityPercent != null && card.probabilityPercent > 0 && (
@@ -884,11 +861,9 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
         <SetDot setId={card.setId} sets={sets} />
       </div>
       {!selectionMode && (
-        // Always visible on mobile (no hover); hover colours still apply on desktop.
+        // Slim action row (List-View): Bearbeiten · Blacklist · Löschen.
         <div className="flex gap-1.5 shrink-0">
-          <button onClick={e => { e.stopPropagation(); onPreview(card); }} className="text-xs px-2 py-1.5 rounded-lg bg-[#252840] hover:bg-purple-500/20 text-[#9ca3af] hover:text-purple-400 border border-[#2d3148] transition-colors" title="Vorschau">👁</button>
           <button onClick={e => { e.stopPropagation(); onEdit(card); }} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] transition-colors">Bearbeiten</button>
-          <button onClick={e => { e.stopPropagation(); onSplit(card.id); }} className="text-xs px-2 py-1.5 rounded-lg bg-[#252840] hover:bg-violet-500/20 text-[#9ca3af] hover:text-violet-400 border border-[#2d3148] transition-colors" title="Mit KI in mehrere Karten trennen">✂️</button>
           <button
             onClick={e => { e.stopPropagation(); onToggleBlacklist(card); }}
             className={`text-xs px-2 py-1.5 rounded-lg border transition-colors ${
@@ -900,7 +875,6 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
           >
             {card.blacklisted ? '✓' : '🚫'}
           </button>
-          <button onClick={e => { e.stopPropagation(); exportJSON([card], `karte_${card.id.slice(0,8)}.json`); }} className="text-xs px-2 py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] transition-colors" title="JSON exportieren">📦</button>
           <button onClick={e => { e.stopPropagation(); onDelete(card.id); }} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-red-500/20 text-[#9ca3af] hover:text-red-400 border border-[#2d3148] transition-colors">Löschen</button>
         </div>
       )}

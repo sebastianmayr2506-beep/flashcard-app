@@ -7,6 +7,22 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-14 — Library: Inline-Confirm beim Karte-Löschen
+
+**Symptom:** User hat „öfter ausversehen eine Karte gelöscht" — Klick auf
+Löschen löschte sofort ohne Rückfrage.
+
+**Fix:** Inline-2-Klick-Confirm-Pattern (gleiche Mechanik wie schon in
+StudySession): Klick auf „Löschen" → Button wird zu „Sicher? Ja / Nein".
+Nach 3 Sekunden Inaktivität fällt der Confirm-State zurück. Funktioniert
+in Grid- + List-View identisch.
+
+Kein Modal, kein Workflow-Bruch.
+
+**Files:** `src/pages/Library.tsx`.
+
+---
+
 ## 2026-05-14 — Karten-Karten in Library aufgeräumt: 3 statt 6 Buttons
 
 **Was raus:**

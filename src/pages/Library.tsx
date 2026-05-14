@@ -719,6 +719,16 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
   const status = getSRSStatus(card);
   const due = isDueToday(card);
   const linkCount = links.filter(l => l.cardId === card.id || l.linkedCardId === card.id).length;
+  // Inline 2-Klick-Confirm: erster Klick zeigt "Sicher?" + Ja/Nein. Vermeidet
+  // versehentliches Löschen ohne den Workflow durch ein Modal zu unterbrechen.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  // Auto-reset nach 3 Sekunden falls User nicht entscheidet — sonst hängt der
+  // "Sicher?"-State unsichtbar weiter.
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const t = setTimeout(() => setConfirmDelete(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirmDelete]);
 
   const imgSrc = card.frontImage
     ? (card.frontImage.type === 'base64' ? `data:${card.frontImage.mimeType ?? 'image/png'};base64,${card.frontImage.data}` : card.frontImage.data)
@@ -801,12 +811,29 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
           >
             {card.blacklisted ? '✓' : '🚫'}
           </button>
-          <button
-            onClick={e => { e.stopPropagation(); onDelete(card.id); }}
-            className="flex-1 text-xs py-1.5 rounded-lg bg-[#252840] hover:bg-red-500/20 text-[#9ca3af] hover:text-red-400 border border-[#2d3148] hover:border-red-500/30 transition-colors"
-          >
-            Löschen
-          </button>
+          {confirmDelete ? (
+            <div className="flex-1 flex gap-1">
+              <button
+                onClick={e => { e.stopPropagation(); onDelete(card.id); setConfirmDelete(false); }}
+                className="flex-1 text-xs py-1.5 rounded-lg bg-red-500/25 hover:bg-red-500/40 border border-red-500/50 text-red-300 font-semibold transition-colors"
+              >
+                Sicher? Ja
+              </button>
+              <button
+                onClick={e => { e.stopPropagation(); setConfirmDelete(false); }}
+                className="flex-1 text-xs py-1.5 rounded-lg bg-[#252840] hover:bg-[#2d3148] border border-[#2d3148] text-[#9ca3af] transition-colors"
+              >
+                Nein
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={e => { e.stopPropagation(); setConfirmDelete(true); }}
+              className="flex-1 text-xs py-1.5 rounded-lg bg-[#252840] hover:bg-red-500/20 text-[#9ca3af] hover:text-red-400 border border-[#2d3148] hover:border-red-500/30 transition-colors"
+            >
+              Löschen
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -817,6 +844,12 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
   const status = getSRSStatus(card);
   const due = isDueToday(card);
   const linkCount = links.filter(l => l.cardId === card.id || l.linkedCardId === card.id).length;
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const t = setTimeout(() => setConfirmDelete(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirmDelete]);
   return (
     <div
       onClick={() => { if (selectionMode) onToggleSelect(); else onPreview(card); }}
@@ -875,7 +908,14 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
           >
             {card.blacklisted ? '✓' : '🚫'}
           </button>
-          <button onClick={e => { e.stopPropagation(); onDelete(card.id); }} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-red-500/20 text-[#9ca3af] hover:text-red-400 border border-[#2d3148] transition-colors">Löschen</button>
+          {confirmDelete ? (
+            <>
+              <button onClick={e => { e.stopPropagation(); onDelete(card.id); setConfirmDelete(false); }} className="text-xs px-3 py-1.5 rounded-lg bg-red-500/25 hover:bg-red-500/40 border border-red-500/50 text-red-300 font-semibold transition-colors">Sicher? Ja</button>
+              <button onClick={e => { e.stopPropagation(); setConfirmDelete(false); }} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-[#2d3148] border border-[#2d3148] text-[#9ca3af] transition-colors">Nein</button>
+            </>
+          ) : (
+            <button onClick={e => { e.stopPropagation(); setConfirmDelete(true); }} className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-red-500/20 text-[#9ca3af] hover:text-red-400 border border-[#2d3148] transition-colors">Löschen</button>
+          )}
         </div>
       )}
     </div>

@@ -99,15 +99,32 @@ export function useCards(userId: string | null) {
     // Safe fetch with retry — returns { rows, ok } where ok=false means we
     // cannot trust the result (DO NOT overwrite card state).
     //
-    // Retry-Ladder erhöht: 5 Versuche mit exponentiellem Backoff (1s → 2s → 4s
-    // → 8s → 12s). Grund: wenn andere User parallel große Imports laufen
-    // lassen, ist der Postgres-Pool kurzzeitig saturiert und Queries timeouten.
-    // Die alten 3 Versuche × ~1s waren zu schnell aufgebenfähig — bei
-    // Lastspitzen reicht das nicht. 12s Max-Wait gibt der DB Zeit zur Erholung
-    // ohne den User dauerhaft hängen zu lassen.
+    // Two-stage fetch (Performance):
+    //   Stage 1: metadata only (no base64 images) → small payload, fast.
+    //            UI rendert sofort sobald das durch ist.
+    //   Stage 2: front_image + back_image im Hintergrund nachladen → wird
+    //            mergebar in den schon-gesetzten State.
+    //
+    // Grund: bei mehreren parallelen Usern saturiert `select('*')` mit allen
+    // base64-Images den Postgres-Connection-Pool. Image-Daten sind 10-100x
+    // schwerer pro Karte als der Rest. Mit Stage 1 dauert eine 1037-Karten-
+    // Antwort ~500 KB statt 50 MB → Pool dreht sich schneller.
+    //
+    // Retry-Ladder mit JITTER: 5 Versuche × exponentielles Backoff
+    // (1s/2s/4s/8s/12s) + ±50% Zufall, damit gleichzeitig-failing User nicht
+    // synchron retryen (retry-storm würde den Pool gleich wieder killen).
+    const META_COLUMNS =
+      'id, user_id, front, back, subjects, examiners, difficulty, custom_tags, ' +
+      'set_id, flagged, times_asked, asked_by_examiners, asked_in_catalogs, ' +
+      'probability_percent, created_at, updated_at, interval, repetitions, ' +
+      'ease_factor, next_review_date, first_studied_at, priority, mc_questions, ' +
+      'mc_questions_generated_at, blacklisted';
+
+    const jitter = (ms: number) => Math.round(ms * (0.5 + Math.random())); // ±50%
+
     const fetchAllCardsWithRetry = async (): Promise<{ rows: Record<string, unknown>[]; ok: boolean }> => {
       const MAX_ATTEMPTS = 5;
-      const BACKOFFS_MS = [1000, 2000, 4000, 8000, 12000]; // before attempt 2-5
+      const BASE_BACKOFFS_MS = [1000, 2000, 4000, 8000, 12000];
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         let allRows: Record<string, unknown>[] = [];
         let from = 0;
@@ -115,15 +132,18 @@ export function useCards(userId: string | null) {
         let hadError = false;
         while (true) {
           const { data, error } = await supabase
-            .from('cards').select('*').eq('user_id', userId)
+            .from('cards').select(META_COLUMNS).eq('user_id', userId)
             .range(from, from + PAGE - 1);
           if (error) {
             console.warn(`[useCards] load attempt ${attempt}/${MAX_ATTEMPTS} failed:`, error.message);
             hadError = true;
             break;
           }
-          allRows = allRows.concat(data ?? []);
-          if ((data ?? []).length < PAGE) break;
+          // Cast to plain records — Supabase types the result based on the
+          // column-list string, but fromDb just needs a generic object lookup.
+          const rows = (data ?? []) as unknown as Record<string, unknown>[];
+          allRows = allRows.concat(rows);
+          if (rows.length < PAGE) break;
           from += PAGE;
         }
         if (!hadError) {
@@ -131,11 +151,48 @@ export function useCards(userId: string | null) {
           return { rows: allRows, ok: true };
         }
         if (attempt < MAX_ATTEMPTS) {
-          await new Promise(r => setTimeout(r, BACKOFFS_MS[attempt - 1] ?? 8000));
+          const wait = jitter(BASE_BACKOFFS_MS[attempt - 1] ?? 8000);
+          await new Promise(r => setTimeout(r, wait));
         }
       }
       console.error('[useCards] all load attempts exhausted');
       return { rows: [], ok: false };
+    };
+
+    // Background-Fetch der Bilder NACH dem ersten Render. Best-effort:
+    // wenn's failed bleiben die Bilder einfach undefined und die UI zeigt
+    // die Karten ohne Bild — beim nächsten Tab-Focus probiert's automatisch
+    // wieder über den normalen refetch-Pfad.
+    const fetchImagesInBackground = async (knownIds: string[]) => {
+      if (knownIds.length === 0) return;
+      try {
+        let from = 0;
+        const PAGE = 500; // kleiner als Stage 1 weil Bilder schwerer
+        while (true) {
+          const { data, error } = await supabase
+            .from('cards').select('id, front_image, back_image')
+            .eq('user_id', userId)
+            .range(from, from + PAGE - 1);
+          if (error || !data) {
+            console.warn('[useCards] image background fetch failed:', error?.message);
+            return;
+          }
+          if (cancelled) return;
+          setCards(prev => prev.map(c => {
+            const img = data.find(d => (d as { id: string }).id === c.id) as { id: string; front_image?: unknown; back_image?: unknown } | undefined;
+            if (!img) return c;
+            return {
+              ...c,
+              frontImage: (img.front_image as typeof c.frontImage) ?? c.frontImage,
+              backImage: (img.back_image as typeof c.backImage) ?? c.backImage,
+            };
+          }));
+          if (data.length < PAGE) break;
+          from += PAGE;
+        }
+      } catch (err) {
+        console.warn('[useCards] image background fetch crashed:', err);
+      }
     };
 
     // Re-fetch cards from Supabase WITHOUT toggling the loading flag.
@@ -147,6 +204,9 @@ export function useCards(userId: string | null) {
       const { rows, ok } = await fetchAllCardsWithRetry();
       if (cancelled || !ok) return;
       setCards(rows.map(r => fromDb(r as Record<string, unknown>)));
+      // Background-Refresh der Bilder — sonst würden Bilder die der User in
+      // einem anderen Gerät bearbeitet hat nicht mitkommen.
+      void fetchImagesInBackground(rows.map(r => (r as { id: string }).id));
     };
 
     const load = async () => {
@@ -207,6 +267,10 @@ export function useCards(userId: string | null) {
 
         setCards(rows.map(r => fromDb(r as Record<string, unknown>)));
         setLoading(false);
+        // Stage 2: Bilder im Hintergrund nachladen. UI ist schon interaktiv,
+        // Bilder ploppen rein wenn sie da sind. Bei Lastspitzen wartet das
+        // ein paar Sekunden — egal, der User kann schon klicken.
+        void fetchImagesInBackground(rows.map(r => (r as { id: string }).id));
       } catch (err) {
         console.error('useCards load error:', err);
         if (!cancelled) {

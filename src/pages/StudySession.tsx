@@ -1143,22 +1143,26 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                     </div>
                   </div>
 
-                  {/* Divergence notice: daily plan changed since pause */}
-                  {pausedMcDiverged && (
-                    <div className="bg-[#15172a] border border-amber-500/40 rounded-lg px-3 py-2 flex items-start gap-2">
-                      <span className="text-sm shrink-0">⚠️</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[11px] text-amber-200 leading-relaxed">
-                          Tageslimit hat sich geändert: <strong>{pausedMcDiverged.paused} → {pausedMcDiverged.plan}</strong> Karten.
-                          Session-Karten und Karteikarten-Plan passen nicht mehr zusammen.
-                        </p>
-                        <button
-                          onClick={adaptPausedMCToCurrentPlan}
-                          className="mt-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-md bg-amber-500/25 hover:bg-amber-500/40 border border-amber-500/50 text-amber-100 transition-colors"
-                        >
-                          Auf {pausedMcDiverged.plan} Karten anpassen
-                        </button>
-                      </div>
+                  {/* Soft divergence hint: just states the fact, no
+                      "hat sich geändert"-Wording — könnte ja auch sein dass
+                      der User einfach im Karteikarten-Modus Karten abgearbeitet
+                      hat und die deshalb aus dem Tagesplan rausgewandert sind.
+                      User entscheidet selbst ob er anpassen will. */}
+                  {pausedMcDiverged && pausedMcDiverged.plan > 0 && (
+                    <div className="bg-[#15172a] border border-[#2d3148] rounded-lg px-3 py-2">
+                      <p className="text-[11px] text-[#9ca3af] leading-relaxed">
+                        Aktueller Tagesplan: <span className="text-white font-semibold">{pausedMcDiverged.plan} Karten</span>
+                        {' '}· deine Session: <span className="text-white font-semibold">{pausedMcDiverged.paused}</span>.
+                        {pausedMcDiverged.plan < pausedMcDiverged.paused
+                          ? ' Falls du dort schon Karten im Klassik-Modus gemacht hast oder das Limit gesenkt hast, kannst du die MC-Session zuschneiden.'
+                          : ' Mehr Karten im Tagesplan als in der Session — du kannst die Session erweitern.'}
+                      </p>
+                      <button
+                        onClick={adaptPausedMCToCurrentPlan}
+                        className="mt-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-md bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 transition-colors"
+                      >
+                        Session-Größe auf {pausedMcDiverged.plan} setzen
+                      </button>
                     </div>
                   )}
 

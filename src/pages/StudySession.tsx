@@ -312,12 +312,42 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
   };
 
   /**
+   * Find the next (card, question) position that still needs answering.
+   * Walks forward from (startCardIdx, startQuestionIdx). Returns null when
+   * every remaining slot is already answered.
+   */
+  const findNextUnanswered = (
+    startCardIdx: number,
+    startQuestionIdx: number,
+    list: Flashcard[],
+    answers: Map<string, { selected: string[]; isCorrect: boolean }[]>,
+  ): { cardIdx: number; questionIdx: number } | null => {
+    for (let ci = startCardIdx; ci < list.length; ci++) {
+      const card = list[ci];
+      const total = card.mcQuestions?.length ?? 0;
+      const cardAnswers = answers.get(card.id) ?? [];
+      const startQ = ci === startCardIdx ? startQuestionIdx : 0;
+      for (let qi = startQ; qi < total; qi++) {
+        if (!cardAnswers[qi]) return { cardIdx: ci, questionIdx: qi };
+      }
+    }
+    return null;
+  };
+
+  /**
    * Adapt a paused MC session to the current daily plan.
    *  - Cards that disappear from the plan (e.g. Tageslimit gesenkt) → dropped along with their MC-Antworten
    *  - Cards that newly enter the plan → added at the end, fresh
    *  - Cards still in the plan → keep their answer-Progress
-   * Pointer (mcCardIdx, mcQuestionIdx) is reset to the first card in the new
-   * list that doesn't have all its questions answered yet.
+   *
+   * Pointer-Strategie:
+   *  1. War der User auf einer Karte die noch im neuen Plan ist? → dahin springen
+   *  2. Falls die aktuelle Frage dort schon beantwortet ist → ab da nächste unbeantwortete suchen
+   *  3. Sonst (alte Karte nicht mehr im Plan) → erste unbeantwortete im neuen Plan
+   *  4. Wenn alles beantwortet → letzte Karte (Summary kommt dann beim Weiterklicken)
+   *
+   *  Die `card.mcQuestions` selbst werden NIE angefasst — die bleiben auf der Karte
+   *  in der DB und stehen für zukünftige Sessions ohne Re-Generierung bereit.
    */
   const adaptPausedMCToCurrentPlan = () => {
     if (!currentDailyPlanIds) return;
@@ -328,38 +358,53 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
       .map(c => cards.find(cc => cc.id === c.id))
       .filter((c): c is Flashcard => !!c);
 
-    // Prune answers for dropped cards
+    if (newOrdered.length === 0) {
+      onApiError?.('Daily plan ist leer — Session bleibt unverändert.');
+      return;
+    }
+
+    // Prune answers for dropped cards (preserve everything for cards still in plan)
     const newAnswers = new Map<string, { selected: string[]; isCorrect: boolean }[]>();
     for (const [cardId, answers] of mcAnswers) {
       if (currentDailyPlanIds.has(cardId)) newAnswers.set(cardId, answers);
     }
 
-    // Find resumption point: first card with unanswered questions
-    let newCardIdx = 0;
-    let newQuestionIdx = 0;
-    for (let i = 0; i < newOrdered.length; i++) {
-      const c = newOrdered[i];
-      const total = c.mcQuestions?.length ?? 0;
-      const answered = newAnswers.get(c.id)?.length ?? 0;
-      if (answered < total) {
-        newCardIdx = i;
-        newQuestionIdx = answered;
-        break;
-      }
-      if (i === newOrdered.length - 1) {
-        // all done → land on last card
-        newCardIdx = i;
-        newQuestionIdx = Math.max(0, total - 1);
-      }
+    // Resumption: try to land near where the user was.
+    const previousCardId = sessionCards[mcCardIdx]?.id;
+    const previousQ = mcQuestionIdx;
+    const previousIdxInNew = previousCardId
+      ? newOrdered.findIndex(c => c.id === previousCardId)
+      : -1;
+
+    let resume: { cardIdx: number; questionIdx: number } | null = null;
+    if (previousIdxInNew >= 0) {
+      // Old current card still in plan — start from there, then skip ahead
+      // if their current question is already answered.
+      resume = findNextUnanswered(previousIdxInNew, previousQ, newOrdered, newAnswers);
+    }
+    if (!resume) {
+      // Old card gone OR everything from there is answered — find from start.
+      resume = findNextUnanswered(0, 0, newOrdered, newAnswers);
+    }
+    if (!resume) {
+      // Everything answered — land on last card / last question (next click → summary)
+      const lastIdx = newOrdered.length - 1;
+      const lastTotal = newOrdered[lastIdx].mcQuestions?.length ?? 1;
+      resume = { cardIdx: lastIdx, questionIdx: Math.max(0, lastTotal - 1) };
     }
 
     setSessionCards(newOrdered);
     setMcAnswers(newAnswers);
-    setMcCardIdx(newCardIdx);
-    setMcQuestionIdx(newQuestionIdx);
+    setMcCardIdx(resume.cardIdx);
+    setMcQuestionIdx(resume.questionIdx);
     setMcSelected([]);
     setMcSubmitted(false);
-    onApiError?.(`📋 Session an aktuelles Tageslimit angepasst: ${newOrdered.length} Karten`);
+
+    const totalQuestions = newOrdered.reduce((s, c) => s + (c.mcQuestions?.length ?? 0), 0);
+    const answeredCount = Array.from(newAnswers.values()).reduce((s, arr) => s + arr.filter(Boolean).length, 0);
+    onApiError?.(
+      `📋 Session angepasst: ${newOrdered.length} Karten · ${answeredCount} / ${totalQuestions} Fragen schon beantwortet · fortgesetzt bei Karte ${resume.cardIdx + 1}`,
+    );
   };
 
   // Cross-device resume with timestamp-based conflict resolution.
@@ -1510,19 +1555,17 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
     };
 
     const next = () => {
-      const lastQuestion = mcQuestionIdx + 1 >= mcCurrent.mcQuestions!.length;
-      const lastCard = mcCardIdx + 1 >= sessionCards.length;
-      if (lastQuestion && lastCard) {
-        // Done — go to summary
+      // Skip ahead to the next genuinely-unanswered slot. Important after an
+      // adapt-merge where some cards in the new list already have answers
+      // from the previous session — without skipping the user would see
+      // questions they've already answered.
+      const result = findNextUnanswered(mcCardIdx, mcQuestionIdx + 1, sessionCards, mcAnswers);
+      if (!result) {
         setSessionState('summary');
         return;
       }
-      if (lastQuestion) {
-        setMcCardIdx(i => i + 1);
-        setMcQuestionIdx(0);
-      } else {
-        setMcQuestionIdx(i => i + 1);
-      }
+      setMcCardIdx(result.cardIdx);
+      setMcQuestionIdx(result.questionIdx);
       setMcSelected([]);
       setMcSubmitted(false);
     };

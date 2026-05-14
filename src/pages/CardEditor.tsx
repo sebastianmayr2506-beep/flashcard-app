@@ -28,7 +28,7 @@ interface Props {
   onRemoveLink: (linkId: string) => void;
   /** Triggers KI-generation of MC for THIS card. Re-uses the bulk handler
    *  (single-card array). Updates persist via Supabase live-sync. */
-  onGenerateMC?: (cardIds: string[]) => Promise<void>;
+  onGenerateMC?: (cardIds: string[]) => Promise<{ okIds: string[]; failedIds: string[] }>;
   /** Sets mcQuestions to undefined on the card. */
   onDeleteMC?: (cardId: string) => void;
   onApiError?: (message: string) => void;
@@ -508,7 +508,7 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
           {card && (
             <MCQuestionsSection
               card={card}
-              onGenerate={onGenerateMC ? () => onGenerateMC([card.id]) : undefined}
+              onGenerate={onGenerateMC ? async () => { await onGenerateMC([card.id]); } : undefined}
               onDelete={onDeleteMC ? () => onDeleteMC(card.id) : undefined}
             />
           )}

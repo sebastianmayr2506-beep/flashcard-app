@@ -7,6 +7,46 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-14 — MC-Generierung: Mobile-Overlay sichtbar + keine falschen Fehlermeldungen
+
+**Symptom 1:** User klickt auf MC-Modus → „los geht's" auf dem Handy, es
+passiert *nichts* sichtbar. Erst beim Zurückgehen erschien der MC-Generation-
+Progress-Overlay.
+
+**Ursache 1:** App.tsx hat einen Early-Return-Pfad für `page === 'study'`
+(line 854ff). Der `mcGenProgress`-Overlay wurde aber NUR im Haupt-Layout-
+Return (line 1036) gerendert. Auf der Study-Page → kein Overlay im DOM.
+
+**Fix 1:** Overlay als `mcGenOverlay`-Konstante extrahiert, in BEIDEN
+Return-Pfaden eingebunden. Sichtbar egal auf welcher Seite die Generierung
+ausgelöst wurde.
+
+---
+
+**Symptom 2:** Nach erfolgreicher MC-Generierung kamen ZWEI Toasts:
+- ✓ „MC-Fragen für 2 Karten generiert"
+- ✗ „MC-Generierung für 2 Karte(n) fehlgeschlagen — siehe Konsole"
+
+Karten wurden trotzdem korrekt mit MC-Fragen geladen. Falscher Alarm.
+
+**Ursache 2:** `StudySession.tsx` las nach `await onGenerateMC()` aus
+`cards`-prop um zu prüfen welche Karten „still missing" sind. Aber
+`cards` ist im Closure stale — die bulkUpdate ist durch, React hat aber
+noch nicht neu gerendert. Folge: ALLE eben generierten Karten erschienen
+als „stillMissing" → falsche Fehlermeldung.
+
+**Fix 2:**
+- `handleGenerateMCForCards` returnt jetzt `{ okIds, failedIds }` statt void.
+- StudySession (zwei Pfade: inline-Auto-Gen ≤3 Karten + Pre-Flight-Modal)
+  nutzt die zurückgegebenen `failedIds` direkt — kein Re-Read vom State.
+- `cardsRef` (always-fresh ref auf cards-prop) für den anschließenden
+  `startMCSession`-Call, damit die frischen mcQuestions zur Hand sind.
+
+**Files:** `src/App.tsx`, `src/pages/StudySession.tsx`,
+`src/pages/Library.tsx`, `src/pages/CardEditor.tsx`.
+
+---
+
 ## 2026-05-13 — Settings: Tageslimit-Redesign mit Presets + klarer Erklärung
 
 **Symptom:** User-Feedback „ich sehe zwei Maximum-Werte pro Tag und kann

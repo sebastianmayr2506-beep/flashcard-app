@@ -34,7 +34,7 @@ interface Props {
   onSplitCard?: (cardId: string, afterSplit: (newCardIds: string[]) => void) => void;
   /** Bulk-generate persistent MC questions for the given cards.
    *  Used for the Pre-Flight step in MC-Lernmodus. */
-  onGenerateMC?: (cardIds: string[]) => Promise<void>;
+  onGenerateMC?: (cardIds: string[]) => Promise<{ okIds: string[]; failedIds: string[] }>;
   onSessionComplete: () => void;
   onNavigate: (page: string) => void;
   onApiError?: (message: string) => void;
@@ -202,6 +202,11 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   const [aiCheck, setAiCheck] = useState<AICheckState | null>(null);
   const recognizerRef = useRef<RecognizerHandle | null>(null);
   const micFinalRef = useRef(''); // accumulated final transcript across interim chunks
+  // Always-fresh reference to the cards prop. Used after `await onGenerateMC`
+  // to read the freshly-bulkUpdated mcQuestions without hitting the stale
+  // closure value of `cards`.
+  const cardsRef = useRef<Flashcard[]>(cards);
+  useEffect(() => { cardsRef.current = cards; }, [cards]);
   const speechSupported = useMemo(() => isSpeechRecognitionSupported(), []);
 
   // Cards available for setup
@@ -321,14 +326,18 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
           (async () => {
             setMcGenerating(true);
             try {
-              await onGenerateMC(missing.map(c => c.id));
-              const refreshed = ordered.map(c => cards.find(cc => cc.id === c.id) ?? c);
-              // Check again after generation: any still missing means a hard
-              // failure. Inform the user via toast and fall back.
-              const stillMissing = refreshed.filter(c => !c.mcQuestions || c.mcQuestions.length === 0);
-              if (stillMissing.length > 0) {
-                onApiError?.(`MC-Generierung für ${stillMissing.length} Karte(n) fehlgeschlagen — siehe Konsole. Karte(n): ${stillMissing.map(c => c.front.slice(0, 60)).join(' · ')}`);
+              // Use the RETURNED okIds/failedIds — reading from the `cards`
+              // prop here is racy: the bulkUpdate completes but React hasn't
+              // re-rendered yet, so `cards` is stale and every generated card
+              // would falsely show up as "stillMissing".
+              const { failedIds } = await onGenerateMC(missing.map(c => c.id));
+              if (failedIds.length > 0) {
+                const failedCards = missing.filter(c => failedIds.includes(c.id));
+                onApiError?.(`MC-Generierung für ${failedIds.length} Karte(n) fehlgeschlagen — siehe Konsole. Karte(n): ${failedCards.map(c => c.front.slice(0, 60)).join(' · ')}`);
               }
+              // After await, read from cardsRef (always points to latest prop)
+              // — the closure's `cards` is stale by one render.
+              const refreshed = ordered.map(c => cardsRef.current.find(cc => cc.id === c.id) ?? c);
               const ready = refreshed.filter(c => c.mcQuestions && c.mcQuestions.length > 0);
               if (ready.length > 0) startMCSession(ready);
             } finally {
@@ -371,13 +380,17 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
     if (!mcPreFlight || !onGenerateMC) return;
     setMcGenerating(true);
     try {
-      await onGenerateMC(mcPreFlight.missing.map(c => c.id));
-      // After generation, re-fetch the cards from the live `cards` prop —
-      // the bulkUpdate has populated mcQuestions on each. Map ordered cards
-      // through current `cards` to pick up the fresh MC arrays.
-      const refreshedCards = mcPreFlight.allCards.map(c => cards.find(cc => cc.id === c.id) ?? c);
+      const { failedIds } = await onGenerateMC(mcPreFlight.missing.map(c => c.id));
+      if (failedIds.length > 0) {
+        const failedCards = mcPreFlight.missing.filter(c => failedIds.includes(c.id));
+        onApiError?.(`MC-Generierung für ${failedIds.length} Karte(n) fehlgeschlagen — siehe Konsole. Karte(n): ${failedCards.map(c => c.front.slice(0, 60)).join(' · ')}`);
+      }
+      // Use cardsRef (latest prop) — the `cards` closure value is stale by
+      // one render after the await.
+      const refreshedCards = mcPreFlight.allCards.map(c => cardsRef.current.find(cc => cc.id === c.id) ?? c);
+      const ready = refreshedCards.filter(c => c.mcQuestions && c.mcQuestions.length > 0);
       setMcPreFlight(null);
-      startMCSession(refreshedCards);
+      if (ready.length > 0) startMCSession(ready);
     } finally {
       setMcGenerating(false);
     }

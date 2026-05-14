@@ -26,7 +26,7 @@ interface Props {
   onUpdateCard: (id: string, patch: Partial<Flashcard>) => void;
   onMergeCards: (cardIds: string[]) => void;
   onSplitCard: (cardId: string) => void;
-  onGenerateMC: (cardIds: string[]) => Promise<void>;
+  onGenerateMC: (cardIds: string[]) => Promise<{ okIds: string[]; failedIds: string[] }>;
   onNavigate: (page: string) => void;
   initialSrsFilter?: string;
 }

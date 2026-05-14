@@ -397,9 +397,13 @@ export default function App() {
   // ── Generate MC questions in bulk and persist them on the cards ──────────
   // Used by Library bulk-action + future Pre-Flight check in MC-Modus.
   const [mcGenProgress, setMcGenProgress] = useState<{ completed: number; total: number; failed: number } | null>(null);
-  const handleGenerateMCForCards = useCallback(async (cardIds: string[]): Promise<void> => {
+  // Returns which card-IDs succeeded/failed so the caller can react without
+  // re-reading the (stale) `cards` state after the await — that was the
+  // source of a false "Generierung fehlgeschlagen" toast in StudySession
+  // even when the cards had actually been generated.
+  const handleGenerateMCForCards = useCallback(async (cardIds: string[]): Promise<{ okIds: string[]; failedIds: string[] }> => {
     const targets = cards.filter(c => cardIds.includes(c.id));
-    if (targets.length === 0) return;
+    if (targets.length === 0) return { okIds: [], failedIds: [] };
     const keys = {
       gemini: settings.geminiApiKey,
       anthropic: settings.anthropicApiKey,
@@ -407,7 +411,7 @@ export default function App() {
     };
     if (!keys.gemini?.trim() && !keys.anthropic?.trim() && !keys.groq?.trim()) {
       showToast('Kein AI-Schlüssel konfiguriert. Bitte in den Einstellungen hinterlegen.', 'error');
-      return;
+      return { okIds: [], failedIds: cardIds };
     }
     setMcGenProgress({ completed: 0, total: targets.length, failed: 0 });
     try {
@@ -421,9 +425,9 @@ export default function App() {
         patch: { mcQuestions: questions, mcQuestionsGeneratedAt: now } as Partial<Flashcard>,
       }));
       if (patches.length > 0) await bulkUpdate(patches);
-      const okCount = results.size;
-      const failCount = errors.size;
-      if (failCount > 0) {
+      const okIds = Array.from(results.keys());
+      const failedIds = Array.from(errors.keys());
+      if (failedIds.length > 0) {
         // Surface failed cards in the console with their front text so the
         // user can identify problematic cards (often: very long content,
         // malformed JSON from the AI, or rate-limit).
@@ -434,13 +438,15 @@ export default function App() {
         }
       }
       showToast(
-        failCount === 0
-          ? `🎯 MC-Fragen für ${okCount} Karten generiert`
-          : `🎯 ${okCount} ok, ${failCount} fehlgeschlagen (Details in Konsole)`,
-        failCount === 0 ? 'success' : 'error',
+        failedIds.length === 0
+          ? `🎯 MC-Fragen für ${okIds.length} Karten generiert`
+          : `🎯 ${okIds.length} ok, ${failedIds.length} fehlgeschlagen (Details in Konsole)`,
+        failedIds.length === 0 ? 'success' : 'error',
       );
+      return { okIds, failedIds };
     } catch (err) {
       showToast(`MC-Generierung fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      return { okIds: [], failedIds: cardIds };
     } finally {
       setMcGenProgress(null);
     }
@@ -789,6 +795,37 @@ export default function App() {
     });
   }, [cards, addLink]);
 
+  // Shared MC-generation progress overlay — rendered in BOTH the main layout
+  // and the study-page return so it stays visible when MC pre-flight triggers
+  // generation from within a study session (previously the overlay was only
+  // mounted in the main layout, so mobile users on the study page saw nothing
+  // happen for ~10 seconds and assumed the button was broken).
+  const mcGenOverlay = mcGenProgress ? (
+    <div className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4">
+      <div className="bg-[#1a1d27] border border-[#2d3148] rounded-2xl px-6 py-5 flex flex-col items-center gap-3 shadow-2xl w-full max-w-sm">
+        <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-white font-semibold">🎯 MC-Fragen werden generiert…</p>
+        <div className="w-full">
+          <div className="flex justify-between text-xs text-[#9ca3af] mb-1.5">
+            <span>{mcGenProgress.completed} von {mcGenProgress.total}</span>
+            {mcGenProgress.failed > 0 && (
+              <span className="text-red-400">{mcGenProgress.failed} fehlgeschlagen</span>
+            )}
+          </div>
+          <div className="h-2 bg-[#252840] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-indigo-500 transition-all duration-300"
+              style={{ width: `${(mcGenProgress.completed / mcGenProgress.total) * 100}%` }}
+            />
+          </div>
+        </div>
+        <p className="text-[#6b7280] text-xs text-center">
+          Pro Karte 3–7 Fragen, KI nutzt Gemini/Groq Fallback. Karten unterschiedlicher Komplexität bekommen unterschiedlich viele Fragen.
+        </p>
+      </div>
+    </div>
+  ) : null;
+
   // Show loading screen while auth or initial card data is loading
   if (authLoading || (userId !== null && cardsLoading)) {
     return (
@@ -854,6 +891,7 @@ export default function App() {
   if (page === 'study') {
     return (
       <>
+        {mcGenOverlay}
         <StudySession
           cards={cards}
           settings={settings}
@@ -1033,31 +1071,7 @@ export default function App() {
       )}
 
       {/* MC bulk generation progress overlay */}
-      {mcGenProgress && (
-        <div className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4">
-          <div className="bg-[#1a1d27] border border-[#2d3148] rounded-2xl px-6 py-5 flex flex-col items-center gap-3 shadow-2xl w-full max-w-sm">
-            <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-            <p className="text-white font-semibold">🎯 MC-Fragen werden generiert…</p>
-            <div className="w-full">
-              <div className="flex justify-between text-xs text-[#9ca3af] mb-1.5">
-                <span>{mcGenProgress.completed} von {mcGenProgress.total}</span>
-                {mcGenProgress.failed > 0 && (
-                  <span className="text-red-400">{mcGenProgress.failed} fehlgeschlagen</span>
-                )}
-              </div>
-              <div className="h-2 bg-[#252840] rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-indigo-500 transition-all duration-300"
-                  style={{ width: `${(mcGenProgress.completed / mcGenProgress.total) * 100}%` }}
-                />
-              </div>
-            </div>
-            <p className="text-[#6b7280] text-xs text-center">
-              Pro Karte 3–7 Fragen, KI nutzt Gemini/Groq Fallback. Karten unterschiedlicher Komplexität bekommen unterschiedlich viele Fragen.
-            </p>
-          </div>
-        </div>
-      )}
+      {mcGenOverlay}
 
       {/* AI Split preview modal */}
       {splitSource && splitResult && (

@@ -98,8 +98,16 @@ export function useCards(userId: string | null) {
 
     // Safe fetch with retry — returns { rows, ok } where ok=false means we
     // cannot trust the result (DO NOT overwrite card state).
+    //
+    // Retry-Ladder erhöht: 5 Versuche mit exponentiellem Backoff (1s → 2s → 4s
+    // → 8s → 12s). Grund: wenn andere User parallel große Imports laufen
+    // lassen, ist der Postgres-Pool kurzzeitig saturiert und Queries timeouten.
+    // Die alten 3 Versuche × ~1s waren zu schnell aufgebenfähig — bei
+    // Lastspitzen reicht das nicht. 12s Max-Wait gibt der DB Zeit zur Erholung
+    // ohne den User dauerhaft hängen zu lassen.
     const fetchAllCardsWithRetry = async (): Promise<{ rows: Record<string, unknown>[]; ok: boolean }> => {
-      const MAX_ATTEMPTS = 3;
+      const MAX_ATTEMPTS = 5;
+      const BACKOFFS_MS = [1000, 2000, 4000, 8000, 12000]; // before attempt 2-5
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         let allRows: Record<string, unknown>[] = [];
         let from = 0;
@@ -110,7 +118,7 @@ export function useCards(userId: string | null) {
             .from('cards').select('*').eq('user_id', userId)
             .range(from, from + PAGE - 1);
           if (error) {
-            console.error(`[useCards] load attempt ${attempt} failed:`, error);
+            console.warn(`[useCards] load attempt ${attempt}/${MAX_ATTEMPTS} failed:`, error.message);
             hadError = true;
             break;
           }
@@ -118,11 +126,15 @@ export function useCards(userId: string | null) {
           if ((data ?? []).length < PAGE) break;
           from += PAGE;
         }
-        if (!hadError) return { rows: allRows, ok: true };
+        if (!hadError) {
+          if (attempt > 1) console.info(`[useCards] load succeeded on attempt ${attempt}`);
+          return { rows: allRows, ok: true };
+        }
         if (attempt < MAX_ATTEMPTS) {
-          await new Promise(r => setTimeout(r, 500 * attempt));
+          await new Promise(r => setTimeout(r, BACKOFFS_MS[attempt - 1] ?? 8000));
         }
       }
+      console.error('[useCards] all load attempts exhausted');
       return { rows: [], ok: false };
     };
 
@@ -422,17 +434,23 @@ export function useCards(userId: string | null) {
     cardsRef.current = next; // update immediately so sequential imports see correct state
 
     const CHUNK = 100;
+    // Inter-chunk-Atempause. Verhindert dass ein User mit großem Import (1000+
+    // Karten = 10+ Chunks) den DB-Pool für andere User blockiert. 150ms pro
+    // 100-Karten-Chunk = ~1.5s zusätzliche Latenz auf 1000-Karten-Import, dafür
+    // bleibt die DB für gleichzeitige Reads anderer User responsive.
+    const CHUNK_BREATHER_MS = 150;
     let failedChunk = false;
 
-    // Insert a chunk with up to `retries` attempts. If a chunk of N fails,
-    // fall back to splitting it in half (one bad card shouldn't kill the whole import).
+    // Insert a chunk with retries. Erhöht von 3 → 5 Versuchen mit längerem
+    // Backoff (300 → 600 → 1200 → 2000ms) — Lastspitzen brauchen Geduld.
     const insertChunkWithRetry = async (slice: Flashcard[], depth = 0): Promise<boolean> => {
-      const MAX_ATTEMPTS = 3;
+      const MAX_ATTEMPTS = 5;
+      const BACKOFFS_MS = [300, 600, 1200, 2000];
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         const { error } = await supabase.from('cards').insert(slice.map(c => toDb(c, userId)));
         if (!error) return true;
         console.warn(`[importCards] chunk failed (size ${slice.length}, attempt ${attempt}):`, error.message);
-        if (attempt < MAX_ATTEMPTS) await new Promise(r => setTimeout(r, 300 * attempt));
+        if (attempt < MAX_ATTEMPTS) await new Promise(r => setTimeout(r, BACKOFFS_MS[attempt - 1] ?? 2000));
       }
       // All retries failed — try splitting (unless already at single card)
       if (slice.length > 1 && depth < 4) {
@@ -451,11 +469,13 @@ export function useCards(userId: string | null) {
       for (let i = 0; i < next.length; i += CHUNK) {
         const ok = await insertChunkWithRetry(next.slice(i, i + CHUNK));
         if (!ok) failedChunk = true;
+        if (i + CHUNK < next.length) await new Promise(r => setTimeout(r, CHUNK_BREATHER_MS));
       }
     } else if (toAdd.length > 0) {
       for (let i = 0; i < toAdd.length; i += CHUNK) {
         const ok = await insertChunkWithRetry(toAdd.slice(i, i + CHUNK));
         if (!ok) failedChunk = true;
+        if (i + CHUNK < toAdd.length) await new Promise(r => setTimeout(r, CHUNK_BREATHER_MS));
       }
     }
 

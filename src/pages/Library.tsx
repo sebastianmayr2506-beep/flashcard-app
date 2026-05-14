@@ -51,22 +51,26 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
     return () => document.removeEventListener('mousedown', handler);
   }, []);
   const [filterDifficulty, setFilterDifficulty] = useState<Difficulty | ''>('');
-  const [filterTag, setFilterTag] = useState('');
   const [filterPriority, setFilterPriority] = useState<'' | 'A' | 'B' | 'C' | 'none'>('');
   const [filterMC, setFilterMC] = useState<'' | 'yes' | 'no'>('');
-  // 'show' = default, show all incl. parked with badge
-  // 'only' = only parked cards (for managing them)
-  // 'hide' = hide parked entirely (sometimes useful for clean browsing)
+  // 'show' = default, show all incl. blacklisted with badge
+  // 'only' = only blacklisted cards (for managing them)
+  // 'hide' = hide blacklisted entirely (sometimes useful for clean browsing)
   const [filterBlacklist, setFilterBlacklist] = useState<'show' | 'only' | 'hide'>('show');
+  // SRS-Status filter has no longer a manual UI control (cleanup pass to
+  // declutter the filter bar). It's still wired up so the Dashboard SRS-grid
+  // can deep-link into Library with a pre-filter applied, with the banner
+  // explaining the active filter + a clear-button on it.
   const [filterSRS, setFilterSRS] = useState<SRSStatus | ''>(initialSrsFilter as SRSStatus | '' ?? '');
   const [showSrsFilterBanner, setShowSrsFilterBanner] = useState(!!initialSrsFilter);
   const [filterSet, setFilterSet] = useState('');
   const [filterCatalog, setFilterCatalog] = useState('');
-  const [filterDue, setFilterDue] = useState(false);
   const [filterFlagged, setFilterFlagged] = useState(false);
-  const [filterKlassiker, setFilterKlassiker] = useState(false);
   const [sortBy, setSortBy] = useState<'default' | 'probability'>('default');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  // Specialist filters (Schwierigkeit, MC-Status, Katalogjahr) are hidden
+  // behind a "+ Mehr Filter"-Toggle to keep the main bar slim.
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
 
   // Selection mode
   const [selectionMode, setSelectionMode] = useState(false);
@@ -78,12 +82,6 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
 
   // Preview
   const [previewCard, setPreviewCard] = useState<Flashcard | null>(null);
-
-  const allTags = useMemo(() => {
-    const s = new Set<string>();
-    cards.forEach(c => c.customTags.forEach(t => s.add(t)));
-    return Array.from(s).sort();
-  }, [cards]);
 
   // Examiners available given current catalog filter (or all if no catalog selected)
   const activeExaminers = useMemo(() => {
@@ -113,7 +111,6 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
       if (filterSubject && !c.subjects?.includes(filterSubject)) return false;
       if (filterExaminers.size > 0 && !c.examiners?.some(e => filterExaminers.has(e))) return false;
       if (filterDifficulty && c.difficulty !== filterDifficulty) return false;
-      if (filterTag && !c.customTags.includes(filterTag)) return false;
       if (filterPriority) {
         // 'A'|'B'|'C' = match exactly; 'none' = match cards without any priority
         if (filterPriority === 'none' ? !!c.priority : c.priority !== filterPriority) return false;
@@ -125,26 +122,23 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
       if (filterSRS && getSRSStatus(c) !== filterSRS) return false;
       if (filterSet && c.setId !== filterSet) return false;
       if (filterCatalog && !c.askedInCatalogs?.some(v => v.includes(filterCatalog))) return false;
-      if (filterDue && !isDueToday(c)) return false;
       if (filterFlagged && !c.flagged) return false;
-      if (filterKlassiker && (c.probabilityPercent ?? 0) <= 60) return false;
       return true;
     });
     if (sortBy === 'probability') {
       result.sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0));
     }
     return result;
-  }, [cards, search, filterSubject, filterExaminers, filterDifficulty, filterTag, filterPriority, filterMC, filterBlacklist, filterSRS, filterSet, filterCatalog, filterDue, filterFlagged, filterKlassiker, sortBy]);
+  }, [cards, search, filterSubject, filterExaminers, filterDifficulty, filterPriority, filterMC, filterBlacklist, filterSRS, filterSet, filterCatalog, filterFlagged, sortBy]);
 
-  const hasFilters = search || filterSubject || filterExaminers.size > 0 || filterDifficulty || filterTag || filterPriority || filterMC || filterBlacklist !== 'show' || filterSRS || filterSet || filterCatalog || filterDue || filterFlagged || filterKlassiker || sortBy !== 'default';
+  const hasFilters = search || filterSubject || filterExaminers.size > 0 || filterDifficulty || filterPriority || filterMC || filterBlacklist !== 'show' || filterSRS || filterSet || filterCatalog || filterFlagged || sortBy !== 'default';
 
   const clearFilters = () => {
     setSearch(''); setFilterSubject(''); setFilterExaminers(new Set());
-    setFilterDifficulty(''); setFilterTag(''); setFilterPriority(''); setFilterMC('');
+    setFilterDifficulty(''); setFilterPriority(''); setFilterMC('');
     setFilterBlacklist('show');
     setFilterSRS(''); setFilterSet(''); setFilterCatalog('');
-    setFilterDue(false); setFilterFlagged(false);
-    setFilterKlassiker(false); setSortBy('default');
+    setFilterFlagged(false); setSortBy('default');
   };
 
   const toggleSelection = (id: string) => {
@@ -299,7 +293,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
                 ? 'Karten wieder zum Lernen aktivieren'
                 : 'Karten vom Lernen ausschließen (bleiben in Bibliothek)'}
             >
-              {allSelectedBlacklisted ? '✓ Aktivieren' : '🚫 Parkieren'}
+              {allSelectedBlacklisted ? '✓ Aktivieren' : '🚫 Auf Blacklist'}
             </button>
             <button
               onClick={handleBulkDelete}
@@ -451,7 +445,6 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
               )}
             </div>
           )}
-          <Select value={filterDifficulty} onChange={v => setFilterDifficulty(v as Difficulty | '')} placeholder="Schwierigkeit" options={['einfach','mittel','schwer']} />
           {/* Priority filter — manual select instead of Select component so we
               can show "Ohne Priorität" as a sentinel option. */}
           <select
@@ -467,16 +460,6 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
             <option value="none">— Ohne Priorität</option>
           </select>
           <select
-            value={filterMC}
-            onChange={e => setFilterMC(e.target.value as '' | 'yes' | 'no')}
-            className="w-full sm:w-auto text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none appearance-none cursor-pointer"
-            title="Filter nach MC-Verfügbarkeit"
-          >
-            <option value="">MC-Status</option>
-            <option value="yes">✓ Mit MC</option>
-            <option value="no">✗ Ohne MC</option>
-          </select>
-          <select
             value={filterBlacklist}
             onChange={e => setFilterBlacklist(e.target.value as 'show' | 'only' | 'hide')}
             className={`w-full sm:w-auto text-sm rounded-xl px-3 py-2 focus:outline-none appearance-none cursor-pointer border ${
@@ -484,16 +467,12 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
                 ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
                 : 'bg-[#252840] border-[#2d3148] text-white focus:border-indigo-500'
             }`}
-            title="Parkierte Karten (vom Lernen ausgeschlossen)"
+            title="Blacklist (vom Lernen ausgeschlossen)"
           >
-            <option value="show">Parkiert: alle</option>
-            <option value="only">🚫 Nur parkierte</option>
-            <option value="hide">Parkierte ausblenden</option>
+            <option value="show">Blacklist: alle</option>
+            <option value="only">🚫 Nur Blacklist</option>
+            <option value="hide">Blacklist ausblenden</option>
           </select>
-          {allTags.length > 0 && <Select value={filterTag} onChange={setFilterTag} placeholder="Tag" options={allTags} />}
-          <Select value={filterSRS} onChange={v => setFilterSRS(v as SRSStatus | '')} placeholder="SRS-Status"
-            options={['neu','lernend','wiederholen','beherrscht']}
-          />
           {sets.length > 0 && (
             <select
               value={filterSet}
@@ -504,36 +483,6 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
               {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           )}
-          {activeCatalogs.length > 0 && (
-            <Select
-              value={filterCatalog}
-              onChange={year => {
-                setFilterCatalog(year);
-                // Remove examiners that didn't examine in the newly selected year
-                if (year && filterExaminers.size > 0) {
-                  const validExaminers = new Set(
-                    cards
-                      .filter(c => c.askedInCatalogs?.some(v => v.includes(year)))
-                      .flatMap(c => c.examiners ?? [])
-                  );
-                  setFilterExaminers(prev => {
-                    const next = new Set([...prev].filter(e => validExaminers.has(e)));
-                    return next.size !== prev.size ? next : prev;
-                  });
-                }
-              }}
-              placeholder="Katalogjahr"
-              options={activeCatalogs}
-            />
-          )}
-          <button
-            onClick={() => setFilterDue(!filterDue)}
-            className={`w-full sm:w-auto px-3 py-2 rounded-xl text-sm border transition-colors ${filterDue
-              ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-400'
-              : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
-          >
-            📅 Fällig
-          </button>
           <button
             onClick={() => setFilterFlagged(!filterFlagged)}
             className={`w-full sm:w-auto px-3 py-2 rounded-xl text-sm border transition-colors ${filterFlagged
@@ -543,22 +492,63 @@ export default function Library({ cards, settings, sets, links, flagAttempts, on
             🚩 Geflaggt
           </button>
           <button
-            onClick={() => setFilterKlassiker(!filterKlassiker)}
-            className={`w-full sm:w-auto px-3 py-2 rounded-xl text-sm border transition-colors ${filterKlassiker
-              ? 'bg-orange-500/15 border-orange-500/40 text-orange-400'
-              : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
-          >
-            🔥 Nur Klassiker
-          </button>
-          <button
             onClick={() => setSortBy(sortBy === 'probability' ? 'default' : 'probability')}
-            className={`col-span-2 sm:col-span-1 w-full sm:w-auto px-3 py-2 rounded-xl text-sm border transition-colors ${sortBy === 'probability'
+            className={`w-full sm:w-auto px-3 py-2 rounded-xl text-sm border transition-colors ${sortBy === 'probability'
               ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-400'
               : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'}`}
           >
             📊 Nach Wahrscheinlichkeit
           </button>
+          <button
+            onClick={() => setShowMoreFilters(v => !v)}
+            className={`w-full sm:w-auto px-3 py-2 rounded-xl text-sm border transition-colors ${
+              filterDifficulty || filterMC || filterCatalog
+                ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-400'
+                : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'
+            }`}
+            title="Schwierigkeit · MC-Status · Katalogjahr"
+          >
+            + Mehr Filter{(filterDifficulty || filterMC || filterCatalog) ? ' •' : ''}
+          </button>
         </div>
+
+        {/* Mehr Filter — collapsible specialist row */}
+        {showMoreFilters && (
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap pt-3 border-t border-[#2d3148]">
+            <Select value={filterDifficulty} onChange={v => setFilterDifficulty(v as Difficulty | '')} placeholder="Schwierigkeit" options={['einfach','mittel','schwer']} />
+            <select
+              value={filterMC}
+              onChange={e => setFilterMC(e.target.value as '' | 'yes' | 'no')}
+              className="w-full sm:w-auto text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none appearance-none cursor-pointer"
+              title="Filter nach MC-Verfügbarkeit"
+            >
+              <option value="">MC-Status</option>
+              <option value="yes">✓ Mit MC</option>
+              <option value="no">✗ Ohne MC</option>
+            </select>
+            {activeCatalogs.length > 0 && (
+              <Select
+                value={filterCatalog}
+                onChange={year => {
+                  setFilterCatalog(year);
+                  if (year && filterExaminers.size > 0) {
+                    const validExaminers = new Set(
+                      cards
+                        .filter(c => c.askedInCatalogs?.some(v => v.includes(year)))
+                        .flatMap(c => c.examiners ?? [])
+                    );
+                    setFilterExaminers(prev => {
+                      const next = new Set([...prev].filter(e => validExaminers.has(e)));
+                      return next.size !== prev.size ? next : prev;
+                    });
+                  }
+                }}
+                placeholder="Katalogjahr"
+                options={activeCatalogs}
+              />
+            )}
+          </div>
+        )}
         {hasFilters && (
           <div className="flex items-center gap-2">
             <span className="text-xs text-[#9ca3af]">{filtered.length} Treffer</span>
@@ -770,8 +760,8 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
           </span>
         )}
         {card.blacklisted && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 font-semibold" title="Parkiert — vom Lernen ausgeschlossen">
-            🚫 Parkiert
+          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 font-semibold" title="Auf Blacklist — vom Lernen ausgeschlossen">
+            🚫 Blacklist
           </span>
         )}
         <SRSBadge status={status} />
@@ -822,7 +812,7 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
                 ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40'
                 : 'bg-[#252840] hover:bg-amber-500/20 text-[#9ca3af] hover:text-amber-300 border-[#2d3148] hover:border-amber-500/30'
             }`}
-            title={card.blacklisted ? 'Wieder aktivieren' : 'Parkieren (vom Lernen ausschließen)'}
+            title={card.blacklisted ? "Von Blacklist entfernen" : "Auf Blacklist setzen (vom Lernen ausschließen)"}
           >
             {card.blacklisted ? '✓' : '🚫'}
           </button>
@@ -880,8 +870,8 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
           </span>
         )}
         {card.blacklisted && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 font-semibold" title="Parkiert — vom Lernen ausgeschlossen">
-            🚫 Parkiert
+          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 font-semibold" title="Auf Blacklist — vom Lernen ausgeschlossen">
+            🚫 Blacklist
           </span>
         )}
         <SRSBadge status={status} />
@@ -906,7 +896,7 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
                 ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40'
                 : 'bg-[#252840] hover:bg-amber-500/20 text-[#9ca3af] hover:text-amber-300 border-[#2d3148]'
             }`}
-            title={card.blacklisted ? 'Wieder aktivieren' : 'Parkieren (vom Lernen ausschließen)'}
+            title={card.blacklisted ? "Von Blacklist entfernen" : "Auf Blacklist setzen (vom Lernen ausschließen)"}
           >
             {card.blacklisted ? '✓' : '🚫'}
           </button>
@@ -1015,8 +1005,8 @@ function CardPreviewModal({ card, onClose, onEdit }: { card: Flashcard; onClose:
           </span>
         )}
         {card.blacklisted && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 font-semibold" title="Parkiert — vom Lernen ausgeschlossen">
-            🚫 Parkiert
+          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 font-semibold" title="Auf Blacklist — vom Lernen ausgeschlossen">
+            🚫 Blacklist
           </span>
         )}
           {card.customTags.map(t => <span key={t} className="text-xs text-[#6b7280]">#{t}</span>)}

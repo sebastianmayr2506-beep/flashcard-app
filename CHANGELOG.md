@@ -7,6 +7,45 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-14 — Library-Filter aufgeräumt + Parkiert → Blacklist rename
+
+**Filter-Cleanup:** Bibliothek hatte 14 sichtbare Filter — zu viel. User-Feedback,
+das tägliche Use-Cases ohne Suche-müssen abdecken sollte.
+
+**Entfernt komplett:**
+- Tag-Filter (kaum genutzt — Tags sind eh als Pills auf der Karte sichtbar)
+- SRS-Status-Dropdown (Filter-Logic bleibt für Dashboard-SRS-Grid-Deeplinks
+  mit Banner; nur das manuelle Dropdown ist weg)
+- 📅 Fällig-Toggle
+- 🔥 Nur-Klassiker-Toggle
+
+**Verschoben hinter „+ Mehr Filter"-Toggle:**
+- Schwierigkeit
+- MC-Status
+- Katalogjahr
+
+**Sichtbar bleiben:**
+- Suchen, Fach, Prüfer (Multi-Select)
+- Priorität, Blacklist, Set
+- 🚩 Geflaggt, 📊 Nach Wahrscheinlichkeit, + Mehr Filter
+
+**Rename Parkiert → Blacklist:** User-Konsistenz. „Blacklist" war der
+ursprüngliche Begriff im Feature-Request, „Parkiert" mein Verbose-Alias.
+Geändert in:
+- Library-Filter-Dropdown
+- Bulk-Button-Text + Toast
+- CardEditor-Toggle + Tooltip
+- StudySession-Action-Button-Tooltip
+- Card-Badges (Library Grid + List + Preview)
+
+Code-Kommentare behalten teilweise „Parkiert" als interne Bezeichnung —
+das `blacklisted`-Feld in der DB ist die Source-of-Truth.
+
+**Files:** `src/pages/Library.tsx`, `src/pages/CardEditor.tsx`,
+`src/pages/StudySession.tsx`, `src/App.tsx`.
+
+---
+
 ## 2026-05-14 — Manual-Mode-Tagesziel respektiert wirklich das User-Setting
 
 **Symptom:** User hat in Settings „20 neue Karten / Tag" manuell gesetzt.

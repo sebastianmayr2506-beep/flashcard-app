@@ -367,8 +367,8 @@ export default function App() {
     await bulkUpdate(patches);
     showToast(
       blacklisted
-        ? `🚫 ${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} parkiert`
-        : `✓ ${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} aktiviert`,
+        ? `🚫 ${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} auf Blacklist`
+        : `✓ ${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} von Blacklist entfernt`,
       'success',
     );
   }, [bulkUpdate, showToast]);

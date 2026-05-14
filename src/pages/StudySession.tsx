@@ -1685,7 +1685,7 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
                   })()}
                   <button
                     onClick={e => { e.stopPropagation(); handleParkCurrent(); }}
-                    title="Parkieren — Karte aus allen Lern-Pools ausschließen (bleibt in Bibliothek)"
+                    title="Auf Blacklist setzen — Karte aus allen Lern-Pools ausschließen (bleibt in Bibliothek)"
                     className="text-base px-2 py-1.5 rounded-lg border border-transparent text-[#6b7280] hover:text-amber-300 hover:bg-[#252840] transition-colors"
                   >
                     🚫

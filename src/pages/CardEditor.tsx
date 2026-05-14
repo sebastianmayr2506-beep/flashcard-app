@@ -441,14 +441,14 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
               <button
                 type="button"
                 onClick={() => setBlacklisted(b => !b)}
-                title="Parkierte Karten werden aus allen Lern-Pools (Daily Plan, Lernen, Prüfungsmodus, MC) ausgeschlossen, bleiben aber in der Bibliothek sichtbar."
+                title="Karten auf der Blacklist werden aus allen Lern-Pools (Daily Plan, Lernen, Prüfungsmodus, MC) ausgeschlossen, bleiben aber in der Bibliothek sichtbar."
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all ${
                   blacklisted
                     ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
                     : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'
                 }`}
               >
-                🚫 {blacklisted ? 'Parkiert (zum Aktivieren klicken)' : 'Parkieren'}
+                🚫 {blacklisted ? 'Auf Blacklist (zum Entfernen klicken)' : 'Auf Blacklist setzen'}
               </button>
             </div>
           </div>

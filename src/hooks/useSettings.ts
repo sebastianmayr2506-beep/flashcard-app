@@ -67,6 +67,34 @@ function toDb(settings: AppSettings, userId: string) {
   };
 }
 
+// Map only the keys present in `updates` to their DB column equivalents.
+// Used for partial upserts so we don't accidentally overwrite a column that
+// another device just updated. Previously updateSettings sent the entire row
+// every time, which caused fields like `daily_new_card_goal` to bounce back
+// to a stale value whenever any other field (e.g. dailyPlanSnapshot during
+// rating) was changed on a device with out-of-date state.
+function toDbPartial(updates: Partial<AppSettings>, userId: string): Record<string, unknown> {
+  const out: Record<string, unknown> = { user_id: userId, updated_at: new Date().toISOString() };
+  if ('subjects' in updates) out.subjects = updates.subjects;
+  if ('examiners' in updates) out.examiners = updates.examiners;
+  if ('customTags' in updates) out.custom_tags = updates.customTags;
+  if ('studyStreak' in updates) out.study_streak = updates.studyStreak;
+  if ('lastStudiedDate' in updates) out.last_studied_date = updates.lastStudiedDate ?? null;
+  if ('examDate' in updates) out.exam_date = updates.examDate ?? null;
+  if ('dailyNewCardGoal' in updates) out.daily_new_card_goal = updates.dailyNewCardGoal;
+  if ('dailyNewCardGoalMode' in updates) out.daily_new_card_goal_mode = updates.dailyNewCardGoalMode ?? null;
+  if ('dailyReviewCap' in updates) out.daily_review_cap = updates.dailyReviewCap ?? 9999;
+  if ('dailyPlanSnapshot' in updates) out.daily_plan_snapshot = updates.dailyPlanSnapshot ?? null;
+  if ('autoUnflagEnabled' in updates) out.auto_unflag_enabled = updates.autoUnflagEnabled;
+  if ('autoUnflagNotification' in updates) out.auto_unflag_notification = updates.autoUnflagNotification ?? null;
+  if ('focusMode' in updates) out.focus_mode = updates.focusMode ?? null;
+  if ('anthropicApiKey' in updates) out.anthropic_api_key = updates.anthropicApiKey ?? null;
+  if ('geminiApiKey' in updates) out.gemini_api_key = updates.geminiApiKey ?? null;
+  if ('groqApiKey' in updates) out.groq_api_key = updates.groqApiKey ?? null;
+  if ('pausedSession' in updates) out.paused_session = updates.pausedSession ?? null;
+  return out;
+}
+
 export function useSettings(userId: string | null) {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const settingsRef = useRef<AppSettings>(defaultSettings);
@@ -163,7 +191,11 @@ export function useSettings(userId: string | null) {
     const updated = { ...settingsRef.current, ...updates };
     settingsRef.current = updated;
     setSettings(updated);
-    supabase.from('user_settings').upsert(toDb(updated, userId), { onConflict: 'user_id' }).then(({ error }) => {
+    // Partial upsert — only the changed columns. Avoids clobbering values
+    // that another device may have updated concurrently. The `user_id`
+    // conflict-target plus the actual changed columns is enough; Postgres
+    // leaves all other columns alone.
+    supabase.from('user_settings').upsert(toDbPartial(updates, userId), { onConflict: 'user_id' }).then(({ error }) => {
       if (error) console.error('Failed to update settings:', error);
     });
   }, [userId]);
@@ -195,7 +227,7 @@ export function useSettings(userId: string | null) {
     const updated = { ...prev, ...updates };
     settingsRef.current = updated;
     setSettings(updated);
-    supabase.from('user_settings').upsert(toDb(updated, userId), { onConflict: 'user_id' }).then(({ error }) => {
+    supabase.from('user_settings').upsert(toDbPartial(updates, userId), { onConflict: 'user_id' }).then(({ error }) => {
       if (error) console.error('Failed to update settings (fn):', error);
     });
   }, [userId]);

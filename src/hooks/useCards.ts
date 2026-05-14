@@ -6,6 +6,17 @@ import { applySM2, createInitialSRS, getDaysUntilExam } from '../utils/srs';
 import { getCards as getLocalCards } from '../utils/storage';
 import { isExistingAccount } from '../utils/accountState';
 
+// Spalten ohne `front_image` und `back_image` — base64-Bilder sind 10-100x
+// schwerer als der Rest. Wird in load(), refetch() und refresh() benutzt um
+// den Initial-/Refresh-Payload klein zu halten. Bilder kommen separat im
+// Hintergrund via fetchImages*().
+const META_COLUMNS =
+  'id, user_id, front, back, subjects, examiners, difficulty, custom_tags, ' +
+  'set_id, flagged, times_asked, asked_by_examiners, asked_in_catalogs, ' +
+  'probability_percent, created_at, updated_at, interval, repetitions, ' +
+  'ease_factor, next_review_date, first_studied_at, priority, mc_questions, ' +
+  'mc_questions_generated_at, blacklisted';
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function fromDb(row: Record<string, any>): Flashcard {
   return {
@@ -113,13 +124,6 @@ export function useCards(userId: string | null) {
     // Retry-Ladder mit JITTER: 5 Versuche × exponentielles Backoff
     // (1s/2s/4s/8s/12s) + ±50% Zufall, damit gleichzeitig-failing User nicht
     // synchron retryen (retry-storm würde den Pool gleich wieder killen).
-    const META_COLUMNS =
-      'id, user_id, front, back, subjects, examiners, difficulty, custom_tags, ' +
-      'set_id, flagged, times_asked, asked_by_examiners, asked_in_catalogs, ' +
-      'probability_percent, created_at, updated_at, interval, repetitions, ' +
-      'ease_factor, next_review_date, first_studied_at, priority, mc_questions, ' +
-      'mc_questions_generated_at, blacklisted';
-
     const jitter = (ms: number) => Math.round(ms * (0.5 + Math.random())); // ±50%
 
     const fetchAllCardsWithRetry = async (): Promise<{ rows: Record<string, unknown>[]; ok: boolean }> => {
@@ -321,13 +325,18 @@ export function useCards(userId: string | null) {
       )
       .subscribe();
 
+    // Re-fetch on tab focus (channel may have been suspended). Throttled
+    // to once per 10s to avoid thunder-herding the DB when a multi-tab user
+    // rapidly switches between windows. The Realtime channel handles
+    // intermediate updates anyway — focus-refetch is just a safety net for
+    // missed events.
+    let lastFocusFetch = 0;
     const onFocus = () => {
-      // Re-fetch on tab focus (channel may have been suspended). Use refetch,
-      // NOT load() — load() flips setLoading(true) which forces App.tsx into
-      // the "Laden…" screen, unmounting any open file picker / edit modal
-      // and silently killing in-progress imports or image uploads. The fast
-      // refetch only swaps cards state in place, leaving the UI tree intact.
-      if (!cancelled) refetch();
+      if (cancelled) return;
+      const now = Date.now();
+      if (now - lastFocusFetch < 10_000) return;
+      lastFocusFetch = now;
+      refetch();
     };
     window.addEventListener('focus', onFocus);
 
@@ -340,26 +349,55 @@ export function useCards(userId: string | null) {
 
   const refresh = useCallback(async () => {
     if (!userId) return;
+    // Stage 1: meta-only fetch (same slim pattern as load()/refetch()).
     let allRows: Record<string, unknown>[] = [];
     let from = 0;
     const PAGE = 1000;
     let hadError = false;
     while (true) {
       const { data, error } = await supabase
-        .from('cards').select('*').eq('user_id', userId)
+        .from('cards').select(META_COLUMNS).eq('user_id', userId)
         .range(from, from + PAGE - 1);
       if (error) {
         console.error('[useCards] refresh failed:', error);
         hadError = true;
         break;
       }
-      allRows = allRows.concat(data ?? []);
-      if ((data ?? []).length < PAGE) break;
+      const rows = (data ?? []) as unknown as Record<string, unknown>[];
+      allRows = allRows.concat(rows);
+      if (rows.length < PAGE) break;
       from += PAGE;
     }
     // SAFETY: only overwrite state if the refresh succeeded end-to-end
-    if (!hadError) {
-      setCards(allRows.map(r => fromDb(r as Record<string, unknown>)));
+    if (hadError) return;
+    setCards(allRows.map(r => fromDb(r as Record<string, unknown>)));
+
+    // Stage 2: backfill images in the background. Best-effort.
+    try {
+      let imgFrom = 0;
+      const IMG_PAGE = 500;
+      while (true) {
+        const { data, error } = await supabase
+          .from('cards').select('id, front_image, back_image')
+          .eq('user_id', userId).range(imgFrom, imgFrom + IMG_PAGE - 1);
+        if (error || !data) {
+          console.warn('[useCards] refresh image-stage failed:', error?.message);
+          return;
+        }
+        setCards(prev => prev.map(c => {
+          const img = data.find(d => (d as { id: string }).id === c.id) as { id: string; front_image?: unknown; back_image?: unknown } | undefined;
+          if (!img) return c;
+          return {
+            ...c,
+            frontImage: (img.front_image as typeof c.frontImage) ?? c.frontImage,
+            backImage: (img.back_image as typeof c.backImage) ?? c.backImage,
+          };
+        }));
+        if (data.length < IMG_PAGE) break;
+        imgFrom += IMG_PAGE;
+      }
+    } catch (err) {
+      console.warn('[useCards] refresh image-stage crashed:', err);
     }
   }, [userId]);
 
@@ -383,7 +421,7 @@ export function useCards(userId: string | null) {
     const updated: Flashcard = { ...card, ...data, updatedAt: new Date().toISOString() };
     setCards(prev => prev.map(c => c.id === id ? updated : c));
     supabase.from('cards').upsert(toDb(updated, userId)).then(({ error }) => {
-      if (error) console.error('Failed to update card:', error);
+      if (error) console.error('[useCards] Failed to update card:', error);
     });
   }, [userId]);
 
@@ -484,7 +522,7 @@ export function useCards(userId: string | null) {
     const updated: Flashcard = { ...card, ...applySM2(card, rating, getDaysUntilExam(examDate)) };
     setCards(prev => prev.map(c => c.id === id ? updated : c));
     supabase.from('cards').upsert(toDb(updated, userId)).then(({ error }) => {
-      if (error) console.error('Failed to rate card:', error);
+      if (error) console.error('[useCards] Failed to rate card:', error);
     });
   }, [userId]);
 

@@ -113,7 +113,14 @@ export function useSets(userId: string | null) {
       )
       .subscribe();
 
-    const onFocus = () => { if (!cancelled) load(); };
+    let lastFocusFetch = 0;
+    const onFocus = () => {
+      if (cancelled) return;
+      const now = Date.now();
+      if (now - lastFocusFetch < 10_000) return;
+      lastFocusFetch = now;
+      load();
+    };
     window.addEventListener('focus', onFocus);
 
     return () => {

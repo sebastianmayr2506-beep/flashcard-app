@@ -101,35 +101,46 @@ export function useCardChat(userId: string | null, cardId: string | null) {
 }
 
 /** Light-weight existence check used by the Library preview badge.
- *  Returns the set of card IDs that have a chat. Cached locally with a
- *  TTL — the badge doesn't need to be 100% up-to-the-second accurate. */
+ *  Returns the set of card IDs that have a chat. Capped at 2000 rows —
+ *  a user with more than 2000 chats hits an edge case and the badge will
+ *  be incomplete (acceptable, it's only a UI hint). Refresh on focus is
+ *  throttled to once per 30 sec to avoid thunder-herding the DB. */
 export function useChatExistsSet(userId: string | null) {
   const [set, setSet] = useState<Set<string>>(new Set());
+  const lastFetchRef = useRef(0);
 
   useEffect(() => {
     if (!userId) { setSet(new Set()); return; }
     let cancelled = false;
 
-    (async () => {
-      const { data } = await supabase
-        .from('card_chats')
-        .select('card_id')
-        .eq('user_id', userId);
-      if (cancelled || !data) return;
-      setSet(new Set((data as { card_id: string }[]).map(r => r.card_id)));
-    })();
+    const doFetch = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('card_chats')
+          .select('card_id')
+          .eq('user_id', userId)
+          .limit(2000);
+        if (cancelled) return;
+        if (error) {
+          console.warn('[useChatExistsSet] fetch failed:', error.message);
+          return;
+        }
+        if (!data) return;
+        lastFetchRef.current = Date.now();
+        setSet(new Set((data as { card_id: string }[]).map(r => r.card_id)));
+      } catch (err) {
+        console.warn('[useChatExistsSet] fetch crashed:', err);
+      }
+    };
 
-    // Re-poll when focus returns — cheap (one column query)
+    void doFetch();
+
+    // Re-poll on focus — but throttled so multi-tab/multi-focus events
+    // don't thunder the DB. Max once per 30s.
     const onFocus = () => {
       if (cancelled) return;
-      supabase
-        .from('card_chats')
-        .select('card_id')
-        .eq('user_id', userId)
-        .then(({ data }) => {
-          if (cancelled || !data) return;
-          setSet(new Set((data as { card_id: string }[]).map(r => r.card_id)));
-        });
+      if (Date.now() - lastFetchRef.current < 30_000) return;
+      void doFetch();
     };
     window.addEventListener('focus', onFocus);
     return () => {

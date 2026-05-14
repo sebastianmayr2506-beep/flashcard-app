@@ -160,8 +160,16 @@ export function useSettings(userId: string | null) {
       )
       .subscribe();
 
-    // Re-fetch on window focus (catches missed events if tab was suspended)
-    const onFocus = () => { load(); };
+    // Re-fetch on window focus (catches missed events if tab was suspended).
+    // Throttled to once per 10s — multi-tab users would otherwise thunder
+    // the DB on every focus event.
+    let lastFocusFetch = 0;
+    const onFocus = () => {
+      const now = Date.now();
+      if (now - lastFocusFetch < 10_000) return;
+      lastFocusFetch = now;
+      load();
+    };
     window.addEventListener('focus', onFocus);
 
     return () => {
@@ -196,7 +204,7 @@ export function useSettings(userId: string | null) {
     // conflict-target plus the actual changed columns is enough; Postgres
     // leaves all other columns alone.
     supabase.from('user_settings').upsert(toDbPartial(updates, userId), { onConflict: 'user_id' }).then(({ error }) => {
-      if (error) console.error('Failed to update settings:', error);
+      if (error) console.error('[useSettings] Failed to update settings:', error);
     });
   }, [userId]);
 
@@ -228,7 +236,7 @@ export function useSettings(userId: string | null) {
     settingsRef.current = updated;
     setSettings(updated);
     supabase.from('user_settings').upsert(toDbPartial(updates, userId), { onConflict: 'user_id' }).then(({ error }) => {
-      if (error) console.error('Failed to update settings (fn):', error);
+      if (error) console.error('[useSettings] Failed to update settings (fn):', error);
     });
   }, [userId]);
 

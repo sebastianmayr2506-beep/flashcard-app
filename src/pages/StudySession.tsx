@@ -1869,10 +1869,13 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
             </div>
             {/* Back */}
             <div className="card-face card-back-face bg-[#1e2130] border border-indigo-500/40 rounded-3xl flex flex-col select-none" style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
-              {/* Header row: label left, action icons right — no overlap */}
-              <div className="shrink-0 flex items-center justify-between px-3 pt-3 pb-2 border-b border-[#2d3148]/60" onClick={e => e.stopPropagation()}>
-                <span className="text-xs font-semibold text-purple-400 uppercase tracking-widest pl-1">Antwort</span>
-                <div className="flex items-center gap-1">
+              {/* Header row: label left, action icons right.
+                  On mobile we cut horizontal padding and allow the icon row
+                  to scroll horizontally — 7 actions + label don't fit on a
+                  narrow phone otherwise. */}
+              <div className="shrink-0 flex items-center justify-between gap-2 px-2 sm:px-3 pt-3 pb-2 border-b border-[#2d3148]/60" onClick={e => e.stopPropagation()}>
+                <span className="text-xs font-semibold text-purple-400 uppercase tracking-widest pl-1 shrink-0">Antwort</span>
+                <div className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto no-scrollbar">
                   {(() => {
                     const liveCard = cards.find(c => c.id === currentCard.id) ?? currentCard;
                     const isDup = liveCard.customTags.includes('duplikat');
@@ -1887,7 +1890,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                           });
                         }}
                         title={isDup ? 'Duplikat-Tag entfernen' : 'Als Duplikat markieren'}
-                        className={`text-xs px-2 py-1.5 rounded-lg border transition-colors ${
+                        className={`text-xs px-1.5 sm:px-2 py-1.5 rounded-lg border transition-colors shrink-0 ${
                           isDup
                             ? 'bg-orange-500/20 border-orange-500/40 text-orange-400'
                             : 'text-[#6b7280] hover:text-orange-400 border-transparent hover:bg-[#252840]'
@@ -1907,7 +1910,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                           onUpdateCard(currentCard.id, { flagged: !isFlagged });
                         }}
                         title={isFlagged ? 'Flagge entfernen' : 'Als schwierig flaggen'}
-                        className={`text-base px-2 py-1.5 rounded-lg border transition-colors ${
+                        className={`text-base px-1.5 sm:px-2 py-1.5 rounded-lg border transition-colors shrink-0 ${
                           isFlagged
                             ? 'bg-red-500/20 border-red-500/40 text-red-400'
                             : 'text-[#6b7280] hover:text-red-400 border-transparent hover:bg-[#252840]'
@@ -1920,14 +1923,14 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                   <button
                     onClick={e => { e.stopPropagation(); setChatOpen(true); }}
                     title="KI fragen"
-                    className="text-base px-2 py-1.5 rounded-lg border border-transparent text-[#6b7280] hover:text-indigo-400 hover:bg-[#252840] transition-colors"
+                    className="text-base px-1.5 sm:px-2 py-1.5 rounded-lg border border-transparent text-[#6b7280] hover:text-indigo-400 hover:bg-[#252840] transition-colors shrink-0"
                   >
                     💬
                   </button>
                   <button
                     onClick={e => { e.stopPropagation(); handleParkCurrent(); }}
                     title="Auf Blacklist setzen — Karte aus allen Lern-Pools ausschließen (bleibt in Bibliothek)"
-                    className="text-base px-2 py-1.5 rounded-lg border border-transparent text-[#6b7280] hover:text-amber-300 hover:bg-[#252840] transition-colors"
+                    className="text-base px-1.5 sm:px-2 py-1.5 rounded-lg border border-transparent text-[#6b7280] hover:text-amber-300 hover:bg-[#252840] transition-colors shrink-0"
                   >
                     🚫
                   </button>
@@ -1935,7 +1938,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                     <button
                       onClick={e => { e.stopPropagation(); handleSplitCurrent(); }}
                       disabled={splitInProgress}
-                      className={`text-base px-2 py-1.5 rounded-lg border transition-colors ${
+                      className={`text-base px-1.5 sm:px-2 py-1.5 rounded-lg border transition-colors shrink-0 ${
                         splitInProgress
                           ? 'border-indigo-500/40 text-indigo-400 bg-indigo-500/10 animate-pulse cursor-wait'
                           : 'text-[#6b7280] hover:text-indigo-400 border-transparent hover:bg-[#252840]'
@@ -1947,7 +1950,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                   )}
                   <button
                     onClick={e => { e.stopPropagation(); setEditingCard(currentCard); }}
-                    className="text-[#6b7280] hover:text-indigo-400 text-base transition-colors px-2 py-1.5 rounded-lg hover:bg-[#252840]"
+                    className="text-[#6b7280] hover:text-indigo-400 text-base transition-colors px-1.5 sm:px-2 py-1.5 rounded-lg hover:bg-[#252840] shrink-0"
                     title="Karte bearbeiten"
                   >
                     ✏️
@@ -1971,7 +1974,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                   ) : (
                     <button
                       onClick={e => { e.stopPropagation(); setConfirmDeleteId(currentCard.id); }}
-                      className="text-[#6b7280] hover:text-red-400 text-base transition-colors px-2 py-1.5 rounded-lg hover:bg-[#252840]"
+                      className="text-[#6b7280] hover:text-red-400 text-base transition-colors px-1.5 sm:px-2 py-1.5 rounded-lg hover:bg-[#252840] shrink-0"
                       title="Karte löschen"
                     >
                       🗑️

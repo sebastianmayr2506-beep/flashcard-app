@@ -18,6 +18,12 @@ body {
 ::-webkit-scrollbar-thumb { background: #2d3148; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
 
+/* Action-Reihen mit horizontalem Overflow (z.B. Karten-Aktionen auf Mobile)
+   — Safari würde sonst eine sichtbare Scrollbar zeichnen die das Layout
+   um ein paar Pixel verschiebt. */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
 /* 3D Card Flip */
 .perspective { perspective: 1200px; }
 .card-inner {

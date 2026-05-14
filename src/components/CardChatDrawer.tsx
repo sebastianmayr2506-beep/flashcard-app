@@ -43,6 +43,10 @@ export default function CardChatDrawer({
   const [confirmClear, setConfirmClear] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [pendingSuggestion, setPendingSuggestion] = useState<BackSuggestion | null>(null);
+  // Inline-Fehler-Banner innerhalb des Drawers — App-Toasts können hinter dem
+  // Drawer-Backdrop versteckt sein, daher kriegt der User dort wo er guckt
+  // direkt eine sichtbare Fehlermeldung.
+  const [inlineError, setInlineError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom on new message
@@ -58,8 +62,16 @@ export default function CardChatDrawer({
       setShowHistory(false);
       setConfirmClear(false);
       setPendingSuggestion(null);
+      setInlineError(null);
     }
   }, [open, card.id]);
+
+  // Auto-dismiss inline error after 6s
+  useEffect(() => {
+    if (!inlineError) return;
+    const t = setTimeout(() => setInlineError(null), 6000);
+    return () => clearTimeout(t);
+  }, [inlineError]);
 
   if (!open) return null;
 
@@ -71,18 +83,26 @@ export default function CardChatDrawer({
   // Detect "card edited since chat" — warn the user
   const chatStale = !!(updatedAt && card.updatedAt && new Date(card.updatedAt) > new Date(updatedAt));
 
+  // Show error both inline (so the user sees it inside the drawer) and as a
+  // toast (so it survives if the user closes the drawer).
+  const reportError = (msg: string) => {
+    setInlineError(msg);
+    onApiError?.(msg);
+  };
+
   const send = async () => {
     const text = input.trim();
     if (!text || sending) return;
     if (!hasAnyAIKey) {
-      onApiError?.('Bitte trage zuerst einen Gemini/Groq/Claude-Key in den Einstellungen ein.');
+      reportError('Bitte trage zuerst einen Gemini/Groq/Claude-Key in den Einstellungen ein.');
       return;
     }
     if (messages.length >= 30) {
-      onApiError?.('Chat-Limit erreicht (30 Nachrichten). Bitte „Neu starten" klicken.');
+      reportError('Chat-Limit erreicht (30 Nachrichten). Bitte „Neu starten" klicken.');
       return;
     }
     setInput('');
+    setInlineError(null);
     setSending(true);
     const userMsg: ChatMessage = { role: 'user', text, ts: Date.now() };
     const nextAfterUser = await appendMessage(userMsg);
@@ -90,7 +110,7 @@ export default function CardChatDrawer({
       const reply = await askCardChat(card, nextAfterUser.slice(0, -1), text, apiKeys);
       await appendMessage({ role: 'assistant', text: reply, ts: Date.now() });
     } catch (err) {
-      onApiError?.(`Chat-Fehler: ${err instanceof Error ? err.message : String(err)}`);
+      reportError(`Chat-Fehler: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSending(false);
     }
@@ -99,19 +119,21 @@ export default function CardChatDrawer({
   const handleSuggest = async () => {
     if (suggesting || !hasAnyAIKey) return;
     if (messages.length < 2) {
-      onApiError?.('Erst chatten, dann kann die KI Verbesserungen vorschlagen.');
+      reportError('Erst chatten, dann kann die KI Verbesserungen vorschlagen.');
       return;
     }
+    setInlineError(null);
     setSuggesting(true);
     try {
       const sug = await suggestBackImprovement(card, messages, apiKeys);
       if (sug.changeType === 'none') {
-        onApiError?.('Die KI sagt: aktuelle Antwort ist gut — kein Update nötig.');
+        // "Keine Änderung nötig" ist ein Info-Hinweis, kein Fehler.
+        setInlineError('💡 Die KI sagt: aktuelle Antwort ist gut — kein Update nötig.');
         return;
       }
       setPendingSuggestion(sug);
     } catch (err) {
-      onApiError?.(`Vorschlag-Fehler: ${err instanceof Error ? err.message : String(err)}`);
+      reportError(`Vorschlag-Fehler: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSuggesting(false);
     }
@@ -240,6 +262,22 @@ export default function CardChatDrawer({
             </div>
           )}
         </div>
+
+        {/* Inline-Fehler-Banner — sichtbar im Drawer, da App-Toasts hinter
+            dem Backdrop verschwinden könnten. */}
+        {inlineError && (
+          <div className="shrink-0 mx-4 mb-2 bg-red-500/15 border border-red-500/40 rounded-lg px-3 py-2 flex items-start gap-2">
+            <span className="shrink-0">⚠️</span>
+            <p className="text-xs text-red-300 leading-relaxed flex-1">{inlineError}</p>
+            <button
+              onClick={() => setInlineError(null)}
+              className="shrink-0 text-red-400 hover:text-red-300 text-xs"
+              aria-label="Schließen"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Suggest improvement button (only if messages exchanged) */}
         {messages.filter(m => m.role === 'assistant').length >= 1 && !pendingSuggestion && (

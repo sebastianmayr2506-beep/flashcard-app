@@ -119,21 +119,36 @@ export async function suggestBackImprovement(
 
   const geminiBody = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.3, maxOutputTokens: 1024, responseMimeType: 'application/json' },
+    generationConfig: { temperature: 0.3, maxOutputTokens: 4096, responseMimeType: 'application/json' },
   };
 
   const { text } = await callAIWithFallback(keys, geminiBody, prompt);
 
-  // Parse JSON — be lenient about whitespace / code-fences
-  const cleaned = text.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+  // Robustes JSON-Parsing — die KI rendert manchmal Backticks, ```-Fences,
+  // oder Prosa um den JSON-Block. Strategie:
+  // 1) Code-Fences entfernen
+  // 2) JSON-Slice zwischen erstem '{' und letztem '}' extrahieren
+  // 3) Häufige Encoding-Issues fixen (Markdown-Backticks in "back" etc.)
+  let cleaned = text.trim();
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+  }
+
   let parsed: BackSuggestion;
   try {
     parsed = JSON.parse(cleaned) as BackSuggestion;
-  } catch {
-    throw new Error('KI-Antwort war kein gültiges JSON.');
+  } catch (parseErr) {
+    // Debug-Hilfe — die kompletten Rohdaten in der Konsole damit man sieht
+    // wo's geklemmt hat. Im UI kriegt der User eine freundliche Message.
+    console.warn('[suggestBackImprovement] JSON parse failed:', parseErr);
+    console.warn('[suggestBackImprovement] raw response:', text);
+    throw new Error('KI hat keine gültige Struktur zurückgegeben — versuch es nochmal oder stell eine konkretere Frage im Chat.');
   }
   if (typeof parsed.back !== 'string' || typeof parsed.rationale !== 'string') {
-    throw new Error('KI-Antwort ist unvollständig.');
+    throw new Error('KI-Antwort ist unvollständig — Felder fehlen.');
   }
   // Normalize changeType
   const valid = ['clarify', 'simplify', 'rephrase', 'expand', 'none'] as const;

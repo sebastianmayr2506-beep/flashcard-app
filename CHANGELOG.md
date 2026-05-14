@@ -7,6 +7,36 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-14 — MC-Modus: Karten-Aktionen direkt im Quiz
+
+**Was:** Im MC-Modus kann der User die zugrundeliegende Karte jetzt direkt
+ansehen, bearbeiten, auf die Blacklist setzen und die MC-Fragen neu
+generieren — ohne die Session zu verlassen.
+
+**4 Icons in der Karten-Frage-Box (oben rechts):**
+- 👁 **Vorschau:** Klick blendet die Antwort/Rückseite der Karte unter
+  der Frage ein. Nochmal klick = ausblenden.
+- ✏️ **Bearbeiten:** Öffnet `QuickEditModal` (existierende Komponente, war
+  vorher nur im Klassik-Modus eingebunden). Edits werden live in
+  `sessionCards` reflektiert, die Karten-Frage-Box zeigt den neuen Text
+  ohne Session-Restart.
+- 🚫 **Blacklist:** Toggle. Aktuell-Session läuft normal weiter; ab
+  nächster Session ist die Karte ausgeschlossen. Toast informiert.
+- 🔄 **MC neu generieren:** Inline-Confirm („Neu? Ja / Nein"). Bei
+  Bestätigung wird `mcQuestions` gelöscht → `onGenerateMC([id])` →
+  Frage 1 der neuen Liste startet, alte Antworten für diese Karte werden
+  verworfen, Spinner während Generierung. Use-Case: Karte wurde
+  inhaltlich geändert, MC-Fragen passen nicht mehr.
+
+**Wo's gehörte:**
+- 4 Icons rechts vom „KARTEN-FRAGE"-Label
+- `QuickEditModal` wird jetzt im MC-Branch auch gerendert (early-return
+  hatte ihn bisher unterschlagen)
+
+**Files:** `src/pages/StudySession.tsx`.
+
+---
+
 ## 2026-05-14 — Library: Inline-Confirm beim Karte-Löschen
 
 **Symptom:** User hat „öfter ausversehen eine Karte gelöscht" — Klick auf

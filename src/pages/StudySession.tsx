@@ -172,6 +172,10 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   );
   const [mcSelected, setMcSelected] = useState<string[]>([]);
   const [mcSubmitted, setMcSubmitted] = useState(false);
+  // MC-View card-context controls
+  const [mcShowBack, setMcShowBack] = useState(false);       // toggle "Antwort einblenden"
+  const [mcConfirmRegen, setMcConfirmRegen] = useState(false); // inline confirm before regen
+  const [mcRegenerating, setMcRegenerating] = useState(false); // spinner while regen runs
   type MCSessionAnswer = { selected: string[]; isCorrect: boolean };
   const [mcAnswers, setMcAnswers] = useState<Map<string, MCSessionAnswer[]>>(
     () => restoredSession?.mode === 'mc' ? restoredSession.mcAnswers : new Map()
@@ -1280,6 +1284,9 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
   // ── MC-Modus Studying View ────────────────────────────────────────────
   // Branches off here so the classic flashcard render below is unchanged.
   if (sessionState === 'studying' && sessionMode === 'mc') {
+    // Always read the current card from the FRESH sessionCards array — after
+    // an edit or MC-regen the local sessionCards may have been mutated and we
+    // need the new content for the Karten-Frage preview.
     const mcCurrent = sessionCards[mcCardIdx];
     if (!mcCurrent || !mcCurrent.mcQuestions || mcCurrent.mcQuestions.length === 0) {
       // Defensive: should never happen because pre-flight ensures all cards have MC
@@ -1367,12 +1374,125 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
 
         {/* MC content */}
         <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-3xl w-full mx-auto">
-          {/* Card-Context: the original question text — so user knows what topic */}
+          {/* Card-Context: the original question text + action row */}
           <div className="mb-5 bg-[#1e2130] border border-[#2d3148] rounded-2xl p-4">
-            <p className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider mb-1.5">Karten-Frage</p>
+            <div className="flex items-start justify-between gap-3 mb-1.5">
+              <p className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider">Karten-Frage</p>
+              {/* Action icons: Vorschau · Bearbeiten · Blacklist · MC neu generieren */}
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => setMcShowBack(v => !v)}
+                  title={mcShowBack ? 'Antwort verstecken' : 'Antwort einblenden'}
+                  className={`text-xs px-2 py-1 rounded-lg border transition-colors ${
+                    mcShowBack
+                      ? 'bg-purple-500/20 border-purple-500/40 text-purple-300'
+                      : 'border-transparent text-[#6b7280] hover:text-purple-400 hover:bg-[#252840]'
+                  }`}
+                >
+                  👁
+                </button>
+                <button
+                  onClick={() => setEditingCard(mcCurrent)}
+                  title="Karte bearbeiten"
+                  className="text-xs px-2 py-1 rounded-lg border border-transparent text-[#6b7280] hover:text-indigo-400 hover:bg-[#252840] transition-colors"
+                >
+                  ✏️
+                </button>
+                {(() => {
+                  const liveCard = cardsRef.current.find(c => c.id === mcCurrent.id) ?? mcCurrent;
+                  const isBlack = !!liveCard.blacklisted;
+                  return (
+                    <button
+                      onClick={() => {
+                        onUpdateCard(mcCurrent.id, { blacklisted: !isBlack });
+                        onApiError?.(isBlack
+                          ? '✓ Karte von Blacklist entfernt'
+                          : '🚫 Karte auf Blacklist — wird in zukünftigen Sessions ausgeschlossen');
+                      }}
+                      title={isBlack ? 'Von Blacklist entfernen' : 'Auf Blacklist setzen'}
+                      className={`text-xs px-2 py-1 rounded-lg border transition-colors ${
+                        isBlack
+                          ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                          : 'border-transparent text-[#6b7280] hover:text-amber-300 hover:bg-[#252840]'
+                      }`}
+                    >
+                      {isBlack ? '✓' : '🚫'}
+                    </button>
+                  );
+                })()}
+                {mcConfirmRegen ? (
+                  <>
+                    <button
+                      onClick={async () => {
+                        if (!onGenerateMC || mcRegenerating) return;
+                        setMcConfirmRegen(false);
+                        setMcRegenerating(true);
+                        try {
+                          // Clear existing MC questions first so the API will
+                          // not be tempted to merge. Persist via onUpdateCard.
+                          onUpdateCard(mcCurrent.id, { mcQuestions: undefined, mcQuestionsGeneratedAt: undefined });
+                          const { okIds, failedIds } = await onGenerateMC([mcCurrent.id]);
+                          if (failedIds.length > 0) {
+                            onApiError?.('Neue MC-Fragen konnten nicht generiert werden — Karte bleibt wie sie war.');
+                          } else if (okIds.length > 0) {
+                            // Pick up fresh mcQuestions from the latest cards prop
+                            // and refresh sessionCards / answers / indexes so we
+                            // restart this card's MC from question 1.
+                            const refreshed = cardsRef.current.find(c => c.id === mcCurrent.id);
+                            if (refreshed && refreshed.mcQuestions) {
+                              setSessionCards(prev => prev.map(c => c.id === mcCurrent.id ? refreshed : c));
+                              setMcAnswers(prev => {
+                                const next = new Map(prev);
+                                next.delete(mcCurrent.id);
+                                return next;
+                              });
+                              setMcQuestionIdx(0);
+                              setMcSelected([]);
+                              setMcSubmitted(false);
+                              setMcShowBack(false);
+                            }
+                          }
+                        } finally {
+                          setMcRegenerating(false);
+                        }
+                      }}
+                      disabled={mcRegenerating}
+                      className="text-xs px-2 py-1 rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 font-semibold transition-colors disabled:opacity-50"
+                    >
+                      Neu? Ja
+                    </button>
+                    <button
+                      onClick={() => setMcConfirmRegen(false)}
+                      className="text-xs px-2 py-1 rounded-lg bg-[#252840] border border-[#2d3148] text-[#9ca3af] transition-colors"
+                    >
+                      Nein
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setMcConfirmRegen(true)}
+                    disabled={!onGenerateMC || mcRegenerating}
+                    title="MC-Fragen für diese Karte neu generieren (falls Karte inhaltlich geändert wurde)"
+                    className="text-xs px-2 py-1 rounded-lg border border-transparent text-[#6b7280] hover:text-indigo-400 hover:bg-[#252840] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    {mcRegenerating ? (
+                      <span className="inline-block w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                    ) : '🔄'}
+                  </button>
+                )}
+              </div>
+            </div>
             <p className="text-sm text-[#d1d5db] leading-relaxed">
               <MarkdownText text={mcCurrent.front} />
             </p>
+            {mcShowBack && (
+              <div className="mt-3 pt-3 border-t border-[#2d3148]">
+                <p className="text-[10px] font-semibold text-purple-400 uppercase tracking-wider mb-1.5">Antwort</p>
+                <p className="text-sm text-[#e8eaf0] leading-relaxed">
+                  <MarkdownText text={mcCurrent.back} />
+                </p>
+              </div>
+            )}
             <p className="text-[10px] text-[#6b7280] mt-2">
               Aspekt: <span className="text-indigo-300">{mcQuestion.topic}</span>
             </p>
@@ -1456,6 +1576,23 @@ export default function StudySession({ cards, settings, sets, links, preFiltered
             </button>
           )}
         </div>
+
+        {/* Edit-Modal (geteilt mit Klassisch-Modus, lebt dort als Original — hier
+            erneut gerendert, weil der MC-Branch früher mit return abzweigt) */}
+        {editingCard && (
+          <QuickEditModal
+            card={editingCard}
+            onSave={(id, data) => {
+              onUpdateCard(id, data);
+              setSessionCards(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
+            }}
+            onClose={() => setEditingCard(null)}
+            geminiApiKey={settings.geminiApiKey}
+            anthropicApiKey={settings.anthropicApiKey}
+            groqApiKey={settings.groqApiKey}
+            onApiError={onApiError}
+          />
+        )}
       </div>
     );
   }

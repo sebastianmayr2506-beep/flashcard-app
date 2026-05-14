@@ -12,7 +12,10 @@ export interface AIKeys {
 }
 
 const CHAT_HISTORY_KEEP = 6;       // wieviele letzte Messages voll an die KI senden
-const MAX_RESPONSE_TOKENS = 1024;  // ~700 Wörter
+// 4096 Output-Tokens ≈ 3000 Wörter — reicht für lange Steuerrecht-/BWL-
+// Erklärungen ohne mid-Sentence-Cuts. Gemini Flash zählt nur tatsächlich
+// generierte Tokens, nicht das Limit, daher kein Kostenrisiko.
+const MAX_RESPONSE_TOKENS = 4096;
 
 function buildSystemPrompt(card: Flashcard): string {
   return [

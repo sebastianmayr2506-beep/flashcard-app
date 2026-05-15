@@ -140,6 +140,9 @@ Stattdessen lokales Node-Script:
 npm run backup:admin
 ```
 
+(Das Script ist `.mjs` und nutzt Node's eingebautes `--env-file`-Flag. Braucht
+Node ≥20.6. Keine extra deps nötig — `@supabase/supabase-js` ist eh schon da.)
+
 Output: `backups/YYYY-MM-DD_HH-MM/<email>.json` — eine Datei pro User mit
 Karten, SRS-Stand, Settings, Sets, Card-Links, Flag-Attempts und Card-Chats.
 Plus `_summary.json` mit Übersicht aller User.

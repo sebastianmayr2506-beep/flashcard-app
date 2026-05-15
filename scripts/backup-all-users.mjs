@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Admin-Backup-Script: zieht für JEDEN registrierten User ein komplettes
  * Backup aller Karten + Lernfortschritt + Settings + Sets + Links + Flag-
@@ -24,15 +25,14 @@
  *   - Vor jeder geplanten globalen Migration
  *   - Wenn ein User Daten verloren hat und wiederherstellen will
  *   - Wöchentliche Routine als Sicherheits-Net über Supabase's daily backup
+ *
+ * Reines Node-Script (.mjs) — keine extra deps. .env.local wird via
+ * Node's eingebautem --env-file Flag geladen (siehe npm script).
  */
 
 import { createClient } from '@supabase/supabase-js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { config } from 'dotenv';
-
-// .env.local laden (für Lokal-Dev-Konvention)
-config({ path: '.env.local' });
 
 const URL = process.env.VITE_SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -41,22 +41,13 @@ if (!URL || !KEY) {
   console.error('❌ Fehlende env vars. .env.local braucht:');
   console.error('   VITE_SUPABASE_URL=...');
   console.error('   SUPABASE_SERVICE_ROLE_KEY=...');
+  console.error('Stell auch sicher dass das npm-Script mit --env-file=.env.local läuft.');
   process.exit(1);
 }
 
 const admin = createClient(URL, KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
-
-interface UserSummary {
-  id: string;
-  email: string | null;
-  cards: number;
-  sets: number;
-  links: number;
-  flagAttempts: number;
-  chats: number;
-}
 
 async function main() {
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 16);
@@ -67,7 +58,7 @@ async function main() {
   console.log('Lade User-Liste…');
 
   // Alle Auth-User holen (paginiert um Limits zu vermeiden)
-  const users: { id: string; email: string | null }[] = [];
+  const users = [];
   let page = 1;
   while (true) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 100 });
@@ -79,14 +70,14 @@ async function main() {
   }
   console.log(`→ ${users.length} User gefunden`);
 
-  const summaries: UserSummary[] = [];
+  const summaries = [];
 
   for (const user of users) {
     const label = user.email ?? user.id;
     console.log(`\n👤 ${label}`);
 
     // Karten (paginiert)
-    const cards: Record<string, unknown>[] = [];
+    const cards = [];
     {
       let from = 0;
       const PAGE = 1000;

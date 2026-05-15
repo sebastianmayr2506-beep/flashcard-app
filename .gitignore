@@ -15,6 +15,9 @@ dist-ssr
 # Claude Code local config
 .claude/
 
+# Admin backups (contain ALL user data — never commit)
+backups/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

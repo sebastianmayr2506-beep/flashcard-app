@@ -100,20 +100,74 @@ Dokumentation jeder globalen Datenmigration. Format: Datum · Datei · Was getan
 
 Wenn du eine globale Migration schreibst:
 
-1. **SQL-Datei** im Root anlegen: `supabase_migration_XX_kurzname.sql`
-2. **Kommentar-Header** mit:
+1. **Admin-Backup vorher** (`npm run backup:admin`) — siehe Abschnitt unten
+2. **SQL-Datei** im Root anlegen: `supabase_migration_XX_kurzname.sql`
+3. **Kommentar-Header** mit:
    - Was die Migration tut
    - Welche Felder berührt sind
    - Welche Felder GARANTIERT nicht berührt werden
    - Annahmen / Risiken
-3. **Idempotent halten** (`IF NOT EXISTS`, `WHERE locked = false`, etc.) — muss mehrfach lauffähig sein ohne Schaden
-4. **NOTIFY pgrst, 'reload schema'** am Ende (sonst sieht der Client die neue Spalte nicht)
-5. **Code-Änderungen** parallel (neue Logik soll zur Migration passen)
-6. **Lokal builden** + testen
-7. **Im Supabase Editor laufen lassen** — Output prüfen
-8. **Im Repo committen** (sowohl SQL-Datei als auch Code-Änderungen)
-9. **Hier im Migration-Log Eintrag** mit Datum / Was / Berührte Felder
-10. **Eintrag in `CHANGELOG.md`** für die User-sichtbare Side
+4. **Idempotent halten** (`IF NOT EXISTS`, `WHERE locked = false`, etc.) — muss mehrfach lauffähig sein ohne Schaden
+5. **NOTIFY pgrst, 'reload schema'** am Ende (sonst sieht der Client die neue Spalte nicht)
+6. **Code-Änderungen** parallel (neue Logik soll zur Migration passen)
+7. **Lokal builden** + testen
+8. **Im Supabase Editor laufen lassen** — Output prüfen
+9. **Im Repo committen** (sowohl SQL-Datei als auch Code-Änderungen)
+10. **Hier im Migration-Log Eintrag** mit Datum / Was / Berührte Felder
+11. **Eintrag in `CHANGELOG.md`** für die User-sichtbare Side
+
+---
+
+## Admin-Backup (alle User in einem Rutsch)
+
+Über die Web-App nicht möglich (Service-Role-Key gehört nie ins Frontend).
+Stattdessen lokales Node-Script:
+
+### Einmaliges Setup
+
+1. `.env.local` im Repo-Root anlegen (ist via `.gitignore` geschützt):
+   ```
+   VITE_SUPABASE_URL=https://<projekt>.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+   ```
+   Den Service-Role-Key findest du in:
+   **Supabase Dashboard → Project Settings → API → service_role secret**.
+   **Nicht** den anon-Key — der hat keine Admin-Rechte.
+
+### Ausführen
+
+```bash
+npm run backup:admin
+```
+
+Output: `backups/YYYY-MM-DD_HH-MM/<email>.json` — eine Datei pro User mit
+Karten, SRS-Stand, Settings, Sets, Card-Links, Flag-Attempts und Card-Chats.
+Plus `_summary.json` mit Übersicht aller User.
+
+### Wann ausführen
+
+- **VOR jeder geplanten globalen Migration** (Kategorie 4 oder 5)
+- **Wenn ein User Datenverlust meldet** — du hast dann den letzten Stand
+- **Wöchentliche Routine** als zusätzliches Sicherheits-Netz neben Supabase's
+  automatischen Daily Backups (die nur 7 Tage zurückreichen)
+
+### Supabase's eigene Backups (zur Erinnerung)
+
+Pro-Tier hat **automatische daily backups**, 7 Tage Retention. Findest du
+unter **Database → Backups**. Wiederherstellung ist *destruktiv* (überschreibt
+aktuelle DB) — daher: für Einzel-User-Wiederherstellung lieber das Admin-
+Backup-JSON nehmen und gezielt per SQL einspielen.
+
+### Wiederherstellung aus Admin-Backup
+
+Format der JSON-Datei ist DB-shaped (snake_case-Felder pro Tabelle). Im
+Notfall:
+1. JSON öffnen, betroffene Sektion finden (z.B. `cards`)
+2. SQL `INSERT INTO ... VALUES (...)` daraus bauen
+3. Im Supabase SQL Editor laufen lassen
+
+Für komplette User-Wiederherstellung: Service-Role-Key Script erweitern
+mit Restore-Modus (nicht implementiert — bei Bedarf bauen).
 
 ---
 

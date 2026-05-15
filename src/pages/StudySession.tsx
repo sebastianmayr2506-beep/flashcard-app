@@ -1919,7 +1919,9 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
               <div className="absolute top-3 right-3 z-10" onClick={e => e.stopPropagation()}>
                 <PriorityPicker
                   value={currentCard.priority}
-                  onChange={(p) => onUpdateCard(currentCard.id, { priority: p })}
+                  // Manual change → priorityLocked: true. Globale Auto-Classify-
+                  // Re-Runs respektieren das und lassen die Karte in Ruhe.
+                  onChange={(p) => onUpdateCard(currentCard.id, { priority: p, priorityLocked: true })}
                   size="md"
                 />
               </div>

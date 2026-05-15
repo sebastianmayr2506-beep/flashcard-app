@@ -1,26 +1,32 @@
 // Priority classification for exam-prep focus mode.
 //
 // Three buckets:
-//   A = "Must know" — high probability classics, manually flagged cards,
-//        or hard cards asked frequently. These are what you study first.
-//   B = "Should know" — middle-of-the-road relevance.
-//   C = "Nice to know" — low-probability tail, asked only once or never.
+//   A = "Must know" — high frequency classics or manually flagged cards
+//   B = "Should know" — middle-of-the-road, asked a few times
+//   C = "Nice to know" — one-off or never asked in catalogs
 //
-// The heuristic uses signals that already exist on every card:
-//   - probabilityPercent: how often the question has been asked across
-//     catalog years (the "Klassiker" score)
-//   - flagged: user has manually marked it as problematic / important
-//   - timesAsked: total count across all catalogs
-//   - difficulty: user-set or auto-derived
-//   - askedInCatalogs: list of "Year/Examiner" strings indicating recent relevance
+// Heuristik v3 (Single-Signal — siehe DEVELOPMENT.md Migration #1):
+//   timesAsked = die eine ehrliche Zahl wie oft die Frage in den
+//   Fragenkatalogen vorkam (über alle Prüfer und Jahrgänge hinweg).
+//   Daraus leiten wir A/B/C ab. flagged hebt eine Karte zusätzlich auf A.
 //
-// We deliberately keep this simple — fancier ML/AI ranking is overkill for
-// a first pass. The user can adjust individual cards via the inline picker
-// during study, and re-run classification any time from Settings.
+//   A = times_asked >= 6  ODER flagged
+//   B = times_asked 2–5
+//   C = times_asked <= 1  (Default für alles ohne Exam-Daten)
+//
+// Vorheriges Multi-Signal-Modell (prob >= 50, oder catalogs >= 3, oder
+// examiners >= 3, ...) wurde abgelöst weil die einzelnen Signale alle in
+// times_asked bereits enthalten sind (siehe Merge-Logik die times_asked
+// summiert). Eine Karte mit 3 Prüfern in 2 Katalogjahren hat times_asked=6
+// und landet damit automatisch auf A.
 
 import type { Flashcard } from '../types/card';
 
 export type Priority = 'A' | 'B' | 'C';
+
+/** Threshold für 100%-Klassiker. Auch bei der Probability-Berechnung
+ *  als Bezugsgröße benutzt: probabilityPercent = min(100, times/THRESHOLD × 100). */
+export const A_THRESHOLD = 6;
 
 export interface ClassificationCounts {
   A: number;
@@ -32,51 +38,14 @@ export interface ClassificationCounts {
 }
 
 /**
- * Decide an A/B/C tag for a single card from its existing signals.
+ * Decide an A/B/C tag for a single card based on times_asked + flagged.
  * Pure function — does not mutate the card.
- *
- * Heuristic v2 (looser, multi-signal): the first iteration was too pessimistic
- * because most imported cards don't have probabilityPercent set, defaulting
- * to 0 — which collapsed almost everything to C. We now consider multiple
- * signals (catalogs, examiners, flagged, difficulty) so a card without an
- * explicit probability can still land in A or B.
  */
 export function classifyPriority(card: Flashcard): Priority {
-  const prob = Number(card.probabilityPercent ?? 0) || 0;
   const timesAsked = Number(card.timesAsked ?? 0) || 0;
-  const flagged = !!card.flagged;
-
-  // Best-effort signal extraction: many imports route exam-frequency
-  // data through general fields (`examiners`, `customTags` with
-  // "Fragenkatalog YYYY") rather than the dedicated stats fields.
-  // Fall back to general fields when stats fields are empty so we don't
-  // miss frequency information that's clearly present on the card.
-  const examinersFromStats = card.askedByExaminers?.length ?? 0;
-  const examinerCount = examinersFromStats > 0
-    ? examinersFromStats
-    : (card.examiners?.length ?? 0);
-  const catalogsFromStats = card.askedInCatalogs?.length ?? 0;
-  const catalogsFromTags = (card.customTags ?? []).filter(t => /^fragenkatalog\s*\d{4}$/i.test(t)).length;
-  const catalogCount = catalogsFromStats > 0 ? catalogsFromStats : catalogsFromTags;
-
-  // ── A bucket: strong "must know" signal ───────────────────────────────
-  if (prob >= 50) return 'A';                         // Klassiker (relaxed from 60)
-  if (flagged) return 'A';                            // user-flagged → important
-  if (timesAsked >= 3) return 'A';                    // asked multiple times across catalogs
-  if (catalogCount >= 3) return 'A';                  // surfaced in 3+ catalog years
-  if (examinerCount >= 3) return 'A';                 // 3+ examiners asked it
-
-  // ── C bucket: truly no relevance signal at all ────────────────────────
-  // Card has no data tying it to actual exam content. These are likely
-  // user-created supplemental cards or low-relevance tail content.
-  if (prob === 0 && timesAsked === 0 && catalogCount === 0 && examinerCount === 0 && !flagged) {
-    return 'C';
-  }
-  // Very low probability AND barely asked → defer
-  if (prob < 10 && timesAsked <= 1 && catalogCount <= 1 && examinerCount <= 1) return 'C';
-
-  // ── B bucket: has some signal, middle relevance (the bulk) ────────────
-  return 'B';
+  if (card.flagged || timesAsked >= A_THRESHOLD) return 'A';
+  if (timesAsked >= 2) return 'B';
+  return 'C';
 }
 
 /**
@@ -95,9 +64,12 @@ export function classifyAll(cards: Flashcard[], overwrite = false): {
   const byId = new Map<string, Priority>();
   const counts: ClassificationCounts = { A: 0, B: 0, C: 0, preserved: 0, total: cards.length };
   for (const c of cards) {
-    if (!overwrite && c.priority) {
+    // priorityLocked = User hat manuell gesetzt → IMMER schützen, auch bei overwrite=true
+    // priority already set + overwrite=false → respect existing (legacy behavior)
+    const lockedManual = !!c.priorityLocked;
+    if (lockedManual || (!overwrite && c.priority)) {
       counts.preserved++;
-      counts[c.priority]++;
+      if (c.priority) counts[c.priority]++;
       continue;
     }
     const p = classifyPriority(c);
@@ -114,9 +86,10 @@ export function classifyAll(cards: Flashcard[], overwrite = false): {
 export function previewClassification(cards: Flashcard[], overwrite = false): ClassificationCounts {
   const counts: ClassificationCounts = { A: 0, B: 0, C: 0, preserved: 0, total: cards.length };
   for (const c of cards) {
-    if (!overwrite && c.priority) {
+    const lockedManual = !!c.priorityLocked;
+    if (lockedManual || (!overwrite && c.priority)) {
       counts.preserved++;
-      counts[c.priority]++;
+      if (c.priority) counts[c.priority]++;
       continue;
     }
     counts[classifyPriority(c)]++;

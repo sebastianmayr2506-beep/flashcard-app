@@ -7,6 +7,62 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-14 — Migration #1: Heuristik v3 für Priority + Klassiker-Score
+
+**Globale Datenmigration** für alle User — erste ihrer Art. Doku-Regelwerk
+für sowas liegt jetzt in `DEVELOPMENT.md`.
+
+**Was sich für jeden User ändert:**
+
+1. **A/B/C-Klassifizierung** komplett neu auf Basis einer einzigen klaren
+   Logik: `times_asked` als Source-of-Truth.
+   - **A** wenn ≥6× gefragt ODER geflaggt
+   - **B** wenn 2–5× gefragt
+   - **C** wenn 0–1× gefragt (Default)
+
+   Vorher: 5 verschiedene Signale (probability ≥ 50, Anzahl Prüfer ≥ 3,
+   Anzahl Kataloge ≥ 3, …) mit OR-Verknüpfung — schwer zu erklären, oft
+   inkonsistent.
+
+2. **Klassiker-Score (`probability_percent`)** wird einheitlich aus
+   `times_asked` abgeleitet: `min(100, times_asked / 6 × 100)`.
+   - 6× = 100% (Klassiker)
+   - 4× = 67%
+   - 2× = 33%
+   - 1× = 17%
+   - 0× = 0%
+
+   Vorher: war je nach Karte mit unterschiedlichen Formeln gefüllt
+   (Import-Zeit vs. normalizeStats-Zeit vs. manuelle Werte). Resultat:
+   Karte mit 6 Mentions zeigte 20%, Karte mit 4 Mentions zeigte 80% — der
+   User-sichtbarer Bug.
+
+**Was geschützt bleibt (NICHT angefasst):** SRS-State, times_asked, flagged,
+content, customTags, mcQuestions, blacklisted, Lernfortschritt. Siehe
+DEVELOPMENT.md für die vollständige Liste „geschützter Felder".
+
+**Future-Safety:** Neue Spalte `priority_locked` eingeführt. Wenn User
+zukünftig im StudySession-PriorityPicker manuell A/B/C ändert, wird das
+Flag auf `true` gesetzt und alle weiteren globalen Re-Klassifizierungen
+respektieren das.
+
+**Migration:**
+```sql
+-- supabase_migration_priority_heuristik_v2.sql
+ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS priority_locked boolean DEFAULT false;
+UPDATE public.cards SET priority = CASE ... END WHERE priority_locked = false;
+UPDATE public.cards SET probability_percent = LEAST(100, ROUND(times_asked * 100.0 / 6)) WHERE times_asked > 0;
+NOTIFY pgrst, 'reload schema';
+```
+
+**Files:** `supabase_migration_priority_heuristik_v2.sql` (neu),
+`src/utils/priority.ts` (v3-Heuristik), `src/types/card.ts` (priorityLocked),
+`src/hooks/useCards.ts` (fromDb/toDb), `src/pages/StudySession.tsx`
+(PriorityPicker setzt locked=true), `DEVELOPMENT.md` (neu — Regelwerk +
+Migration-Log).
+
+---
+
 ## 2026-05-14 — KI-Chat zur Karteikarte + automatische Antwort-Verbesserung
 
 **What:** Pro Karte gibt's jetzt einen AI-Chat. Während der Lern-Session

@@ -359,30 +359,30 @@ function TagesZiel({
         <span className="text-sm text-[#9ca3af] pb-1">Karten</span>
       </div>
       {totalToday > 0 && (
-        <div className="flex justify-center gap-4 text-sm">
-          {/* Klickbar — öffnet Preview-Modal mit den heutigen Karten */}
+        <div className="flex justify-center items-center gap-2 sm:gap-3 text-sm flex-wrap">
+          {/* Klickbar — öffnet Preview-Modal. Tap-Target mind. 44px für Mobile. */}
           <button
+            type="button"
             onClick={() => setPreviewKind('review')}
             disabled={plan.reviewCards.length === 0}
-            className="text-amber-400 font-medium underline-offset-2 hover:underline disabled:no-underline disabled:cursor-default"
+            className="text-amber-400 font-medium px-3 py-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 active:bg-amber-500/20 hover:bg-amber-500/15 transition-colors disabled:opacity-50 disabled:cursor-default disabled:border-[#2d3148] disabled:bg-transparent flex items-center gap-1.5"
             title={plan.reviewCards.length > 0 ? 'Heutige Wiederholungs-Karten ansehen' : undefined}
           >
-            {plan.reviewCards.length} Wdh.
+            <span>{plan.reviewCards.length} Wdh.</span>
+            {plan.reviewCards.length > 0 && <span className="text-[10px] opacity-60">👁</span>}
           </button>
-          <span className="text-[#3d4168]">·</span>
           <button
+            type="button"
             onClick={() => setPreviewKind('new')}
             disabled={plan.newCards.length === 0}
-            className="text-purple-300 font-medium underline-offset-2 hover:underline disabled:no-underline disabled:cursor-default"
+            className="text-purple-300 font-medium px-3 py-1.5 rounded-lg border border-purple-500/30 bg-purple-500/5 active:bg-purple-500/20 hover:bg-purple-500/15 transition-colors disabled:opacity-50 disabled:cursor-default disabled:border-[#2d3148] disabled:bg-transparent flex items-center gap-1.5"
             title={plan.newCards.length > 0 ? 'Heutige neue Karten ansehen' : undefined}
           >
-            {plan.newCards.length} Neu
+            <span>{plan.newCards.length} Neu</span>
+            {plan.newCards.length > 0 && <span className="text-[10px] opacity-60">👁</span>}
           </button>
           {plan.reviewOverflow > 0 && (
-            <>
-              <span className="text-[#3d4168]">·</span>
-              <span className="text-[#6b7280] text-xs">+{plan.reviewOverflow} auf morgen</span>
-            </>
+            <span className="text-[#6b7280] text-xs">+{plan.reviewOverflow} auf morgen</span>
           )}
         </div>
       )}
@@ -563,11 +563,11 @@ function TodayPreviewModal({
 
   return (
     <div
-      className="fixed inset-0 z-[70] bg-black/75 flex items-center justify-center p-4"
+      className="fixed inset-0 z-[70] bg-black/75 flex items-end sm:items-center justify-center sm:p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl bg-[#1a1d27] rounded-3xl border border-[#2d3148] shadow-2xl flex flex-col max-h-[85vh]"
+        className="w-full max-w-2xl bg-[#1a1d27] sm:rounded-3xl border border-[#2d3148] shadow-2xl flex flex-col max-h-[92vh] sm:max-h-[85vh] rounded-t-3xl sm:rounded-3xl"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}

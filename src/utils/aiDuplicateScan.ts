@@ -54,21 +54,34 @@ export async function findDuplicatesViaAI(
     .join('\n');
 
   const prompt = [
-    'Du analysierst Karteikarten-Fragen einer Lern-App und findest inhaltliche Duplikate.',
+    'Du suchst **echte Duplikate** in einer Karteikarten-Sammlung.',
+    '',
+    'Ein Duplikat liegt NUR vor wenn die Antwort die GLEICHE wäre.',
+    'Themen-Cluster sind KEINE Duplikate, auch wenn sie verwandt sind.',
+    '',
+    'BEISPIELE GUT (gruppieren):',
+    '✓ "Was ist Taylorismus?" + "Definiere Taylorismus" — gleiche Antwort',
+    '✓ "Erkläre PESTEL" + "Was ist die PESTEL-Analyse?" — gleiche Antwort',
+    '✓ "Was ist X?" + "Was ist X und welche Vorteile gibt es?" — kurze subsummiert sich in lange',
+    '',
+    'BEISPIELE SCHLECHT (NICHT gruppieren — verschiedene Antworten erwartet):',
+    '✗ "Was ist ein Start-up?" + "Wie finanziert man Start-ups?" — verschiedene Fragen',
+    '✗ "Was ist KI?" + "Was ist IoT?" — verschiedene Technologien',
+    '✗ "Definition Marketing" + "Marketing-Mix" — verwandt aber verschieden',
+    '✗ "Phasen eines Start-ups" + "Erfolgsfaktoren eines Start-ups" — verschiedene Aspekte',
     '',
     'REGELN:',
-    '1. Duplikat = beide Fragen wollen im Kern dieselbe Antwort, auch wenn anders formuliert.',
-    '2. Verwandte aber unterschiedliche Themen sind KEIN Duplikat (z.B. "Industrie 4.0" ≠ "Industrie 5.0").',
-    '3. Detailtiefe-Varianten zum gleichen Thema SIND Duplikate (kurze Frage subsummiert sich in lange).',
-    '4. Mindestens 2 Karten pro Gruppe. Eine Karte nur in einer Gruppe.',
-    '5. reasoning: max. 15 Wörter pro Gruppe.',
-    '6. Wenn keine Duplikate gefunden → `{"groups": []}`',
+    '1. Eine Gruppe enthält NIE mehr als 5 Karten. Wenn du mehr findest, gehören sie nicht alle zusammen.',
+    '2. Eine Karte nur in EINER Gruppe.',
+    '3. reasoning: 1 Satz, max 12 Wörter.',
+    '4. Im Zweifel NICHT gruppieren — der User merged manuell.',
+    '5. Wenn keine echten Duplikate → `{"groups": []}`',
     '',
     'Karten-Fragen (durchnummeriert):',
     '',
     numberedFronts,
     '',
-    'Antworte AUSSCHLIESSLICH mit gültigem JSON, kein Markdown, keine Erklärung außerhalb des JSON:',
+    'Antworte AUSSCHLIESSLICH mit gültigem JSON:',
     '{"groups": [{"cardIds": [3, 7], "reasoning": "kurze Begründung"}]}',
   ].join('\n');
 
@@ -143,10 +156,22 @@ export async function findDuplicatesViaAI(
 
   // Map AI 1-basierte indizes → Card-Objekte. Skip Gruppen mit < 2 Karten
   // oder ungültigen IDs.
+  //
+  // SAFETY NET: Gruppen mit > 5 Karten werden verworfen. Das sind fast immer
+  // Themen-Cluster die die KI fälschlich als Duplikate sieht ("alle Karten
+  // zum Thema KI" ist KEINE Duplikat-Gruppe). Bei echten Duplikaten gibt's
+  // erfahrungsgemäß 2-3, selten mal 4 ähnliche Karten. Cutoff bei 5.
+  const MAX_GROUP_SIZE = 5;
   const aiGroups: DuplicateGroup[] = [];
   const seenCardIds = new Set<string>();
+  let oversizedGroupsSkipped = 0;
   for (const g of parsed.groups) {
     if (!Array.isArray(g.cardIds) || g.cardIds.length < 2) continue;
+    if (g.cardIds.length > MAX_GROUP_SIZE) {
+      console.warn(`[aiDuplicateScan] dropping oversized group of ${g.cardIds.length} cards (likely topic cluster, not duplicates):`, g.reasoning);
+      oversizedGroupsSkipped++;
+      continue;
+    }
     const groupCards: Flashcard[] = [];
     for (const oneBased of g.cardIds) {
       const idx = oneBased - 1;
@@ -163,6 +188,10 @@ export async function findDuplicatesViaAI(
       hasExactMatch: false,
       label: typeof g.reasoning === 'string' ? g.reasoning.slice(0, 120) : '— (KI)',
     });
+  }
+
+  if (oversizedGroupsSkipped > 0) {
+    console.info(`[aiDuplicateScan] ${oversizedGroupsSkipped} oversized group(s) silently dropped (>${MAX_GROUP_SIZE} cards)`);
   }
 
   return aiGroups;

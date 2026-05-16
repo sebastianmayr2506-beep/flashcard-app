@@ -62,26 +62,35 @@ export default function DuplicateFinderModal({ cards, onMergeCards, onClose, api
   // Merge Jaccard + AI groups. Wenn beide dasselbe Karten-Paar finden,
   // gewinnt der Jaccard-Eintrag (deterministisch, hat ggf. exact-match-Flag).
   // KI-Gruppen die KEINE Karten überlappen mit Jaccard kommen dazu.
+  //
+  // Wichtig: aiGroups speichert ALTE Karten-Referenzen — nach einem Merge
+  // sind die alten Karten weg, das aiGroups-State weiß davon nichts.
+  // Wir filtern hier gegen die LIVE-Karten-Liste damit gemergte Gruppen
+  // sofort aus der UI verschwinden statt mit toten Referenzen rumzustehen.
   const groups: (DuplicateGroup & { source?: 'ai' | 'jaccard' })[] = useMemo(() => {
     const jacc = jaccardGroups.map(g => ({ ...g, source: 'jaccard' as const }));
     if (!aiGroups || aiGroups.length === 0) return jacc;
 
-    // Karten-IDs die schon in Jaccard-Gruppen drin sind
+    // IDs der aktuell existierenden Karten — gemergte / gelöschte fliegen raus
+    const liveCardIds = new Set(cards.map(c => c.id));
+
+    // Karten-IDs die schon in Jaccard-Gruppen drin sind (live, da Jaccard
+    // auf cards basiert und damit auch automatisch up-to-date ist)
     const seenInJacc = new Set<string>();
     for (const g of jaccardGroups) for (const c of g.cards) seenInJacc.add(c.id);
 
-    // KI-Gruppen filtern: nur Gruppen aufnehmen wo mindestens 2 Karten NOCH NICHT
-    // in einer Jaccard-Gruppe sind (sonst wäre's redundant)
     const supplementary = aiGroups
       .map(g => ({
         ...g,
-        cards: g.cards.filter(c => !seenInJacc.has(c.id)),
+        // 1. nur live Karten behalten (Merge entfernt sie aus `cards`)
+        // 2. keine die schon im Jaccard-Bucket sind (Duplikat-Anzeige)
+        cards: g.cards.filter(c => liveCardIds.has(c.id) && !seenInJacc.has(c.id)),
       }))
       .filter(g => g.cards.length >= 2)
       .map(g => ({ ...g, source: 'ai' as const }));
 
     return [...jacc, ...supplementary];
-  }, [jaccardGroups, aiGroups]);
+  }, [cards, jaccardGroups, aiGroups]);
 
   // Reset selection state whenever groups reshuffle. Default: all in.
   useEffect(() => {

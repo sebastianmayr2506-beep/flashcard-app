@@ -5,6 +5,7 @@ import ImageInput from '../components/ImageInput';
 import LinkedCards from '../components/LinkedCards';
 import ProbabilityBadge from '../components/ProbabilityBadge';
 import { reviseCardWithGemini } from '../utils/geminiReviseCard';
+import { isAdmin } from '../utils/admin';
 
 export interface SRSOverride {
   interval: number;
@@ -31,6 +32,11 @@ interface Props {
   onGenerateMC?: (cardIds: string[]) => Promise<{ okIds: string[]; failedIds: string[] }>;
   /** Sets mcQuestions to undefined on the card. */
   onDeleteMC?: (cardId: string) => void;
+  /** Triggers KI-Split der Karte. Admin-only feature (Anthropic-Key nötig).
+   *  callback navigiert weg + opens preview modal. */
+  onSplitCard?: (cardId: string) => void;
+  /** Aktueller User-Email für Admin-Gating. */
+  userEmail?: string;
   onApiError?: (message: string) => void;
 }
 
@@ -67,7 +73,7 @@ function srsStatusToFields(status: SRSStatus): SRSOverride {
   }
 }
 
-export default function CardEditor({ card, settings, sets, allCards, links, onSave, onCancel, onAddLink, onRemoveLink, onGenerateMC, onDeleteMC, onApiError }: Props) {
+export default function CardEditor({ card, settings, sets, allCards, links, onSave, onCancel, onAddLink, onRemoveLink, onGenerateMC, onDeleteMC, onSplitCard, userEmail, onApiError }: Props) {
   const [front, setFront] = useState(card?.front ?? '');
   const [back, setBack] = useState(card?.back ?? '');
   const [frontImage, setFrontImage] = useState<CardImage | undefined>(card?.frontImage);
@@ -450,6 +456,21 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
               >
                 🚫 {blacklisted ? 'Auf Blacklist (zum Entfernen klicken)' : 'Auf Blacklist setzen'}
               </button>
+
+              {/* Admin-only: KI-Split. Trennt eine Karte mit zwei Themen in
+                  zwei separate Karten via Claude. Power-user-Feature — daher
+                  nur für Admin sichtbar (andere User haben meistens keinen
+                  Anthropic-Key hinterlegt). */}
+              {isAdmin(userEmail) && card && onSplitCard && (
+                <button
+                  type="button"
+                  onClick={() => onSplitCard(card.id)}
+                  title="Admin: Karte mit Claude in mehrere Karten trennen"
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all bg-violet-500/15 border-violet-500/40 text-violet-300 hover:bg-violet-500/25"
+                >
+                  ✂️ Karte trennen (Admin)
+                </button>
+              )}
             </div>
           </div>
 

@@ -1004,6 +1004,8 @@ export default function App() {
             onRemoveLink={removeLink}
             onGenerateMC={handleGenerateMCForCards}
             onDeleteMC={(id) => updateCard(id, { mcQuestions: undefined, mcQuestionsGeneratedAt: undefined })}
+            onSplitCard={(id) => handleSplitCard(id, () => navigate('library'))}
+            userEmail={user.email ?? undefined}
             onApiError={msg => showToast(msg, 'error')}
           />
         )}

@@ -6,6 +6,7 @@ import type { useGoogleDrive } from '../hooks/useGoogleDrive';
 import { previewClassification, inspectDistribution } from '../utils/priority';
 import { normalizeAll, type NormalizationSummary } from '../utils/normalizeStats';
 import InfoTooltip from '../components/InfoTooltip';
+import { ADMIN_EMAIL } from '../utils/admin';
 
 // ─── Tageslimit-Presets ──────────────────────────────────────────────────────
 // Ein Preset setzt die 3 echten Settings (dailyNewCardGoal, ...Mode,
@@ -71,8 +72,6 @@ function detectActivePreset(s: AppSettings): PresetId {
   if (mode === 'manual' && s.dailyNewCardGoal === 40) return 'intensive';
   return 'custom';
 }
-
-const ADMIN_EMAIL = 'bastimayr@gmx.at';
 
 interface Props {
   settings: AppSettings;

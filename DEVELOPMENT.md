@@ -77,6 +77,30 @@ Diese Felder gehören dem User. Auch wenn eine Migration sie technisch ändern k
 
 Dokumentation jeder globalen Datenmigration. Format: Datum · Datei · Was getan · Welche Felder berührt.
 
+### Migration #3 — B-Threshold von 2 auf 3 (Mai 2026)
+
+**Datei:** `supabase_migration_priority_band_b_threshold.sql`
+
+**Was getan:**
+Heuristik-Justierung in `priority.ts`. Karten mit nur 2 Erwähnungen werden
+nicht mehr automatisch B sondern landen in C. Die neue Schwelle für B ist
+`times_asked >= 3`. A-Schwelle (≥6) unverändert.
+
+**Neue Bands:**
+- A: `times_asked >= 6` ODER `flagged`
+- B: `times_asked 3–5`
+- C: `times_asked <= 2` (Default)
+
+**Berührt:** `priority` (nur unlocked Karten)
+**Berührt nicht:** alles andere — SRS, content, locks, etc.
+
+**Idempotent.** Mehrfach ausführen ist sicher.
+
+**Anlass:** User-Feedback — "2× ist zu schwach für 'sollte kennen', das ist
+eher Tail". Effekt: ein Teil der Karten rutscht von B nach C.
+
+---
+
 ### Migration #2 — Reparatur gemergter Karten (Mai 2026)
 
 **Datei:** `supabase_migration_fix_merged_cards.sql`

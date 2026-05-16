@@ -5,14 +5,17 @@
 //   B = "Should know" — middle-of-the-road, asked a few times
 //   C = "Nice to know" — one-off or never asked in catalogs
 //
-// Heuristik v3 (Single-Signal — siehe DEVELOPMENT.md Migration #1):
+// Heuristik v3.1 (Single-Signal — siehe DEVELOPMENT.md Migrations #1 + #3):
 //   timesAsked = die eine ehrliche Zahl wie oft die Frage in den
 //   Fragenkatalogen vorkam (über alle Prüfer und Jahrgänge hinweg).
 //   Daraus leiten wir A/B/C ab. flagged hebt eine Karte zusätzlich auf A.
 //
 //   A = times_asked >= 6  ODER flagged
-//   B = times_asked 2–5
-//   C = times_asked <= 1  (Default für alles ohne Exam-Daten)
+//   B = times_asked 3–5
+//   C = times_asked <= 2  (Default für alles ohne Exam-Daten)
+//
+// (v3 hatte B ab 2× — wurde auf 3× verschärft weil "nur 2 Erwähnungen"
+//  in 5 Katalogjahren noch zu schwach für "sollte kennen" ist.)
 //
 // Vorheriges Multi-Signal-Modell (prob >= 50, oder catalogs >= 3, oder
 // examiners >= 3, ...) wurde abgelöst weil die einzelnen Signale alle in
@@ -41,10 +44,13 @@ export interface ClassificationCounts {
  * Decide an A/B/C tag for a single card based on times_asked + flagged.
  * Pure function — does not mutate the card.
  */
+/** Mindest-times_asked für B-Kategorie. Karten mit weniger fallen in C. */
+export const B_THRESHOLD = 3;
+
 export function classifyPriority(card: Flashcard): Priority {
   const timesAsked = Number(card.timesAsked ?? 0) || 0;
   if (card.flagged || timesAsked >= A_THRESHOLD) return 'A';
-  if (timesAsked >= 2) return 'B';
+  if (timesAsked >= B_THRESHOLD) return 'B';
   return 'C';
 }
 

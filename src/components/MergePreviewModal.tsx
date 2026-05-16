@@ -40,7 +40,7 @@ export default function MergePreviewModal({ sources, suggestion, onConfirm, onCa
   const newProb = totalAsked > 0 ? Math.min(100, Math.round((totalAsked / 6) * 100)) : 0;
   const newPriority: 'A' | 'B' | 'C' =
     sources.some(c => c.flagged) || totalAsked >= 6 ? 'A'
-    : totalAsked >= 2 ? 'B' : 'C';
+    : totalAsked >= 3 ? 'B' : 'C';
 
   const handleConfirm = () => {
     onConfirm({ ...suggestion, front: front.trim(), back: back.trim(), difficulty });

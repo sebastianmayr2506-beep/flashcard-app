@@ -16,7 +16,7 @@ import { useAuth } from './hooks/useAuth';
 import { useGoogleDrive } from './hooks/useGoogleDrive';
 import { extractParentLinks } from './utils/import';
 import { calculateDailyPlan, getCardsRatedToday, getNewCardsDoneToday } from './utils/dailyGoal';
-import { classifyAll, applyFocus, type FocusMode } from './utils/priority';
+import { classifyAll, classifyPriority, applyFocus, A_THRESHOLD, type FocusMode } from './utils/priority';
 import { normalizeAll, type NormalizationSummary } from './utils/normalizeStats';
 import { generateMCBatch } from './utils/persistentMC';
 
@@ -532,11 +532,18 @@ export default function App() {
     // timesAsked: sum — the combined topic was asked N times total
     const timesAsked = mergeSources.reduce((s, c) => s + (c.timesAsked ?? 0), 0);
 
-    // probabilityPercent: max — if any source card has high exam probability,
-    // the merged topic inherits that. (Averaging would artificially lower the value.)
-    const probabilityPercent = mergeSources.reduce(
-      (max, c) => Math.max(max, c.probabilityPercent ?? 0), 0
-    ) || undefined;
+    // probabilityPercent: re-derived from the merged timesAsked via the v3
+    // heuristic (siehe priority.ts + DEVELOPMENT.md Migration #1).
+    // 6× = 100% Klassiker. Vorher wurde MAX der Quellen genommen — das ist
+    // falsch sobald die Summe die Decke übersteigt (z.B. 7× sollte 100%
+    // sein, nicht "17% weil eine Quellkarte zufällig 17% hatte").
+    const probabilityPercent = timesAsked > 0
+      ? Math.min(100, Math.round((timesAsked / A_THRESHOLD) * 100))
+      : undefined;
+
+    // flagged: wenn EINE der Quellkarten geflaggt war, bleibt die Markierung.
+    // User-Intention erhalten.
+    const flagged = mergeSources.some(c => c.flagged);
 
     // Set-fields: union (deduplicated)
     const union = <T,>(arrs: (T[] | undefined)[]): T[] =>
@@ -547,6 +554,14 @@ export default function App() {
     const askedByExaminers = union(mergeSources.map(c => c.askedByExaminers));
     const askedInCatalogs  = union(mergeSources.map(c => c.askedInCatalogs));
     const customTags       = union(mergeSources.map(c => c.customTags));
+
+    // priority: klassifizieren basierend auf merged stats. Die neue Karte
+    // ist algorithm-driven (priorityLocked bleibt false default), also gilt
+    // die normale v3-Heuristik.
+    const priority = classifyPriority({
+      timesAsked,
+      flagged,
+    } as Flashcard);
 
     // Create the new merged card (addCard returns the created card with its new id)
     const created = addCard({
@@ -561,6 +576,8 @@ export default function App() {
       timesAsked: timesAsked > 0 ? timesAsked : undefined,
       askedByExaminers,
       askedInCatalogs,
+      flagged,
+      priority,
     });
     const newCardId = created.id;
 

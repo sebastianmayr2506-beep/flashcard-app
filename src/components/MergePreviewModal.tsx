@@ -33,8 +33,14 @@ export default function MergePreviewModal({ sources, suggestion, onConfirm, onCa
   const mixedSubjects = allSubjects.size > 1;
 
   // Computed metadata (mirrors App.tsx handleConfirmMerge logic — shown as preview)
-  const maxProb = sources.reduce((max, c) => Math.max(max, c.probabilityPercent ?? 0), 0);
+  // v3-Heuristik: probability aus merged timesAsked ableiten (6× = 100%).
+  // A_THRESHOLD = 6 (siehe priority.ts) — hier hardcoded um Cross-module-
+  // Import-Kreis zu vermeiden.
   const totalAsked = sources.reduce((s, c) => s + (c.timesAsked ?? 0), 0);
+  const newProb = totalAsked > 0 ? Math.min(100, Math.round((totalAsked / 6) * 100)) : 0;
+  const newPriority: 'A' | 'B' | 'C' =
+    sources.some(c => c.flagged) || totalAsked >= 6 ? 'A'
+    : totalAsked >= 2 ? 'B' : 'C';
 
   const handleConfirm = () => {
     onConfirm({ ...suggestion, front: front.trim(), back: back.trim(), difficulty });
@@ -169,19 +175,31 @@ export default function MergePreviewModal({ sources, suggestion, onConfirm, onCa
                       <option value="schwer">schwer</option>
                     </select>
                   </div>
-                  {/* Computed metadata preview */}
-                  {maxProb > 0 && (
-                    <div className="text-sm text-[#9ca3af]">
-                      Wahrscheinlichkeit: <span className="text-amber-400 font-semibold">{maxProb}%</span>
-                      <span className="text-[#6b7280] text-xs ml-1">(Maximum)</span>
-                    </div>
-                  )}
+                  {/* Computed metadata preview — derived from merged stats */}
                   {totalAsked > 0 && (
                     <div className="text-sm text-[#9ca3af]">
                       Mal gefragt: <span className="text-white font-semibold">{totalAsked}×</span>
                       <span className="text-[#6b7280] text-xs ml-1">(Summe)</span>
                     </div>
                   )}
+                  {newProb > 0 && (
+                    <div className="text-sm text-[#9ca3af]">
+                      Wahrscheinlichkeit: <span className="text-amber-400 font-semibold">{newProb}%</span>
+                      <span className="text-[#6b7280] text-xs ml-1">(neu berechnet)</span>
+                    </div>
+                  )}
+                  <div className="text-sm text-[#9ca3af]">
+                    Priorität:{' '}
+                    <span className={`font-semibold ${
+                      newPriority === 'A' ? 'text-red-300' :
+                      newPriority === 'B' ? 'text-amber-300' : 'text-slate-300'
+                    }`}>
+                      {newPriority}
+                    </span>
+                    <span className="text-[#6b7280] text-xs ml-1">
+                      ({newPriority === 'A' ? 'Muss können' : newPriority === 'B' ? 'Sollte kennen' : 'Nice to know'})
+                    </span>
+                  </div>
                 </div>
               </div>
             ) : (

@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Flashcard, AppSettings } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
 import { calculateDailyPlan, getCardsRatedToday, getNewCardsDoneToday } from '../utils/dailyGoal';
@@ -6,6 +7,7 @@ import { applyFocus, type FocusMode } from '../utils/priority';
 import InfoTooltip from '../components/InfoTooltip';
 import ProbabilityBadge from '../components/ProbabilityBadge';
 import SrsLevelGrid, { type SrsKey } from '../components/SrsLevelGrid';
+import MarkdownText from '../components/MarkdownText';
 
 interface Props {
   cards: Flashcard[];
@@ -331,13 +333,17 @@ function TagesZiel({
   const goalDone = ratedToday >= progressTotal && progressTotal > 0;
   const autoMode = settings.dailyNewCardGoalMode === 'auto';
 
+  // Preview-Modal: User klickt auf "X Wdh." oder "X Neu" um die Karten
+  // (Frage + Antwort) vorab anzusehen — ohne den Lern-Flow zu starten.
+  const [previewKind, setPreviewKind] = useState<'review' | 'new' | null>(null);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="text-sm font-semibold text-white flex items-center gap-2">
           Heute zu lernen
           <InfoTooltip
-            text="Dein Tagesplan: fällige Wiederholungen + neue Karten gemäß deinem Tageslimit. Wenn Fokus aktiv ist, nur aus dem Fokus-Set. 'Jetzt lernen' arbeitet die Liste durch."
+            text="Dein Tagesplan: fällige Wiederholungen + neue Karten gemäß deinem Tageslimit. Wenn Fokus aktiv ist, nur aus dem Fokus-Set. 'Jetzt lernen' arbeitet die Liste durch. Tipp: Klick auf die Zahl unter um die heutigen Karten vorab anzusehen."
           />
         </h3>
         {goalDone && (
@@ -354,9 +360,24 @@ function TagesZiel({
       </div>
       {totalToday > 0 && (
         <div className="flex justify-center gap-4 text-sm">
-          <span className="text-amber-400 font-medium">{plan.reviewCards.length} Wdh.</span>
+          {/* Klickbar — öffnet Preview-Modal mit den heutigen Karten */}
+          <button
+            onClick={() => setPreviewKind('review')}
+            disabled={plan.reviewCards.length === 0}
+            className="text-amber-400 font-medium underline-offset-2 hover:underline disabled:no-underline disabled:cursor-default"
+            title={plan.reviewCards.length > 0 ? 'Heutige Wiederholungs-Karten ansehen' : undefined}
+          >
+            {plan.reviewCards.length} Wdh.
+          </button>
           <span className="text-[#3d4168]">·</span>
-          <span className="text-purple-300 font-medium">{plan.newCards.length} Neu</span>
+          <button
+            onClick={() => setPreviewKind('new')}
+            disabled={plan.newCards.length === 0}
+            className="text-purple-300 font-medium underline-offset-2 hover:underline disabled:no-underline disabled:cursor-default"
+            title={plan.newCards.length > 0 ? 'Heutige neue Karten ansehen' : undefined}
+          >
+            {plan.newCards.length} Neu
+          </button>
           {plan.reviewOverflow > 0 && (
             <>
               <span className="text-[#3d4168]">·</span>
@@ -364,6 +385,15 @@ function TagesZiel({
             </>
           )}
         </div>
+      )}
+
+      {previewKind && createPortal(
+        <TodayPreviewModal
+          kind={previewKind}
+          cards={previewKind === 'review' ? plan.reviewCards : plan.newCards}
+          onClose={() => setPreviewKind(null)}
+        />,
+        document.body,
       )}
 
       {/* Progress bar */}
@@ -507,6 +537,84 @@ function FocusToggleInline({
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Today-Preview Modal ───────────────────────────────────────────────
+// Read-only Liste der heutigen Karten (Wiederholungen oder neue). User
+// kann durchscrollen, Frage und Antwort sehen. Bewertet nichts, ändert
+// keinen Lernfortschritt — reines Spickeln.
+
+function TodayPreviewModal({
+  kind,
+  cards,
+  onClose,
+}: {
+  kind: 'review' | 'new';
+  cards: Flashcard[];
+  onClose: () => void;
+}) {
+  const title = kind === 'review' ? '🔄 Heutige Wiederholungen' : '🆕 Heutige neue Karten';
+  const subtitle = kind === 'review'
+    ? `${cards.length} Karte${cards.length !== 1 ? 'n' : ''} — fällig laut SRS`
+    : `${cards.length} Karte${cards.length !== 1 ? 'n' : ''} — heute neu einzuführen`;
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] bg-black/75 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl bg-[#1a1d27] rounded-3xl border border-[#2d3148] shadow-2xl flex flex-col max-h-[85vh]"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-[#2d3148]">
+          <div>
+            <h3 className="text-base font-bold text-white">{title}</h3>
+            <p className="text-xs text-[#9ca3af] mt-0.5">{subtitle}</p>
+          </div>
+          <button onClick={onClose} className="text-[#9ca3af] hover:text-white text-2xl leading-none">✕</button>
+        </div>
+
+        {/* Card list */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {cards.length === 0 ? (
+            <p className="text-center text-sm text-[#6b7280] py-12">Keine Karten in dieser Kategorie.</p>
+          ) : (
+            cards.map((card, i) => (
+              <div
+                key={card.id}
+                className="bg-[#1e2130] border border-[#2d3148] rounded-xl p-3 space-y-2"
+              >
+                <div className="flex items-start gap-2">
+                  <span className="text-[10px] font-mono text-[#6b7280] shrink-0 pt-0.5">#{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-semibold text-indigo-400 uppercase tracking-wider mb-1">Frage</p>
+                    <div className="text-sm text-white leading-snug">
+                      <MarkdownText text={card.front || '(leer)'} />
+                    </div>
+                  </div>
+                </div>
+                <div className="pl-6">
+                  <p className="text-[10px] font-semibold text-purple-400 uppercase tracking-wider mb-1">Antwort</p>
+                  <div className="text-sm text-[#d1d5db] leading-snug">
+                    <MarkdownText text={card.back || '(leer)'} />
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="shrink-0 px-5 py-3 border-t border-[#2d3148] text-center">
+          <p className="text-[11px] text-[#6b7280]">
+            💡 Diese Liste ist read-only. Tippe Schließen und dann „Jetzt lernen" um zu starten.
+          </p>
+        </div>
       </div>
     </div>
   );

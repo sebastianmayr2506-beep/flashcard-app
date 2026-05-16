@@ -54,30 +54,22 @@ export async function findDuplicatesViaAI(
     .join('\n');
 
   const prompt = [
-    'Du analysierst eine Liste von Karteikarten-Fragen aus einer Lernapp.',
-    'Aufgabe: Finde **echte inhaltliche Duplikate** — Fragen die im Kern dasselbe wollen,',
-    'auch wenn sie unterschiedlich formuliert sind (z.B. "Was ist X?" und "Erkläre X").',
+    'Du analysierst Karteikarten-Fragen einer Lern-App und findest inhaltliche Duplikate.',
     '',
-    'WICHTIG:',
-    '- Nur als Duplikat gruppieren wenn der **Antwort-Inhalt** im Wesentlichen identisch wäre.',
-    '- Verwandte Themen (z.B. "Was ist Industrie 4.0" und "Was ist Industrie 5.0") sind NICHT Duplikate.',
-    '- Karten mit unterschiedlichem Detail-Grad zum gleichen Thema (z.B. "Was ist X?" vs',
-    '  "Was ist X und welche Beispiele gibt es?") SIND Duplikate — die längere subsummiert die kürzere.',
-    '- Gruppen müssen mindestens 2 Karten haben.',
-    '- Eine Karte darf nur in EINER Gruppe sein.',
-    '- Wenn du nichts findest, gib einfach `{"groups": []}` zurück.',
+    'REGELN:',
+    '1. Duplikat = beide Fragen wollen im Kern dieselbe Antwort, auch wenn anders formuliert.',
+    '2. Verwandte aber unterschiedliche Themen sind KEIN Duplikat (z.B. "Industrie 4.0" ≠ "Industrie 5.0").',
+    '3. Detailtiefe-Varianten zum gleichen Thema SIND Duplikate (kurze Frage subsummiert sich in lange).',
+    '4. Mindestens 2 Karten pro Gruppe. Eine Karte nur in einer Gruppe.',
+    '5. reasoning: max. 15 Wörter pro Gruppe.',
+    '6. Wenn keine Duplikate gefunden → `{"groups": []}`',
     '',
     'Karten-Fragen (durchnummeriert):',
     '',
     numberedFronts,
     '',
-    'Antworte NUR mit gültigem JSON in genau diesem Format:',
-    '{',
-    '  "groups": [',
-    '    { "cardIds": [3, 7, 21], "reasoning": "Alle fragen nach der Definition von X" },',
-    '    { "cardIds": [12, 45], "reasoning": "..." }',
-    '  ]',
-    '}',
+    'Antworte AUSSCHLIESSLICH mit gültigem JSON, kein Markdown, keine Erklärung außerhalb des JSON:',
+    '{"groups": [{"cardIds": [3, 7], "reasoning": "kurze Begründung"}]}',
   ].join('\n');
 
   const responseSchema = {
@@ -102,7 +94,7 @@ export async function findDuplicatesViaAI(
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
       temperature: 0.2,           // niedrig: deterministische Cluster
-      maxOutputTokens: 8192,
+      maxOutputTokens: 16384,     // mehr Headroom für viele Gruppen bei großen Bibliotheken
       responseMimeType: 'application/json',
       responseSchema,
     },
@@ -110,24 +102,43 @@ export async function findDuplicatesViaAI(
 
   const { text } = await callAIWithFallback(keys, geminiBody, prompt);
 
-  // JSON-Parse mit Fallbacks (siehe cardChatAI.ts für die Logik)
-  let cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  // Defensive JSON-Parse — KI kann verschiedenste Sachen zurückgeben:
+  //  - Leeren String (Safety-Filter oder „nichts gefunden")
+  //  - Plain prose ohne JSON
+  //  - Markdown mit ```json …```
+  //  - JSON mit Kommentaren / trailing commas
+  // Wir tolerieren das und behandeln „nichts parsbar" als „keine Duplikate".
+  const raw = (text ?? '').trim();
+  if (!raw) {
+    console.info('[aiDuplicateScan] leere Antwort — interpretiert als "keine Duplikate"');
+    return [];
+  }
+
+  let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   const firstBrace = cleaned.indexOf('{');
   const lastBrace = cleaned.lastIndexOf('}');
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+  if (firstBrace < 0 || lastBrace <= firstBrace) {
+    console.warn('[aiDuplicateScan] keine JSON-Struktur in der Antwort gefunden:');
+    console.warn(raw.slice(0, 500));
+    return []; // keine Gruppen — kein Error
   }
+  cleaned = cleaned.slice(firstBrace, lastBrace + 1);
 
   let parsed: { groups?: AIGroupResponse[] };
   try {
     parsed = JSON.parse(cleaned);
   } catch (err) {
-    console.warn('[aiDuplicateScan] parse failed:', err);
-    console.warn('[aiDuplicateScan] raw:', text);
-    throw new Error('KI-Antwort war kein gültiges JSON.');
+    console.warn('[aiDuplicateScan] JSON parse failed:', err instanceof Error ? err.message : err);
+    console.warn('[aiDuplicateScan] raw response (first 500 chars):');
+    console.warn(raw.slice(0, 500));
+    // Throw mit informativem Text — User sieht das im inline error.
+    throw new Error(
+      'KI-Antwort konnte nicht geparst werden. Schau in der Browser-Console nach [aiDuplicateScan] für Details und versuch es nochmal mit weniger Karten (z.B. Filter nach Fach).',
+    );
   }
   if (!Array.isArray(parsed.groups)) {
-    throw new Error('KI-Antwort hat kein "groups"-Array.');
+    console.warn('[aiDuplicateScan] response hatte kein groups-array. Raw:', raw.slice(0, 300));
+    return [];  // graceful: keine Gruppen statt Hard-Error
   }
 
   // Map AI 1-basierte indizes → Card-Objekte. Skip Gruppen mit < 2 Karten

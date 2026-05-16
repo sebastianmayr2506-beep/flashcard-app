@@ -77,6 +77,30 @@ Diese Felder gehören dem User. Auch wenn eine Migration sie technisch ändern k
 
 Dokumentation jeder globalen Datenmigration. Format: Datum · Datei · Was getan · Welche Felder berührt.
 
+### Migration #2 — Reparatur gemergter Karten (Mai 2026)
+
+**Datei:** `supabase_migration_fix_merged_cards.sql`
+
+**Was getan:**
+- priority gesetzt für Karten mit `priority IS NULL AND priority_locked = false`
+  (alle merged Karten die nach Migration #1 entstanden sind und durch den
+  Merge-Bug ohne priority blieben)
+- probability_percent global neu berechnet aus `times_asked` —
+  catcht alle Karten wo der Merge-Bug eine stale MAX-of-sources-Probability
+  hinterlassen hat
+
+**Berührt:** `priority` (nur unlocked + NULL), `probability_percent`
+**Berührt nicht:** SRS, content, times_asked, flagged, priority_locked, alles andere
+
+**Idempotent** — mehrfach laufen lassen ist sicher.
+
+**Anlass:** Bug-Report aus User-Feedback nach Karten-Merge. Probability-
+Anzeige zeigte 17% bei timesAsked=7, kein A/B/C-Tag gesetzt. Code-Fix
+gepusht in `f304356`. Diese Migration repariert die historischen
+fehlerhaften Daten.
+
+---
+
 ### Migration #1 — Klassiker-Score + A/B/C Heuristik v3 (Mai 2026)
 
 **Datei:** `supabase_migration_priority_heuristik_v2.sql`

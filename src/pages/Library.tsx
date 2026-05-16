@@ -35,10 +35,52 @@ interface Props {
 
 type ViewMode = 'grid' | 'list';
 
+// ── Persistierte Filter-Snapshot ──────────────────────────────────────────
+// Hält den letzten Filter-Stand in localStorage damit Navigation zu
+// CardEditor / Dashboard und zurück die Filter nicht resettet. Filter
+// die per Deep-Link gesetzt werden (initialSrsFilter aus dem Dashboard-
+// SRS-Grid) werden NICHT persistiert — sind explizit one-shot.
+interface PersistedFilters {
+  search?: string;
+  filterSubject?: string;
+  filterExaminers?: string[];        // Set wird als Array serialisiert
+  filterDifficulty?: Difficulty | '';
+  filterPriority?: '' | 'A' | 'B' | 'C' | 'none';
+  filterMC?: '' | 'yes' | 'no';
+  filterBlacklist?: 'show' | 'only' | 'hide';
+  filterSet?: string;
+  filterCatalog?: string;
+  filterFlagged?: boolean;
+  sortBy?: 'default' | 'probability';
+  viewMode?: ViewMode;
+  showMoreFilters?: boolean;
+}
+
+const FILTER_KEY = 'library:filters';
+
+function loadLibraryFilters(): PersistedFilters | null {
+  try {
+    const raw = localStorage.getItem(FILTER_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as PersistedFilters;
+  } catch { return null; }
+}
+
+function saveLibraryFilters(filters: PersistedFilters): void {
+  try {
+    localStorage.setItem(FILTER_KEY, JSON.stringify(filters));
+  } catch { /* localStorage voll oder disabled — fail silently */ }
+}
+
 export default function Library({ cards, settings, sets, links, flagAttempts, userId, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onBulkSetBlacklist, onUpdateCard, onMergeCards, onGenerateMC, onNavigate, initialSrsFilter }: Props) {
-  const [search, setSearch] = useState('');
-  const [filterSubject, setFilterSubject] = useState('');
-  const [filterExaminers, setFilterExaminers] = useState<Set<string>>(new Set());
+  // Filter-State persistiert in localStorage damit beim Navigieren in
+  // CardEditor + zurück die Filter nicht resetten.
+  const persisted = loadLibraryFilters();
+  const [search, setSearch] = useState(persisted?.search ?? '');
+  const [filterSubject, setFilterSubject] = useState(persisted?.filterSubject ?? '');
+  const [filterExaminers, setFilterExaminers] = useState<Set<string>>(
+    new Set(persisted?.filterExaminers ?? []),
+  );
   const [examinerDropdownOpen, setExaminerDropdownOpen] = useState(false);
   const examinerDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -52,27 +94,41 @@ export default function Library({ cards, settings, sets, links, flagAttempts, us
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
-  const [filterDifficulty, setFilterDifficulty] = useState<Difficulty | ''>('');
-  const [filterPriority, setFilterPriority] = useState<'' | 'A' | 'B' | 'C' | 'none'>('');
-  const [filterMC, setFilterMC] = useState<'' | 'yes' | 'no'>('');
+  const [filterDifficulty, setFilterDifficulty] = useState<Difficulty | ''>(persisted?.filterDifficulty ?? '');
+  const [filterPriority, setFilterPriority] = useState<'' | 'A' | 'B' | 'C' | 'none'>(persisted?.filterPriority ?? '');
+  const [filterMC, setFilterMC] = useState<'' | 'yes' | 'no'>(persisted?.filterMC ?? '');
   // 'show' = default, show all incl. blacklisted with badge
   // 'only' = only blacklisted cards (for managing them)
   // 'hide' = hide blacklisted entirely (sometimes useful for clean browsing)
-  const [filterBlacklist, setFilterBlacklist] = useState<'show' | 'only' | 'hide'>('show');
+  const [filterBlacklist, setFilterBlacklist] = useState<'show' | 'only' | 'hide'>(persisted?.filterBlacklist ?? 'show');
   // SRS-Status filter has no longer a manual UI control (cleanup pass to
   // declutter the filter bar). It's still wired up so the Dashboard SRS-grid
   // can deep-link into Library with a pre-filter applied, with the banner
   // explaining the active filter + a clear-button on it.
+  // initialSrsFilter prop wins über persisted state (User kommt via
+  // Dashboard-Drill-Down → erwartet den filter).
   const [filterSRS, setFilterSRS] = useState<SRSStatus | ''>(initialSrsFilter as SRSStatus | '' ?? '');
   const [showSrsFilterBanner, setShowSrsFilterBanner] = useState(!!initialSrsFilter);
-  const [filterSet, setFilterSet] = useState('');
-  const [filterCatalog, setFilterCatalog] = useState('');
-  const [filterFlagged, setFilterFlagged] = useState(false);
-  const [sortBy, setSortBy] = useState<'default' | 'probability'>('default');
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [filterSet, setFilterSet] = useState(persisted?.filterSet ?? '');
+  const [filterCatalog, setFilterCatalog] = useState(persisted?.filterCatalog ?? '');
+  const [filterFlagged, setFilterFlagged] = useState(persisted?.filterFlagged ?? false);
+  const [sortBy, setSortBy] = useState<'default' | 'probability'>(persisted?.sortBy ?? 'default');
+  const [viewMode, setViewMode] = useState<ViewMode>(persisted?.viewMode ?? 'grid');
   // Specialist filters (Schwierigkeit, MC-Status, Katalogjahr) are hidden
   // behind a "+ Mehr Filter"-Toggle to keep the main bar slim.
-  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [showMoreFilters, setShowMoreFilters] = useState(persisted?.showMoreFilters ?? false);
+
+  // Persist filter state whenever it changes — survives navigation to
+  // CardEditor / Dashboard / etc. and back.
+  useEffect(() => {
+    saveLibraryFilters({
+      search, filterSubject, filterExaminers: [...filterExaminers],
+      filterDifficulty, filterPriority, filterMC, filterBlacklist,
+      filterSet, filterCatalog, filterFlagged, sortBy, viewMode, showMoreFilters,
+    });
+  }, [search, filterSubject, filterExaminers, filterDifficulty, filterPriority,
+      filterMC, filterBlacklist, filterSet, filterCatalog, filterFlagged,
+      sortBy, viewMode, showMoreFilters]);
 
   // Selection mode
   const [selectionMode, setSelectionMode] = useState(false);

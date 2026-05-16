@@ -7,6 +7,35 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-16 — Duplikat-Finder: KI-Tiefenscan für semantische Duplikate
+
+**What:** Der Jaccard-basierte Duplikat-Finder verpasst Duplikate die nicht
+auf Wort-Überlappung basieren — andere Phrasings, Synonyme, Abkürzungen,
+unterschiedliche Detailtiefe. Neuer „🤖 KI-Tiefenscan"-Button im Modal
+schickt alle Karten-Fronts an die KI und lässt sie semantisch clustern.
+
+**Wie's funktioniert:**
+- Button im DuplicateFinderModal — sichtbar wenn mind. ein KI-Key gesetzt
+- Klick → schickt alle Fronts (numbered) an die KI mit Schema-erzwungenem
+  JSON-Response
+- KI returns Gruppen `[{ cardIds: [3, 7, 21], reasoning: "..." }]`
+- Ergebnisse werden ZUSÄTZLICH zu Jaccard-Treffern angezeigt mit
+  🤖 KI-erkannt Badge und 💡 Begründung
+- Overlapping Karten (bereits in Jaccard-Gruppe) werden gefiltert um
+  Doppel-Anzeige zu vermeiden
+
+**Provider-Chain:** Gemini 2.5 Flash → Groq → Claude (gleiche Logik wie
+MC-Generation + Chat).
+
+**Kosten:** Bei 1037 Karten ~32K Input-Tokens, ~3K Output. Auf Gemini Free
+praktisch gratis (1500 Requests/Tag-Limit weit über Realbedarf).
+
+**Files:** `src/utils/aiDuplicateScan.ts` (neu),
+`src/components/DuplicateFinderModal.tsx`, `src/pages/Library.tsx`
+(apiKeys prop durchgereicht).
+
+---
+
 ## 2026-05-14 — Migration #1: Heuristik v3 für Priority + Klassiker-Score
 
 **Globale Datenmigration** für alle User — erste ihrer Art. Doku-Regelwerk

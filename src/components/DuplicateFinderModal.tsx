@@ -2,12 +2,16 @@ import { useMemo, useState, useEffect } from 'react';
 import type { Flashcard } from '../types/card';
 import { getSRSStatus } from '../types/card';
 import { findDuplicateGroups } from '../utils/duplicateDetect';
+import type { DuplicateGroup } from '../utils/duplicateDetect';
+import { findDuplicatesViaAI } from '../utils/aiDuplicateScan';
 
 interface Props {
   cards: Flashcard[];
   /** Triggers the existing AI-merge flow with the given card IDs. */
   onMergeCards: (cardIds: string[]) => void;
   onClose: () => void;
+  /** API-Keys für KI-Tiefenscan. Wenn alle leer → Button disabled. */
+  apiKeys?: { gemini?: string; anthropic?: string; groq?: string };
 }
 
 /**
@@ -19,7 +23,7 @@ interface Props {
  * default *all* cards in the group are pre-checked since most groups
  * are small (2–3 cards).
  */
-export default function DuplicateFinderModal({ cards, onMergeCards, onClose }: Props) {
+export default function DuplicateFinderModal({ cards, onMergeCards, onClose, apiKeys }: Props) {
   const [threshold, setThreshold] = useState(0.6);
   const [filterSubject, setFilterSubject] = useState('');
   const [filterExaminer, setFilterExaminer] = useState('');
@@ -28,6 +32,12 @@ export default function DuplicateFinderModal({ cards, onMergeCards, onClose }: P
   // groups reshuffle and selections are reset (intentional: user reviews fresh).
   const [checkedKey, setCheckedKey] = useState(0);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+
+  // ── KI-Tiefenscan State ──────────────────────────────────────────────────
+  const [aiGroups, setAiGroups] = useState<DuplicateGroup[] | null>(null);
+  const [aiScanning, setAiScanning] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const hasAnyKey = !!(apiKeys?.gemini?.trim() || apiKeys?.anthropic?.trim() || apiKeys?.groq?.trim());
 
   const allSubjects = useMemo(() => {
     const s = new Set<string>();
@@ -41,15 +51,37 @@ export default function DuplicateFinderModal({ cards, onMergeCards, onClose }: P
     return [...s].sort();
   }, [cards]);
 
-  const groups = useMemo(() => {
+  const jaccardGroups = useMemo(() => {
     return findDuplicateGroups(cards, {
       threshold,
       subject: filterSubject || undefined,
       examiner: filterExaminer || undefined,
     });
-    // checkedKey isn't used in groups themselves — it's just a forced reset signal
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cards, threshold, filterSubject, filterExaminer]);
+
+  // Merge Jaccard + AI groups. Wenn beide dasselbe Karten-Paar finden,
+  // gewinnt der Jaccard-Eintrag (deterministisch, hat ggf. exact-match-Flag).
+  // KI-Gruppen die KEINE Karten überlappen mit Jaccard kommen dazu.
+  const groups: (DuplicateGroup & { source?: 'ai' | 'jaccard' })[] = useMemo(() => {
+    const jacc = jaccardGroups.map(g => ({ ...g, source: 'jaccard' as const }));
+    if (!aiGroups || aiGroups.length === 0) return jacc;
+
+    // Karten-IDs die schon in Jaccard-Gruppen drin sind
+    const seenInJacc = new Set<string>();
+    for (const g of jaccardGroups) for (const c of g.cards) seenInJacc.add(c.id);
+
+    // KI-Gruppen filtern: nur Gruppen aufnehmen wo mindestens 2 Karten NOCH NICHT
+    // in einer Jaccard-Gruppe sind (sonst wäre's redundant)
+    const supplementary = aiGroups
+      .map(g => ({
+        ...g,
+        cards: g.cards.filter(c => !seenInJacc.has(c.id)),
+      }))
+      .filter(g => g.cards.length >= 2)
+      .map(g => ({ ...g, source: 'ai' as const }));
+
+    return [...jacc, ...supplementary];
+  }, [jaccardGroups, aiGroups]);
 
   // Reset selection state whenever groups reshuffle. Default: all in.
   useEffect(() => {
@@ -66,7 +98,7 @@ export default function DuplicateFinderModal({ cards, onMergeCards, onClose }: P
     });
   };
 
-  const handleMerge = (group: ReturnType<typeof findDuplicateGroups>[number]) => {
+  const handleMerge = (group: DuplicateGroup) => {
     const ids = group.cards.filter(c => checked.has(c.id)).map(c => c.id);
     if (ids.length < 2) return;
     onMergeCards(ids);
@@ -75,6 +107,30 @@ export default function DuplicateFinderModal({ cards, onMergeCards, onClose }: P
     // `cards` prop updates → useMemo re-runs findDuplicateGroups → the
     // just-merged group disappears, user sees the next group automatically.
     // Same flow on cancel: nothing changed, duplicate finder still showing.
+  };
+
+  const handleAiScan = async () => {
+    if (!apiKeys || !hasAnyKey || aiScanning) return;
+    setAiError(null);
+    setAiScanning(true);
+    try {
+      // Optional: respect current subject/examiner filter — sonst macht's
+      // wenig Sinn neue Treffer zu zeigen die der User grad ausgeschlossen hat.
+      const pool = cards.filter(c => {
+        if (filterSubject && !(c.subjects ?? []).includes(filterSubject)) return false;
+        if (filterExaminer && !(c.examiners ?? []).includes(filterExaminer)) return false;
+        return true;
+      });
+      const result = await findDuplicatesViaAI(pool, apiKeys);
+      setAiGroups(result);
+      if (result.length === 0) {
+        setAiError('KI hat keine weiteren semantischen Duplikate gefunden.');
+      }
+    } catch (err) {
+      setAiError(`Scan-Fehler: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setAiScanning(false);
+    }
   };
 
   const totalGroups = groups.length;
@@ -153,6 +209,35 @@ export default function DuplicateFinderModal({ cards, onMergeCards, onClose }: P
               {allExaminers.map(e => <option key={e} value={e}>{e}</option>)}
             </select>
           </div>
+
+          {/* KI-Tiefenscan */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleAiScan}
+              disabled={!hasAnyKey || aiScanning}
+              title={!hasAnyKey ? 'Kein KI-Key in den Einstellungen' : 'Semantische Duplikate finden — auch bei anderem Phrasing / Synonymen'}
+              className="text-xs px-3 py-1.5 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/40 text-purple-300 font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {aiScanning ? (
+                <>
+                  <span className="inline-block w-3 h-3 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+                  KI scannt {cards.length} Karten…
+                </>
+              ) : aiGroups ? (
+                <>🤖 KI-Tiefenscan erneut starten</>
+              ) : (
+                <>🤖 KI-Tiefenscan starten</>
+              )}
+            </button>
+            {aiGroups && (
+              <span className="text-[11px] text-purple-300">
+                {aiGroups.length} zusätzliche Gruppe{aiGroups.length !== 1 ? 'n' : ''} gefunden
+              </span>
+            )}
+            {aiError && (
+              <span className="text-[11px] text-amber-400">{aiError}</span>
+            )}
+          </div>
         </div>
 
         {/* Groups list */}
@@ -173,7 +258,9 @@ export default function DuplicateFinderModal({ cards, onMergeCards, onClose }: P
                 className={`rounded-xl border overflow-hidden ${
                   group.hasExactMatch
                     ? 'border-amber-500/40 bg-amber-500/5'
-                    : 'border-[#2d3148] bg-[#1e2130]'
+                    : group.source === 'ai'
+                      ? 'border-purple-500/40 bg-purple-500/5'
+                      : 'border-[#2d3148] bg-[#1e2130]'
                 }`}
               >
                 <div className="px-3 py-2 flex items-center justify-between gap-2 border-b border-[#2d3148]">
@@ -183,6 +270,10 @@ export default function DuplicateFinderModal({ cards, onMergeCards, onClose }: P
                         <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
                           Exakte Dublette
                         </span>
+                      ) : group.source === 'ai' ? (
+                        <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          🤖 KI-erkannt
+                        </span>
                       ) : (
                         <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                           {(group.maxSimilarity * 100).toFixed(0)} % ähnlich
@@ -191,8 +282,8 @@ export default function DuplicateFinderModal({ cards, onMergeCards, onClose }: P
                       <span className="text-xs text-[#9ca3af]">{group.cards.length} Karten</span>
                     </div>
                     {group.label && (
-                      <p className="text-[11px] text-[#6b7280] mt-0.5 truncate">
-                        Stichworte: {group.label}
+                      <p className={`text-[11px] mt-0.5 ${group.source === 'ai' ? 'text-purple-300/80' : 'text-[#6b7280] truncate'}`}>
+                        {group.source === 'ai' ? `💡 ${group.label}` : `Stichworte: ${group.label}`}
                       </p>
                     )}
                   </div>

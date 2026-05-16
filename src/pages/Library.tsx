@@ -670,6 +670,11 @@ export default function Library({ cards, settings, sets, links, flagAttempts, us
           cards={cards}
           onMergeCards={onMergeCards}
           onClose={() => setShowDuplicateFinder(false)}
+          apiKeys={{
+            gemini: settings.geminiApiKey,
+            anthropic: settings.anthropicApiKey,
+            groq: settings.groqApiKey,
+          }}
         />,
         document.body
       )}

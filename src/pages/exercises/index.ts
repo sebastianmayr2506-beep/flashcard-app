@@ -1,0 +1,51 @@
+// Manifest aller verfügbaren Übungen.
+//
+// Neue Übungen werden hier registriert. Die `component` wird lazy-geladen,
+// damit der initiale App-Bundle nicht durch alle Übungen aufgebläht wird —
+// sie tauchen nur im Network auf, wenn der User die Übung tatsächlich öffnet.
+//
+// Konventionen siehe EXERCISE_GUIDE.md.
+
+import { lazy, type LazyExoticComponent, type ComponentType } from 'react';
+
+export type ExerciseDifficulty = 'einfach' | 'mittel' | 'schwer';
+
+export interface ExerciseProps {
+  onClose: () => void;
+}
+
+export interface ExerciseMeta {
+  /** URL-/Storage-Slug, eindeutig. Stabil halten, einmal vergeben. */
+  slug: string;
+  /** Anzeigetitel in der Übungs-Liste + im Header. */
+  title: string;
+  /** 1–2 Sätze Beschreibung — was die Übung macht. */
+  description: string;
+  /** Fachgebiet, z.B. "Kostenrechnung", "BWL", "Mathematik". */
+  subject?: string;
+  /** Schwierigkeit. */
+  difficulty: ExerciseDifficulty;
+  /** Emoji/Icon für die Karte. */
+  icon?: string;
+  /** Geschätzte Dauer in Minuten. */
+  estimatedMinutes?: number;
+  /** Lazy-geladene Komponente. */
+  component: LazyExoticComponent<ComponentType<ExerciseProps>>;
+}
+
+export const EXERCISES: ExerciseMeta[] = [
+  {
+    slug: 'bueb-bab-trainer',
+    title: 'BÜB → BAB → Kostenträger',
+    description: 'Tischlerei Berger KG, März — kompletter Weg vom FIBU-Aufwand über Betriebsüberleitung, Betriebsabrechnungsbogen bis zu den Selbstkosten der Produkte.',
+    subject: 'Kostenrechnung',
+    difficulty: 'schwer',
+    icon: '📊',
+    estimatedMinutes: 30,
+    component: lazy(() => import('./bueb-bab-trainer')),
+  },
+];
+
+export function findExercise(slug: string): ExerciseMeta | undefined {
+  return EXERCISES.find(e => e.slug === slug);
+}

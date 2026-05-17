@@ -33,10 +33,11 @@ import AuthPage from './pages/AuthPage';
 import SetsPage from './pages/SetsPage';
 import SetDetail from './pages/SetDetail';
 import ExamMode from './pages/ExamMode';
+import Exercises from './pages/Exercises';
 import MergePreviewModal from './components/MergePreviewModal';
 import SplitPreviewModal from './components/SplitPreviewModal';
 
-type Page = 'dashboard' | 'library' | 'new-card' | 'edit-card' | 'study' | 'import-export' | 'settings' | 'sets' | 'set-detail' | 'exam';
+type Page = 'dashboard' | 'library' | 'new-card' | 'edit-card' | 'study' | 'import-export' | 'settings' | 'sets' | 'set-detail' | 'exam' | 'exercises';
 
 export default function App() {
   const { user, loading: authLoading, signOut } = useAuth();
@@ -98,7 +99,7 @@ export default function App() {
   const [page, setPage] = useState<Page>(() => {
     try {
       const saved = sessionStorage.getItem('app:currentPage');
-      const valid: Page[] = ['dashboard', 'library', 'new-card', 'edit-card', 'study', 'import-export', 'settings', 'sets', 'set-detail', 'exam'];
+      const valid: Page[] = ['dashboard', 'library', 'new-card', 'edit-card', 'study', 'import-export', 'settings', 'sets', 'set-detail', 'exam', 'exercises'];
       // edit-card and set-detail rely on transient state (editingCard, viewingSet)
       // that we don't persist — fall back to their parent page if the transient
       // state isn't available on rehydrate.
@@ -1047,6 +1048,7 @@ export default function App() {
             showToast={showToast}
           />
         )}
+        {page === 'exercises' && <Exercises />}
         {page === 'settings' && (
           <Settings
             settings={settings}

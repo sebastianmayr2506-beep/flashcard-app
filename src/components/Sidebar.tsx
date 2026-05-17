@@ -1,9 +1,12 @@
 import { useState } from 'react';
+import { isAdmin } from '../utils/admin';
 
 interface NavItem {
   id: string;
   icon: string;
   label: string;
+  /** Wenn true: nur für Admin-Email sichtbar. */
+  adminOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -13,14 +16,13 @@ const navItems: NavItem[] = [
   { id: 'new-card',    icon: '+', label: 'Neue Karte' },
   { id: 'study',       icon: '▶', label: 'Lernen' },
   { id: 'exam',        icon: '🎯', label: 'Prüfungsmodus' },
+  { id: 'exercises',   icon: '🧠', label: 'Übungen', adminOnly: true },
   { id: 'import-export', icon: '⇅', label: 'Import / Export' },
   { id: 'settings',    icon: '⚙', label: 'Einstellungen' },
 ];
 
 // Items shown directly in mobile bottom nav (most-used)
 const mobileMainIds = ['dashboard', 'study', 'exam', 'library'];
-const mobileMainItems = navItems.filter(n => mobileMainIds.includes(n.id));
-const mobileMoreItems = navItems.filter(n => !mobileMainIds.includes(n.id));
 
 interface Props {
   active: string;
@@ -34,6 +36,11 @@ export default function Sidebar({ active, onChange, dueCount, onSignOut, userEma
   const [moreOpen, setMoreOpen] = useState(false);
   // set-detail is a sub-page of sets — highlight sets nav item
   const effectiveActive = active === 'set-detail' ? 'sets' : active;
+
+  // Filter admin-only items based on user email
+  const visibleNavItems = navItems.filter(item => !item.adminOnly || isAdmin(userEmail));
+  const mobileMainItems = visibleNavItems.filter(n => mobileMainIds.includes(n.id));
+  const mobileMoreItems = visibleNavItems.filter(n => !mobileMainIds.includes(n.id));
   return (
     <>
       {/* Desktop sidebar */}
@@ -43,7 +50,7 @@ export default function Sidebar({ active, onChange, dueCount, onSignOut, userEma
           <p className="text-xs text-[#6b7280] mt-0.5">Exam Prep</p>
         </div>
         <nav className="flex flex-col gap-1 flex-1">
-          {navItems.map(item => (
+          {visibleNavItems.map(item => (
             <button
               key={item.id}
               onClick={() => onChange(item.id)}

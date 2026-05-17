@@ -16,7 +16,7 @@ const navItems: NavItem[] = [
   { id: 'new-card',    icon: '+', label: 'Neue Karte' },
   { id: 'study',       icon: '▶', label: 'Lernen' },
   { id: 'exam',        icon: '🎯', label: 'Prüfungsmodus' },
-  { id: 'exercises',   icon: '🧠', label: 'Übungen', adminOnly: true },
+  { id: 'exercises',   icon: '🧠', label: 'Übungen' },
   { id: 'import-export', icon: '⇅', label: 'Import / Export' },
   { id: 'settings',    icon: '⚙', label: 'Einstellungen' },
 ];

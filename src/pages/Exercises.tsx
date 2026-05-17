@@ -83,10 +83,6 @@ export default function Exercises() {
             ))}
           </div>
         )}
-
-        <div className="mt-6 bg-[#1e2130]/50 border border-[#2d3148] rounded-xl p-4 text-xs text-[#9ca3af] leading-relaxed">
-          <strong className="text-[#d1d5db]">Hinweis (Admin):</strong> Neue Übungen werden über <code className="px-1 py-0.5 bg-[#252840] rounded text-[10px]">src/pages/exercises/index.ts</code> registriert. Konventionen siehe <code className="px-1 py-0.5 bg-[#252840] rounded text-[10px]">EXERCISE_GUIDE.md</code>.
-        </div>
       </div>
     </div>
   );

@@ -1,18 +1,24 @@
-// BÜB → BAB → Kostenträger Trainer
-// Tischlerei Berger KG, März — kompletter Durchlauf in 9 Phasen.
+// BÜB → BAB → Kostenträger Trainer (v3)
+// Tischlerei Berger KG, März — 9 klickbare Phasen.
 //
-// Quelle: ursprünglich von Claude generiert als bueb-bab-trainer-v2.jsx
-// (Light-Theme, Inline-Styles). Hier portiert auf Tailwind + Dark-Theme
-// mit den shared exercise components aus _shared.tsx, damit die Übung
-// optisch mit dem Rest der App harmoniert.
+// Verbesserungen ggü. v2:
+//   • Klickbare Step-Navigation (StepNav statt linear ProgressBar)
+//   • Schritt 7 redesigned: zwei-Layer-Entscheidung Direkt/Schlüssel →
+//     KS/Verteilungsbasis. Euro-Beträge werden nicht mehr eingegeben,
+//     sondern nach erfolgreicher Klassifizierung in einer Übersichts-
+//     Tabelle automatisch dargestellt.
+//   • Toleranz beim Check für Step 8 + 9 (Rundungs-Slack: ±0.5 % bzw.
+//     ±200 € für Euros, <1 % Abweichung für Prozente).
+//
+// Konventionen siehe EXERCISE_GUIDE.md.
 
 import { useState } from 'react';
 import {
-  ExerciseShell, ProgressBar, StepHeader, InfoBox, FeedbackBox, HintBox,
+  ExerciseShell, StepNav, type StepNavItem, StepHeader, InfoBox, FeedbackBox, HintBox,
   NumIn, ToggleBtn, PrimaryBtn, Card, fmtEur, numFromInput,
 } from './_shared';
 
-// ─── Daten (statisches Übungsszenario) ─────────────────────────────────
+// ─── Daten ─────────────────────────────────────────────────────────────
 interface FibuItem {
   id: number;
   name: string;
@@ -45,53 +51,72 @@ const ZUSATZ = [
 const KORE = 170000;
 const TOTAL_FIBU = FIBU.reduce((s, f) => s + f.amount, 0);
 const MEK_T = 55000, FEK_T = 40000;
-const MEK_TISCHE = 33000, MEK_REGALE = 22000;
-const FEK_TISCHE = 24000, FEK_REGALE = 16000;
-const EK_TOTAL = MEK_T + FEK_T;
-const GK_TOTAL = KORE - EK_TOTAL;
+const MEK_TI = 33000, MEK_RE = 22000;
+const FEK_TI = 24000, FEK_RE = 16000;
+const EK_T = MEK_T + FEK_T;
+const GK_T = KORE - EK_T;
 
 type KsKey = 'material' | 'fertigung' | 'verwaltung' | 'vertrieb';
-const KS: KsKey[] = ['material', 'fertigung', 'verwaltung', 'vertrieb'];
+const KSN: KsKey[] = ['material', 'fertigung', 'verwaltung', 'vertrieb'];
 const KSL: Record<KsKey, string> = { material: 'Material', fertigung: 'Fertigung', verwaltung: 'Verwaltung', vertrieb: 'Vertrieb' };
+
+type BasisKey = 'flaeche' | 'verbrauch' | 'anlagenwert' | 'kapitalbindung' | 'taetigkeit';
+const BASES: { id: BasisKey; label: string; icon: string }[] = [
+  { id: 'flaeche',       label: 'Fläche (m²)',      icon: '📐' },
+  { id: 'verbrauch',     label: 'Verbrauch (kWh)',  icon: '⚡' },
+  { id: 'anlagenwert',   label: 'Anlagenwert (€)',  icon: '🏭' },
+  { id: 'kapitalbindung',label: 'Kapitalbindung (€)', icon: '💰' },
+  { id: 'taetigkeit',    label: 'Tätigkeitsanteil', icon: '👤' },
+];
 
 interface GkItem {
   id: string;
   name: string;
   amount: number;
-  method: 'direkt' | 'schlüssel';
-  pcts?: string;
+  isDirekt: boolean;
+  target?: KsKey;             // wenn isDirekt: welche KS
+  basis?: BasisKey;           // wenn !isDirekt: welcher Verteilungsschlüssel
   dist: Record<KsKey, number>;
 }
 
 const GK_ITEMS: GkItem[] = [
-  { id: 'g1', name: 'Hilfsstoffe (Material-GK)', amount: 15000, method: 'direkt', dist: { material: 15000, fertigung: 0, verwaltung: 0, vertrieb: 0 } },
-  { id: 'g2', name: 'Gehälter Verwaltung', amount: 15000, method: 'direkt', dist: { material: 0, fertigung: 0, verwaltung: 15000, vertrieb: 0 } },
-  { id: 'g3', name: 'Gehälter Vertrieb', amount: 7000, method: 'direkt', dist: { material: 0, fertigung: 0, verwaltung: 0, vertrieb: 7000 } },
-  { id: 'g4', name: 'Hallenmiete', amount: 10000, method: 'schlüssel', pcts: 'Mat 10%, Fert 60%, Verw 20%, Vertr 10%', dist: { material: 1000, fertigung: 6000, verwaltung: 2000, vertrieb: 1000 } },
-  { id: 'g5', name: 'Energie / Strom', amount: 6000, method: 'schlüssel', pcts: 'Mat 10%, Fert 60%, Verw 10%, Vertr 20%', dist: { material: 600, fertigung: 3600, verwaltung: 600, vertrieb: 1200 } },
-  { id: 'g6', name: 'Kalk. Abschreibung', amount: 9000, method: 'schlüssel', pcts: 'Mat 10%, Fert 60%, Verw 20%, Vertr 10%', dist: { material: 900, fertigung: 5400, verwaltung: 1800, vertrieb: 900 } },
-  { id: 'g7', name: 'Kalk. Zinsen', amount: 5000, method: 'schlüssel', pcts: 'Mat 10%, Fert 60%, Verw 10%, Vertr 20%', dist: { material: 500, fertigung: 3000, verwaltung: 500, vertrieb: 1000 } },
-  { id: 'g8', name: 'Kalk. Unternehmerlohn', amount: 5000, method: 'schlüssel', pcts: 'Fert 20%, Verw 60%, Vertr 20%', dist: { material: 0, fertigung: 1000, verwaltung: 3000, vertrieb: 1000 } },
-  { id: 'g9', name: 'Kalk. Miete (Lager)', amount: 3000, method: 'direkt', dist: { material: 3000, fertigung: 0, verwaltung: 0, vertrieb: 0 } },
+  { id: 'g1', name: 'Hilfsstoffe (Material-GK)', amount: 15000, isDirekt: true, target: 'material', dist: { material: 15000, fertigung: 0, verwaltung: 0, vertrieb: 0 } },
+  { id: 'g2', name: 'Gehälter Verwaltung', amount: 15000, isDirekt: true, target: 'verwaltung', dist: { material: 0, fertigung: 0, verwaltung: 15000, vertrieb: 0 } },
+  { id: 'g3', name: 'Gehälter Vertrieb', amount: 7000, isDirekt: true, target: 'vertrieb', dist: { material: 0, fertigung: 0, verwaltung: 0, vertrieb: 7000 } },
+  { id: 'g4', name: 'Hallenmiete', amount: 10000, isDirekt: false, basis: 'flaeche', dist: { material: 1000, fertigung: 6000, verwaltung: 2000, vertrieb: 1000 } },
+  { id: 'g5', name: 'Energie / Strom', amount: 6000, isDirekt: false, basis: 'verbrauch', dist: { material: 600, fertigung: 3600, verwaltung: 600, vertrieb: 1200 } },
+  { id: 'g6', name: 'Kalk. Abschreibung', amount: 9000, isDirekt: false, basis: 'anlagenwert', dist: { material: 900, fertigung: 5400, verwaltung: 1800, vertrieb: 900 } },
+  { id: 'g7', name: 'Kalk. Zinsen', amount: 5000, isDirekt: false, basis: 'kapitalbindung', dist: { material: 500, fertigung: 3000, verwaltung: 500, vertrieb: 1000 } },
+  { id: 'g8', name: 'Kalk. Unternehmerlohn', amount: 5000, isDirekt: false, basis: 'taetigkeit', dist: { material: 0, fertigung: 1000, verwaltung: 3000, vertrieb: 1000 } },
+  { id: 'g9', name: 'Kalk. Miete (Lager)', amount: 3000, isDirekt: true, target: 'material', dist: { material: 3000, fertigung: 0, verwaltung: 0, vertrieb: 0 } },
 ];
 
-const correctKS: Record<KsKey, number> = { material: 0, fertigung: 0, verwaltung: 0, vertrieb: 0 };
-GK_ITEMS.forEach(g => KS.forEach(k => { correctKS[k] += g.dist[k]; }));
-const MGK = correctKS.material, FGK = correctKS.fertigung, VwGK = correctKS.verwaltung, VtGK = correctKS.vertrieb;
-const HK = MEK_T + MGK + FEK_T + FGK;
-const MGK_PCT = Math.round((MGK / MEK_T) * 10000) / 100;
-const FGK_PCT = Math.round((FGK / FEK_T) * 10000) / 100;
-const VwGK_PCT = Math.round((VwGK / HK) * 10000) / 100;
-const VtGK_PCT = Math.round((VtGK / HK) * 10000) / 100;
+const cKS: Record<KsKey, number> = { material: 0, fertigung: 0, verwaltung: 0, vertrieb: 0 };
+GK_ITEMS.forEach(g => KSN.forEach(k => { cKS[k] += g.dist[k]; }));
+const MGK = cKS.material, FGK = cKS.fertigung, VwGK = cKS.verwaltung, VtGK = cKS.vertrieb;
+const HK_VAL = MEK_T + MGK + FEK_T + FGK;
+const pct = (a: number, b: number) => Math.round((a / b) * 10000) / 100;
+const MGK_P = pct(MGK, MEK_T), FGK_P = pct(FGK, FEK_T);
+const VwGK_P = pct(VwGK, HK_VAL), VtGK_P = pct(VtGK, HK_VAL);
 
-const PHASES = [
-  'klassifizierung', 'neutral', 'anderskosten', 'zusatzkosten', 'ergebnis',
-  'bab_ek_gk', 'bab_verteilung', 'bab_zuschlag', 'kostentraeger',
-] as const;
-type Phase = typeof PHASES[number];
+// Toleranz: Rundungsfehler bei Euro (±0.5 % oder ±200 €) bzw. Prozent (<1 %)
+const closeEur = (a: number, b: number) => Math.abs(a - b) <= Math.max(Math.abs(b) * 0.005, 200);
+const closePct = (a: number, b: number) => Math.abs(a - b) < 1;
 
-// ─── Sub-Komponenten (übungsspezifisch) ────────────────────────────────
+const STEPS: StepNavItem[] = [
+  { id: 'p1', n: 1, label: 'Klassifizierung',  group: 'büb' },
+  { id: 'p2', n: 2, label: 'Neutral begründen', group: 'büb' },
+  { id: 'p3', n: 3, label: 'Anderskosten',      group: 'büb' },
+  { id: 'p4', n: 4, label: 'Zusatzkosten',      group: 'büb' },
+  { id: 'p5', n: 5, label: 'BÜB-Ergebnis',      group: 'büb' },
+  { id: 'p6', n: 6, label: 'EK / GK',           group: 'bab' },
+  { id: 'p7', n: 7, label: 'GK verteilen',      group: 'bab' },
+  { id: 'p8', n: 8, label: 'Zuschlagssätze',    group: 'bab' },
+  { id: 'p9', n: 9, label: 'Kostenträger',      group: 'bab' },
+];
+type StepId = typeof STEPS[number]['id'];
 
+// ─── kleine UI-Helfer (übungsspezifisch) ──────────────────────────────
 function Table({ children }: { children: React.ReactNode }) {
   return (
     <div className="overflow-x-auto -mx-1">
@@ -130,128 +155,209 @@ function SumRow({
 // ─── Hauptkomponente ───────────────────────────────────────────────────
 
 export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
-  const [phase, setPhase] = useState<Phase>('klassifizierung');
+  const [step, setStep] = useState<StepId>('p1');
   const [done, setDone] = useState<Record<string, boolean>>({});
   const [fb, setFb] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const [types, setTypes] = useState<Record<number, string>>({});
   const [reasons, setReasons] = useState<Record<number, string>>({});
-  const [neutralSum, setNeutralSum] = useState<string>('');
-  const [kalkVals, setKalkVals] = useState<Record<number, string>>({});
-  const [diffs, setDiffs] = useState<Record<number, string>>({});
-  const [diffSum, setDiffSum] = useState<string>('');
-  const [zusatzVals, setZusatzVals] = useState<Record<string, string>>({});
-  const [zusatzSum, setZusatzSum] = useState<string>('');
-  const [koreAns, setKoreAns] = useState<string>('');
-  const [ekAns, setEkAns] = useState<string>('');
-  const [gkAns, setGkAns] = useState<string>('');
-  const [babMeth, setBabMeth] = useState<Record<string, 'direkt' | 'schlüssel'>>({});
-  const [babE, setBabE] = useState<Record<string, Partial<Record<KsKey, string>>>>({});
-  const [hkAns, setHkAns] = useState<string>('');
-  const [zs, setZs] = useState<Record<string, string>>({});
-  const [ktV, setKtV] = useState<Record<string, string>>({});
+  const [nSum, setNSum] = useState<string>('');
+  const [kV, setKV] = useState<Record<number, string>>({});
+  const [dV, setDV] = useState<Record<number, string>>({});
+  const [dSum, setDSum] = useState<string>('');
+  const [zV, setZV] = useState<Record<string, string>>({});
+  const [zSum, setZSum] = useState<string>('');
+  const [koreA, setKoreA] = useState<string>('');
+  const [ekA, setEkA] = useState<string>('');
+  const [gkA, setGkA] = useState<string>('');
+  // Step 7 — drei separate State-Maps, eine pro Layer
+  const [babType, setBabType] = useState<Record<string, 'direkt' | 'schlüssel'>>({});
+  const [babTarget, setBabTarget] = useState<Record<string, KsKey>>({});
+  const [babBasis, setBabBasis] = useState<Record<string, BasisKey>>({});
+  const [hkA, setHkA] = useState<string>('');
+  const [zsA, setZsA] = useState<Record<string, string>>({});
+  const [ktA, setKtA] = useState<Record<string, string>>({});
 
-  const go = (p: Phase) => { setPhase(p); setFb(null); };
+  const go = (id: StepId) => { setStep(id); setFb(null); };
   const ok = (k: string) => setDone(p => ({ ...p, [k]: true }));
   const clr = () => setFb(null);
   const err = (m: string) => setFb({ ok: false, msg: m });
   const suc = (m: string) => setFb({ ok: true, msg: m });
 
-  const compKT = (mek: number, fek: number) => {
-    const mgk = Math.round(mek * MGK_PCT / 100);
-    const fgk = Math.round(fek * FGK_PCT / 100);
-    const hk = mek + mgk + fek + fgk;
-    const vw = Math.round(hk * VwGK_PCT / 100);
-    const vt = Math.round(hk * VtGK_PCT / 100);
-    return { mgk, fgk, hk, vwgk: vw, vtgk: vt, sk: hk + vw + vt };
+  const cKT = (mek: number, fek: number) => {
+    const mg = Math.round(mek * MGK_P / 100);
+    const fg = Math.round(fek * FGK_P / 100);
+    const hk = mek + mg + fek + fg;
+    const vw = Math.round(hk * VwGK_P / 100);
+    const vt = Math.round(hk * VtGK_P / 100);
+    return { mgk: mg, fgk: fg, hk, vwgk: vw, vtgk: vt, sk: hk + vw + vt };
   };
-  const tKT = compKT(MEK_TISCHE, FEK_TISCHE);
-  const rKT = compKT(MEK_REGALE, FEK_REGALE);
+  const tK = cKT(MEK_TI, FEK_TI);
+  const rK = cKT(MEK_RE, FEK_RE);
 
-  const chk1 = () => {
+  // ─── Checks ─────────────────────────────────────────────────────────
+  const c1 = () => {
     if (!FIBU.every(f => types[f.id])) return err('Bitte alle Positionen zuordnen.');
     const w = FIBU.filter(f => types[f.id] !== f.type);
     if (w.length) return err(`${w.length} falsch: ${w.map(x => x.name).join(', ')}`);
     suc('Alle Positionen richtig!'); ok('p1');
   };
-  const chk2 = () => {
-    const items = FIBU.filter(f => f.type === 'neutral');
-    if (!items.every(f => reasons[f.id])) return err('Bitte alle Begründungen wählen.');
-    const w = items.filter(f => reasons[f.id] !== f.reason);
+  const c2 = () => {
+    const it = FIBU.filter(f => f.type === 'neutral');
+    if (!it.every(f => reasons[f.id])) return err('Bitte alle Begründungen wählen.');
+    const w = it.filter(f => reasons[f.id] !== f.reason);
     if (w.length) return err(`Falsch: ${w.map(x => x.name).join(', ')}`);
-    const cs = items.reduce((s, f) => s + f.amount, 0);
-    if (numFromInput(neutralSum) !== cs) return err(`Begründungen stimmen, aber Summe ${fmtEur(numFromInput(neutralSum))} ist falsch.`);
-    suc(`Neutraler Aufwand: −${fmtEur(cs)}`); ok('p2');
+    const s = it.reduce((a, f) => a + f.amount, 0);
+    if (numFromInput(nSum) !== s) return err('Begründungen stimmen, aber Summe falsch.');
+    suc(`Neutraler Aufwand: −${fmtEur(s)}`); ok('p2');
   };
-  const chk3 = () => {
-    const items = FIBU.filter(f => f.type === 'anderskosten');
-    for (const f of items) {
-      if (numFromInput(kalkVals[f.id]) !== f.kalkValue) return err(`${f.name}: Kalk. Wert falsch.`);
-      if (numFromInput(diffs[f.id]) !== (f.kalkValue! - f.amount)) return err(`${f.name}: Differenz falsch.`);
+  const c3 = () => {
+    const it = FIBU.filter(f => f.type === 'anderskosten');
+    for (const f of it) {
+      if (numFromInput(kV[f.id]) !== f.kalkValue) return err(`${f.name}: Kalk. Wert falsch.`);
+      if (numFromInput(dV[f.id]) !== (f.kalkValue! - f.amount)) return err(`${f.name}: Differenz falsch.`);
     }
-    const cs = items.reduce((s, f) => s + (f.kalkValue! - f.amount), 0);
-    if (numFromInput(diffSum) !== cs) return err(`Einzelwerte stimmen, aber Gesamtdifferenz ${fmtEur(numFromInput(diffSum))} falsch.`);
-    suc(`Anderskosten-Differenz: +${fmtEur(cs)}`); ok('p3');
+    const s = it.reduce((a, f) => a + (f.kalkValue! - f.amount), 0);
+    if (numFromInput(dSum) !== s) return err('Einzelwerte stimmen, Gesamtdifferenz falsch.');
+    suc(`Anderskosten-Differenz: +${fmtEur(s)}`); ok('p3');
   };
-  const chk4 = () => {
-    const w = ZUSATZ.filter(z => numFromInput(zusatzVals[z.id]) !== z.amount);
+  const c4 = () => {
+    const w = ZUSATZ.filter(z => numFromInput(zV[z.id]) !== z.amount);
     if (w.length) return err(`Falsch: ${w.map(z => z.name).join(', ')}`);
-    const cs = ZUSATZ.reduce((s, z) => s + z.amount, 0);
-    if (numFromInput(zusatzSum) !== cs) return err(`Beträge stimmen, aber Summe ${fmtEur(numFromInput(zusatzSum))} falsch.`);
-    suc(`Zusatzkosten: +${fmtEur(cs)}`); ok('p4');
+    const s = ZUSATZ.reduce((a, z) => a + z.amount, 0);
+    if (numFromInput(zSum) !== s) return err('Beträge stimmen, Summe falsch.');
+    suc(`Zusatzkosten: +${fmtEur(s)}`); ok('p4');
   };
-  const chk5 = () => {
-    if (numFromInput(koreAns) !== KORE) return err(`${fmtEur(numFromInput(koreAns))} ist falsch.`);
+  const c5 = () => {
+    if (numFromInput(koreA) !== KORE) return err(`${fmtEur(numFromInput(koreA))} ist falsch.`);
     suc(`${fmtEur(KORE)} – BÜB abgeschlossen!`); ok('p5');
   };
-  const chk6 = () => {
-    if (numFromInput(ekAns) !== EK_TOTAL) return err(`Einzelkosten ${fmtEur(numFromInput(ekAns))} falsch.`);
-    if (numFromInput(gkAns) !== GK_TOTAL) return err(`EK stimmt! Aber GK ${fmtEur(numFromInput(gkAns))} falsch.`);
-    suc(`EK: ${fmtEur(EK_TOTAL)}, GK: ${fmtEur(GK_TOTAL)}`); ok('p6');
+  const c6 = () => {
+    if (numFromInput(ekA) !== EK_T) return err('Einzelkosten falsch.');
+    if (numFromInput(gkA) !== GK_T) return err('EK stimmt! GK falsch.');
+    suc(`EK: ${fmtEur(EK_T)}, GK: ${fmtEur(GK_T)}`); ok('p6');
   };
-  const chk7 = () => {
+  const c7 = () => {
     const errs: string[] = [];
     GK_ITEMS.forEach(g => {
-      if (!babMeth[g.id]) { errs.push(`${g.name}: Methode fehlt`); return; }
-      const isDirect = g.method === 'direkt';
-      if (isDirect !== (babMeth[g.id] === 'direkt')) { errs.push(`${g.name}: Methode falsch`); return; }
-      const ue = babE[g.id] || {};
-      KS.forEach(k => { if (numFromInput(ue[k]) !== g.dist[k]) errs.push(`${g.name} → ${KSL[k]}`); });
+      const typ = babType[g.id];
+      if (!typ) { errs.push(`${g.name}: Methode fehlt`); return; }
+      if (g.isDirekt && typ !== 'direkt') { errs.push(`${g.name}: Sollte direkt zugeordnet werden`); return; }
+      if (!g.isDirekt && typ !== 'schlüssel') { errs.push(`${g.name}: Braucht einen Verteilungsschlüssel`); return; }
+      if (g.isDirekt) {
+        if (babTarget[g.id] !== g.target) { errs.push(`${g.name}: Falsche Kostenstelle`); }
+      } else {
+        if (babBasis[g.id] !== g.basis) { errs.push(`${g.name}: Falscher Schlüssel`); }
+      }
     });
-    if (errs.length) return err(`${errs.length} Fehler: ${errs.slice(0, 4).join(', ')}${errs.length > 4 ? '...' : ''}`);
-    suc(`Verteilung korrekt! Mat: ${fmtEur(MGK)} | Fert: ${fmtEur(FGK)} | Verw: ${fmtEur(VwGK)} | Vertr: ${fmtEur(VtGK)}`);
+    if (errs.length) return err(errs.slice(0, 4).join(' · ') + (errs.length > 4 ? ` · +${errs.length - 4} weitere` : ''));
+    suc(`Alles richtig! Mat: ${fmtEur(MGK)} | Fert: ${fmtEur(FGK)} | Verw: ${fmtEur(VwGK)} | Vertr: ${fmtEur(VtGK)}`);
     ok('p7');
   };
-  const chk8 = () => {
-    if (numFromInput(hkAns) !== HK) return err(`Herstellkosten ${fmtEur(numFromInput(hkAns))} falsch.`);
-    const pairs: [string, number, string][] = [
-      ['mgk', MGK_PCT, 'MGK'], ['fgk', FGK_PCT, 'FGK'], ['vwgk', VwGK_PCT, 'VwGK'], ['vtgk', VtGK_PCT, 'VtGK'],
-    ];
+  const c8 = () => {
+    if (!closeEur(numFromInput(hkA), HK_VAL)) return err('Herstellkosten falsch.');
     const w: string[] = [];
-    pairs.forEach(([k, c, l]) => {
-      const v = parseFloat(String(zs[k] || '').replace(',', '.'));
-      if (isNaN(v) || Math.abs(v - c) > 0.15) w.push(`${l}: ${isNaN(v) ? '?' : v}% statt ${c}%`);
+    ([['mgk', MGK_P, 'MGK'], ['fgk', FGK_P, 'FGK'], ['vwgk', VwGK_P, 'VwGK'], ['vtgk', VtGK_P, 'VtGK']] as const).forEach(([k, c, l]) => {
+      const v = parseFloat(String(zsA[k] || '').replace(',', '.'));
+      if (isNaN(v) || !closePct(v, c)) w.push(l);
     });
-    if (w.length) return err(`HK stimmt! Aber: ${w.join(', ')}`);
+    if (w.length) return err(`HK stimmt! Zuschlagssätze falsch: ${w.join(', ')}`);
     suc('Alle Zuschlagssätze korrekt!'); ok('p8');
   };
-  const chk9 = () => {
-    const fields: [string, number][] = [
-      ['t_mgk', tKT.mgk], ['t_fgk', tKT.fgk], ['t_hk', tKT.hk], ['t_vwgk', tKT.vwgk], ['t_vtgk', tKT.vtgk], ['t_sk', tKT.sk],
-      ['r_mgk', rKT.mgk], ['r_fgk', rKT.fgk], ['r_hk', rKT.hk], ['r_vwgk', rKT.vwgk], ['r_vtgk', rKT.vtgk], ['r_sk', rKT.sk],
+  const c9 = () => {
+    const fs: [string, number][] = [
+      ['t_mgk', tK.mgk], ['t_fgk', tK.fgk], ['t_hk', tK.hk], ['t_vwgk', tK.vwgk], ['t_vtgk', tK.vtgk], ['t_sk', tK.sk],
+      ['r_mgk', rK.mgk], ['r_fgk', rK.fgk], ['r_hk', rK.hk], ['r_vwgk', rK.vwgk], ['r_vtgk', rK.vtgk], ['r_sk', rK.sk],
     ];
-    const w = fields
-      .filter(([k, v]) => numFromInput(ktV[k]) !== v)
-      .map(([k]) => k.replace('t_', 'Tische ').replace('r_', 'Regale ').toUpperCase());
-    if (w.length) return err(`${w.length} Werte falsch: ${w.slice(0, 5).join(', ')}`);
-    suc(`Tische: ${fmtEur(tKT.sk)} | Regale: ${fmtEur(rKT.sk)}`); ok('p9');
+    const w = fs.filter(([k, v]) => !closeEur(numFromInput(ktA[k]), v));
+    if (w.length) return err(`${w.length} Werte falsch.`);
+    suc(`Tische: ${fmtEur(tK.sk)} | Regale: ${fmtEur(rK.sk)}`); ok('p9');
   };
 
-  const next = (nextPhase: Phase, label = 'Weiter →') => (
-    <PrimaryBtn label={label} onClick={() => go(nextPhase)} color="emerald" />
+  const next = (nextId: StepId, label = 'Weiter →') => (
+    <PrimaryBtn label={label} onClick={() => go(nextId)} color="emerald" />
   );
 
-  const phaseIdx = PHASES.indexOf(phase);
+  // ─── Step 7 GK Card ─────────────────────────────────────────────────
+  function GKCard({ g }: { g: GkItem }) {
+    const typ = babType[g.id];
+    const tgt = babTarget[g.id];
+    const bas = babBasis[g.id];
+
+    return (
+      <Card className="mb-2.5">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+          <span className="font-bold text-white text-sm">{g.name}</span>
+          <span className="font-mono text-[#d1d5db] text-sm">{fmtEur(g.amount)}</span>
+        </div>
+
+        {/* Layer 1 */}
+        <div className="mb-2.5">
+          <div className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wider mb-1.5">
+            ① Wie verteilen?
+          </div>
+          <div className="flex gap-1.5 flex-wrap">
+            <ToggleBtn
+              label="Direkt → eine Kostenstelle"
+              active={typ === 'direkt'}
+              color="blue"
+              onClick={() => { setBabType(p => ({ ...p, [g.id]: 'direkt' })); clr(); }}
+            />
+            <ToggleBtn
+              label="Verteilungsschlüssel nötig"
+              active={typ === 'schlüssel'}
+              color="purple"
+              onClick={() => { setBabType(p => ({ ...p, [g.id]: 'schlüssel' })); clr(); }}
+            />
+          </div>
+        </div>
+
+        {/* Layer 2a: Direkt → welche KS */}
+        {typ === 'direkt' && (
+          <div className="pl-4 border-l-[3px] border-blue-500">
+            <div className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wider mb-1.5">
+              ② Welche Kostenstelle?
+            </div>
+            <div className="flex gap-1 flex-wrap">
+              {KSN.map(k => (
+                <ToggleBtn
+                  key={k}
+                  label={KSL[k]}
+                  active={tgt === k}
+                  color="emerald"
+                  onClick={() => { setBabTarget(p => ({ ...p, [g.id]: k })); clr(); }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Layer 2b: Schlüssel → welche Basis */}
+        {typ === 'schlüssel' && (
+          <div className="pl-4 border-l-[3px] border-purple-500">
+            <div className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wider mb-1.5">
+              ② Nach welchem Schlüssel?
+            </div>
+            <div className="text-xs text-[#9ca3af] mb-1.5">
+              Was bestimmt logisch, wie viel jede Abteilung von diesen Kosten verursacht?
+            </div>
+            <div className="flex gap-1 flex-wrap">
+              {BASES.map(b => (
+                <ToggleBtn
+                  key={b.id}
+                  label={`${b.icon} ${b.label}`}
+                  active={bas === b.id}
+                  color="purple"
+                  onClick={() => { setBabBasis(p => ({ ...p, [g.id]: b.id })); clr(); }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
+    );
+  }
 
   return (
     <ExerciseShell
@@ -259,20 +365,22 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
       subtitle="Tischlerei Berger KG – März"
       onClose={onClose}
     >
-      <ProgressBar
-        phases={PHASES as readonly string[] as string[]}
-        current={phaseIdx}
-        groupLabel={{ left: 'BÜB', right: 'BAB + Kostenträger', splitAt: 5 }}
+      <StepNav
+        steps={STEPS}
+        current={step}
+        done={done}
+        onSelect={(id) => go(id as StepId)}
+        groupLabels={{ left: 'BÜB', right: 'BAB + Kostenträger', splitAt: 5 }}
       />
 
-      {/* ═══ 1: KLASSIFIZIERUNG ═══ */}
-      {phase === 'klassifizierung' && (
+      {/* ═══ P1 ═══ */}
+      {step === 'p1' && (
         <div>
           <StepHeader step="1" title="Kostenarten klassifizieren" sub="Ordne jede Position zu." />
           <HintBox>
-            <strong>Grundkosten:</strong> Aufwand = Kosten, 1:1 übernommen<br />
-            <strong>Neutral:</strong> gehört nicht in die KoRe<br />
-            <strong>Anderskosten:</strong> existiert in FIBU, wird anders bewertet
+            <strong>Grundkosten:</strong> Aufwand = Kosten<br />
+            <strong>Neutral:</strong> gehört nicht in KoRe<br />
+            <strong>Anderskosten:</strong> wird anders bewertet
           </HintBox>
           <Table>
             <thead>
@@ -314,14 +422,14 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
             </tbody>
           </Table>
           <FeedbackBox feedback={fb} />
-          {!done.p1 ? <PrimaryBtn label="Überprüfen" onClick={chk1} /> : next('neutral')}
+          {!done.p1 ? <PrimaryBtn label="Überprüfen" onClick={c1} /> : next('p2')}
         </div>
       )}
 
-      {/* ═══ 2: NEUTRAL + SUMME ═══ */}
-      {phase === 'neutral' && (
+      {/* ═══ P2 ═══ */}
+      {step === 'p2' && (
         <div>
-          <StepHeader step="2" title="Neutrale Aufwände begründen" sub="Begründung wählen + Summe berechnen." />
+          <StepHeader step="2" title="Neutrale Aufwände begründen" sub="Begründung + Summe berechnen." />
           <Table>
             <thead>
               <tr>
@@ -352,19 +460,19 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
               ))}
             </tbody>
           </Table>
-          <SumRow label="Summe neutraler Aufwand:" prefix="−" sign="neg" value={neutralSum} onChange={v => { setNeutralSum(v); clr(); }} />
+          <SumRow label="Summe neutraler Aufwand:" prefix="−" sign="neg" value={nSum} onChange={v => { setNSum(v); clr(); }} />
           <FeedbackBox feedback={fb} />
-          {!done.p2 ? <PrimaryBtn label="Überprüfen" onClick={chk2} /> : next('anderskosten')}
+          {!done.p2 ? <PrimaryBtn label="Überprüfen" onClick={c2} /> : next('p3')}
         </div>
       )}
 
-      {/* ═══ 3: ANDERSKOSTEN ═══ */}
-      {phase === 'anderskosten' && (
+      {/* ═══ P3 ═══ */}
+      {step === 'p3' && (
         <div>
-          <StepHeader step="3" title="Anderskosten-Differenz" sub="Kalk. Wert, Differenz UND Gesamtsumme selbst berechnen." />
+          <StepHeader step="3" title="Anderskosten-Differenz" sub="Kalk. Wert + Differenz + Summe selbst berechnen." />
           <InfoBox>
             <strong>Zusatzinfos:</strong><br />
-            • Kalk. Abschreibung (Wiederbeschaffungswert): <strong>9.000 €</strong><br />
+            • Kalk. AfA (Wiederbeschaffungswert): <strong>9.000 €</strong><br />
             • Kalk. Zinsen (ges. betriebsnotw. Kapital): <strong>5.000 €</strong>
           </InfoBox>
           <Table>
@@ -382,31 +490,31 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
                   <td className={tdCls(i)}>{f.name}</td>
                   <td className={`${tdCls(i)} text-right font-mono`}>{fmtEur(f.amount)}</td>
                   <td className={`${tdCls(i)} text-center`}>
-                    <NumIn value={kalkVals[f.id]} onChange={v => { setKalkVals(p => ({ ...p, [f.id]: v })); clr(); }} />
+                    <NumIn value={kV[f.id]} onChange={v => { setKV(p => ({ ...p, [f.id]: v })); clr(); }} />
                   </td>
                   <td className={`${tdCls(i)} text-center`}>
                     <div className="flex items-center justify-center gap-1">
                       <span className="text-emerald-400 font-bold text-sm">+</span>
-                      <NumIn value={diffs[f.id]} onChange={v => { setDiffs(p => ({ ...p, [f.id]: v })); clr(); }} width="w-20" />
+                      <NumIn value={dV[f.id]} onChange={v => { setDV(p => ({ ...p, [f.id]: v })); clr(); }} width="w-20" />
                     </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </Table>
-          <SumRow label="Gesamte Anderskosten-Differenz:" prefix="+" sign="pos" value={diffSum} onChange={v => { setDiffSum(v); clr(); }} />
+          <SumRow label="Gesamte Anderskosten-Differenz:" prefix="+" sign="pos" value={dSum} onChange={v => { setDSum(v); clr(); }} />
           <FeedbackBox feedback={fb} />
-          {!done.p3 ? <PrimaryBtn label="Überprüfen" onClick={chk3} /> : next('zusatzkosten')}
+          {!done.p3 ? <PrimaryBtn label="Überprüfen" onClick={c3} /> : next('p4')}
         </div>
       )}
 
-      {/* ═══ 4: ZUSATZKOSTEN ═══ */}
-      {phase === 'zusatzkosten' && (
+      {/* ═══ P4 ═══ */}
+      {step === 'p4' && (
         <div>
-          <StepHeader step="4" title="Kalkulatorische Zusatzkosten" sub="Beträge eintragen + Summe berechnen." />
+          <StepHeader step="4" title="Kalkulatorische Zusatzkosten" sub="Beträge + Summe berechnen." />
           <InfoBox>
             <strong>Zusatzinfos:</strong><br />
-            • Unternehmer arbeitet aktiv mit → Unternehmerlohn: <strong>5.000 €</strong><br />
+            • Unternehmer arbeitet mit → Unternehmerlohn: <strong>5.000 €</strong><br />
             • Eigene Lagerhalle → kalk. Miete: <strong>3.000 €</strong>
           </InfoBox>
           <Table>
@@ -423,22 +531,22 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
                   <td className={tdCls(i)}>{z.name}</td>
                   <td className={`${tdCls(i)} text-right font-mono text-[#6b7280]`}>0 €</td>
                   <td className={`${tdCls(i)} text-center`}>
-                    <NumIn value={zusatzVals[z.id]} onChange={v => { setZusatzVals(p => ({ ...p, [z.id]: v })); clr(); }} />
+                    <NumIn value={zV[z.id]} onChange={v => { setZV(p => ({ ...p, [z.id]: v })); clr(); }} />
                   </td>
                 </tr>
               ))}
             </tbody>
           </Table>
-          <SumRow label="Summe Zusatzkosten:" prefix="+" sign="pos" value={zusatzSum} onChange={v => { setZusatzSum(v); clr(); }} />
+          <SumRow label="Summe Zusatzkosten:" prefix="+" sign="pos" value={zSum} onChange={v => { setZSum(v); clr(); }} />
           <FeedbackBox feedback={fb} />
-          {!done.p4 ? <PrimaryBtn label="Überprüfen" onClick={chk4} /> : next('ergebnis')}
+          {!done.p4 ? <PrimaryBtn label="Überprüfen" onClick={c4} /> : next('p5')}
         </div>
       )}
 
-      {/* ═══ 5: ERGEBNIS ═══ */}
-      {phase === 'ergebnis' && (
+      {/* ═══ P5 ═══ */}
+      {step === 'p5' && (
         <div>
-          <StepHeader step="5" title="BÜB-Ergebnis" sub="Berechne die Kosten laut Kostenrechnung." />
+          <StepHeader step="5" title="BÜB-Ergebnis" sub="Kosten laut Kostenrechnung berechnen." />
           <Card>
             <div className="font-mono text-sm leading-loose space-y-1">
               {([
@@ -453,113 +561,126 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
               ))}
               <div className="border-t-2 border-[#2d3148] mt-2 pt-2 flex justify-between items-center">
                 <span className="font-bold text-white">= Kosten laut KoRe</span>
-                <NumIn value={koreAns} onChange={v => { setKoreAns(v); clr(); }} width="w-32" />
+                <NumIn value={koreA} onChange={v => { setKoreA(v); clr(); }} width="w-32" />
               </div>
             </div>
           </Card>
           <FeedbackBox feedback={fb} />
-          {!done.p5 ? <PrimaryBtn label="Überprüfen" onClick={chk5} /> : next('bab_ek_gk', 'Weiter zum BAB →')}
+          {!done.p5 ? <PrimaryBtn label="Überprüfen" onClick={c5} /> : next('p6', 'Weiter zum BAB →')}
         </div>
       )}
 
-      {/* ═══ 6: EK / GK ═══ */}
-      {phase === 'bab_ek_gk' && (
+      {/* ═══ P6 ═══ */}
+      {step === 'p6' && (
         <div>
-          <StepHeader step="6" title="Einzel- & Gemeinkosten" sub="Berechne EK und GK selbst." />
+          <StepHeader step="6" title="Einzel- & Gemeinkosten" sub="EK und GK selbst berechnen." />
           <div className="my-3 px-4 py-3 rounded-xl border bg-emerald-500/10 border-emerald-500/30 text-emerald-200 text-sm">
             ✅ BÜB fertig! Kosten laut KoRe: <strong>{fmtEur(KORE)}</strong>
           </div>
           <InfoBox>
-            <strong>Einzelkosten (gegeben):</strong><br />
-            Tische: MEK {fmtEur(MEK_TISCHE)} + FEK {fmtEur(FEK_TISCHE)} | Regale: MEK {fmtEur(MEK_REGALE)} + FEK {fmtEur(FEK_REGALE)}
+            <strong>Einzelkosten:</strong><br />
+            Tische: MEK {fmtEur(MEK_TI)} + FEK {fmtEur(FEK_TI)} | Regale: MEK {fmtEur(MEK_RE)} + FEK {fmtEur(FEK_RE)}
           </InfoBox>
           <Card>
             <div className="flex justify-between items-center flex-wrap gap-2 mb-4">
-              <div className="font-bold text-white text-sm">Gesamte Einzelkosten (MEK + FEK)</div>
-              <NumIn value={ekAns} onChange={v => { setEkAns(v); clr(); }} width="w-32" />
+              <div>
+                <div className="font-bold text-white text-sm">Gesamte Einzelkosten</div>
+                <div className="text-xs text-[#9ca3af]">MEK + FEK</div>
+              </div>
+              <NumIn value={ekA} onChange={v => { setEkA(v); clr(); }} width="w-32" />
             </div>
             <div className="border-t border-[#2d3148] pt-4 flex justify-between items-center flex-wrap gap-2">
               <div>
                 <div className="font-bold text-white text-sm">Gemeinkosten</div>
                 <div className="text-xs text-[#9ca3af]">KoRe − EK</div>
               </div>
-              <NumIn value={gkAns} onChange={v => { setGkAns(v); clr(); }} width="w-32" />
+              <NumIn value={gkA} onChange={v => { setGkA(v); clr(); }} width="w-32" />
             </div>
           </Card>
           <FeedbackBox feedback={fb} />
-          {!done.p6 ? <PrimaryBtn label="Überprüfen" onClick={chk6} /> : next('bab_verteilung')}
+          {!done.p6 ? <PrimaryBtn label="Überprüfen" onClick={c6} /> : next('p7')}
         </div>
       )}
 
-      {/* ═══ 7: BAB VERTEILUNG ═══ */}
-      {phase === 'bab_verteilung' && (
+      {/* ═══ P7 ═══ */}
+      {step === 'p7' && (
         <div>
-          <StepHeader step="7" title="Gemeinkosten verteilen" sub={`Verteile ${fmtEur(GK_TOTAL)} auf die 4 Kostenstellen (Euro-Beträge).`} />
-          <HintBox label="📊 Verteilungsschlüssel anzeigen">
-            <strong>Hallenmiete</strong> (m²): Mat 10%, Fert 60%, Verw 20%, Vertr 10%<br />
-            <strong>Energie</strong> (Verbrauch): Mat 10%, Fert 60%, Verw 10%, Vertr 20%<br />
-            <strong>Kalk. AfA</strong> (Anlagenwert): Mat 10%, Fert 60%, Verw 20%, Vertr 10%<br />
-            <strong>Kalk. Zinsen</strong> (Kapitalbindung): Mat 10%, Fert 60%, Verw 10%, Vertr 20%<br />
-            <strong>Kalk. U-Lohn</strong> (Schätzung): Fert 20%, Verw 60%, Vertr 20%
+          <StepHeader step="7" title="Gemeinkosten verteilen" sub={`${fmtEur(GK_T)} auf 4 Kostenstellen – entscheide selbst WIE.`} />
+          <InfoBox>
+            Für jede Kostenart entscheide:<br />
+            <strong>①</strong> Kann man die Kosten <strong>direkt einer Abteilung</strong> zuordnen? Oder braucht man einen <strong>Verteilungsschlüssel</strong>?<br />
+            <strong>②</strong> Wenn direkt: Welche Kostenstelle? Wenn Schlüssel: <strong>nach welchem Kriterium</strong> verteilt man sinnvoll?
+          </InfoBox>
+          <HintBox label="💡 Welcher Schlüssel passt wozu?">
+            <strong>📐 Fläche (m²):</strong> Kosten, die von der genutzten Fläche abhängen<br />
+            <strong>⚡ Verbrauch (kWh):</strong> Kosten, die vom tatsächlichen Energieverbrauch abhängen<br />
+            <strong>🏭 Anlagenwert:</strong> Kosten, die mit dem Wert der Maschinen/Anlagen zusammenhängen<br />
+            <strong>💰 Kapitalbindung:</strong> Kosten, die vom gebundenen Kapital je Abteilung abhängen<br />
+            <strong>👤 Tätigkeitsanteil:</strong> Wenn keine messbare Größe existiert → Schätzung nach Arbeitszeit
           </HintBox>
-          {GK_ITEMS.map(g => {
-            const m = babMeth[g.id];
-            const euros = babE[g.id] || {};
-            return (
-              <Card key={g.id} className="mb-2">
-                <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
-                  <span className="font-bold text-white text-sm">{g.name}</span>
-                  <span className="font-mono text-[#d1d5db] text-sm">{fmtEur(g.amount)}</span>
-                </div>
-                <div className="flex gap-1.5 mb-2.5 flex-wrap">
-                  <ToggleBtn
-                    label="Direkt → eine KS"
-                    active={m === 'direkt'}
-                    color="blue"
-                    onClick={() => { setBabMeth(p => ({ ...p, [g.id]: 'direkt' })); clr(); }}
-                  />
-                  <ToggleBtn
-                    label="Verteilungsschlüssel"
-                    active={m === 'schlüssel'}
-                    color="purple"
-                    onClick={() => { setBabMeth(p => ({ ...p, [g.id]: 'schlüssel' })); clr(); }}
-                  />
-                </div>
-                {m && (
-                  <div className="flex gap-2 flex-wrap">
-                    {KS.map(k => (
-                      <div key={k} className="flex flex-col items-center gap-0.5">
-                        <span className="text-[10px] text-[#9ca3af] font-semibold">{KSL[k]}</span>
-                        <NumIn
-                          value={euros[k] ?? ''}
-                          onChange={v => { setBabE(p => ({ ...p, [g.id]: { ...p[g.id], [k]: v } })); clr(); }}
-                          width="w-20"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card>
-            );
-          })}
+          {GK_ITEMS.map(g => <GKCard key={g.id} g={g} />)}
           <FeedbackBox feedback={fb} />
-          {!done.p7 ? <PrimaryBtn label="Überprüfen" onClick={chk7} /> : next('bab_zuschlag')}
+          {!done.p7 ? (
+            <PrimaryBtn label="Überprüfen" onClick={c7} />
+          ) : (
+            <div>
+              <Card className="mt-3.5">
+                <div className="text-xs font-bold mb-2.5 text-white">Ergebnis der Verteilung:</div>
+                <div className="overflow-x-auto -mx-1">
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr>
+                        <th className={thCls}>Kostenart</th>
+                        {KSN.map(k => (
+                          <th key={k} className={`${thCls} text-right`}>{KSL[k]}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {GK_ITEMS.map((g, i) => (
+                        <tr key={g.id}>
+                          <td className={tdCls(i)}>{g.name}</td>
+                          {KSN.map(k => (
+                            <td
+                              key={k}
+                              className={`${tdCls(i)} text-right font-mono ${g.dist[k] === 0 ? 'text-[#4b5563]' : 'text-[#d1d5db]'}`}
+                            >
+                              {g.dist[k] === 0 ? '–' : fmtEur(g.dist[k])}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                      <tr className="bg-[#252840]">
+                        <td className="px-3 py-2.5 text-white font-bold">SUMME</td>
+                        {KSN.map(k => (
+                          <td key={k} className="px-3 py-2.5 text-right font-mono text-amber-400 font-bold">
+                            {fmtEur(cKS[k])}
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+              {next('p8')}
+            </div>
+          )}
         </div>
       )}
 
-      {/* ═══ 8: HK + ZUSCHLAGSSÄTZE ═══ */}
-      {phase === 'bab_zuschlag' && (
+      {/* ═══ P8 ═══ */}
+      {step === 'p8' && (
         <div>
-          <StepHeader step="8" title="Herstellkosten & Zuschlagssätze" sub="Berechne zuerst die HK, dann die Zuschlagssätze." />
+          <StepHeader step="8" title="Herstellkosten & Zuschlagssätze" sub="HK berechnen, dann Zuschlagssätze." />
           <HintBox label="📐 Formeln anzeigen">
             <strong>HK</strong> = MEK + MGK + FEK + FGK<br /><br />
-            <strong>MGK%</strong> = Material-GK ÷ MEK × 100<br />
-            <strong>FGK%</strong> = Fertigungs-GK ÷ FEK × 100<br />
-            <strong>VwGK%</strong> = Verwaltungs-GK ÷ HK × 100<br />
-            <strong>VtGK%</strong> = Vertriebs-GK ÷ HK × 100
+            <strong>MGK%</strong> = Mat-GK ÷ MEK × 100<br />
+            <strong>FGK%</strong> = Fert-GK ÷ FEK × 100<br />
+            <strong>VwGK%</strong> = Verw-GK ÷ HK × 100<br />
+            <strong>VtGK%</strong> = Vertr-GK ÷ HK × 100
           </HintBox>
           <InfoBox>
-            <strong>Deine BAB-Ergebnisse:</strong><br />
+            <strong>BAB-Ergebnisse:</strong><br />
             MEK = {fmtEur(MEK_T)} | FEK = {fmtEur(FEK_T)}<br />
             Mat-GK = {fmtEur(MGK)} | Fert-GK = {fmtEur(FGK)} | Verw-GK = {fmtEur(VwGK)} | Vertr-GK = {fmtEur(VtGK)}
           </InfoBox>
@@ -569,72 +690,67 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
                 <div className="font-bold text-white">Herstellkosten (HK)</div>
                 <div className="text-xs text-[#9ca3af]">MEK + MGK + FEK + FGK</div>
               </div>
-              <NumIn value={hkAns} onChange={v => { setHkAns(v); clr(); }} width="w-32" />
+              <NumIn value={hkA} onChange={v => { setHkA(v); clr(); }} width="w-32" />
             </div>
             {[
-              { key: 'mgk', label: 'Material-GK-Zuschlag' },
-              { key: 'fgk', label: 'Fertigungs-GK-Zuschlag' },
-              { key: 'vwgk', label: 'Verwaltungs-GK-Zuschlag' },
-              { key: 'vtgk', label: 'Vertriebs-GK-Zuschlag' },
+              { k: 'mgk', l: 'Material-GK-Zuschlag' },
+              { k: 'fgk', l: 'Fertigungs-GK-Zuschlag' },
+              { k: 'vwgk', l: 'Verwaltungs-GK-Zuschlag' },
+              { k: 'vtgk', l: 'Vertriebs-GK-Zuschlag' },
             ].map((z, i) => (
               <div
-                key={z.key}
+                key={z.k}
                 className={`flex justify-between items-center py-3 flex-wrap gap-2 ${i < 3 ? 'border-b border-[#2d3148]' : ''}`}
               >
-                <div className="font-bold text-white text-sm">{z.label}</div>
+                <span className="font-bold text-white text-sm">{z.l}</span>
                 <div className="flex items-center gap-1">
-                  <NumIn value={zs[z.key]} onChange={v => { setZs(p => ({ ...p, [z.key]: v })); clr(); }} width="w-20" />
+                  <NumIn value={zsA[z.k]} onChange={v => { setZsA(p => ({ ...p, [z.k]: v })); clr(); }} width="w-20" />
                   <span className="font-bold text-[#d1d5db]">%</span>
                 </div>
               </div>
             ))}
           </Card>
           <FeedbackBox feedback={fb} />
-          {!done.p8 ? <PrimaryBtn label="Überprüfen" onClick={chk8} /> : next('kostentraeger')}
+          {!done.p8 ? <PrimaryBtn label="Überprüfen" onClick={c8} /> : next('p9')}
         </div>
       )}
 
-      {/* ═══ 9: KOSTENTRÄGER ═══ */}
-      {phase === 'kostentraeger' && (
+      {/* ═══ P9 ═══ */}
+      {step === 'p9' && (
         <div>
-          <StepHeader step="9" title="Kostenträgerrechnung" sub="Selbstkosten für Tische und Regale berechnen." />
+          <StepHeader step="9" title="Kostenträgerrechnung" sub="Selbstkosten berechnen." />
           <HintBox label="📐 Zuschlagssätze anzeigen">
-            MGK: {MGK_PCT}% | FGK: {FGK_PCT}% | VwGK: {VwGK_PCT}% | VtGK: {VtGK_PCT}%
+            MGK: {MGK_P}% | FGK: {FGK_P}% | VwGK: {VwGK_P}% | VtGK: {VtGK_P}%
           </HintBox>
           {[
-            { title: '🪑 Tische', mek: MEK_TISCHE, fek: FEK_TISCHE, p: 't' },
-            { title: '📚 Regale', mek: MEK_REGALE, fek: FEK_REGALE, p: 'r' },
-          ].map(prod => (
-            <Card key={prod.p} className="mb-3">
-              <div className="font-bold text-white text-base mb-3">{prod.title}</div>
+            { t: '🪑 Tische', mek: MEK_TI, fek: FEK_TI, p: 't' },
+            { t: '📚 Regale', mek: MEK_RE, fek: FEK_RE, p: 'r' },
+          ].map(pr => (
+            <Card key={pr.p} className="mb-3">
+              <div className="font-bold text-white text-base mb-3">{pr.t}</div>
               <table className="w-full border-collapse text-sm">
                 <tbody>
                   {([
-                    { label: 'MEK', fixed: fmtEur(prod.mek) },
-                    { label: `+ MGK (${MGK_PCT}%)`, key: 'mgk' },
-                    { label: 'FEK', fixed: fmtEur(prod.fek) },
-                    { label: `+ FGK (${FGK_PCT}%)`, key: 'fgk' },
-                    { label: '= Herstellkosten', key: 'hk', bold: true },
-                    { label: `+ VwGK (${VwGK_PCT}%)`, key: 'vwgk' },
-                    { label: `+ VtGK (${VtGK_PCT}%)`, key: 'vtgk' },
-                    { label: '= Selbstkosten', key: 'sk', bold: true, final: true },
-                  ] as Array<{ label: string; fixed?: string; key?: string; bold?: boolean; final?: boolean }>).map((row, i) => (
-                    <tr
-                      key={i}
-                      className={
-                        row.final ? 'bg-emerald-500/10' : row.bold ? 'bg-[#252840]' : ''
-                      }
-                    >
-                      <td className={`px-3 py-2 border-b border-[#2d3148] ${row.bold ? 'font-bold text-white' : 'text-[#d1d5db]'} ${row.final ? 'text-base' : ''}`}>
-                        {row.label}
+                    { l: 'MEK', f: fmtEur(pr.mek) },
+                    { l: `+ MGK (${MGK_P}%)`, k: 'mgk' },
+                    { l: 'FEK', f: fmtEur(pr.fek) },
+                    { l: `+ FGK (${FGK_P}%)`, k: 'fgk' },
+                    { l: '= Herstellkosten', k: 'hk', b: true },
+                    { l: `+ VwGK (${VwGK_P}%)`, k: 'vwgk' },
+                    { l: `+ VtGK (${VtGK_P}%)`, k: 'vtgk' },
+                    { l: '= Selbstkosten', k: 'sk', b: true, fin: true },
+                  ] as Array<{ l: string; f?: string; k?: string; b?: boolean; fin?: boolean }>).map((r, i) => (
+                    <tr key={i} className={r.fin ? 'bg-emerald-500/10' : r.b ? 'bg-[#252840]' : ''}>
+                      <td className={`px-3 py-2 border-b border-[#2d3148] ${r.b ? 'font-bold text-white' : 'text-[#d1d5db]'} ${r.fin ? 'text-base' : ''}`}>
+                        {r.l}
                       </td>
                       <td className="px-3 py-2 border-b border-[#2d3148] text-right">
-                        {row.fixed ? (
-                          <span className="font-mono text-[#d1d5db]">{row.fixed}</span>
+                        {r.f ? (
+                          <span className="font-mono text-[#d1d5db]">{r.f}</span>
                         ) : (
                           <NumIn
-                            value={ktV[`${prod.p}_${row.key}`]}
-                            onChange={v => { setKtV(p => ({ ...p, [`${prod.p}_${row.key}`]: v })); clr(); }}
+                            value={ktA[`${pr.p}_${r.k}`]}
+                            onChange={v => { setKtA(p => ({ ...p, [`${pr.p}_${r.k}`]: v })); clr(); }}
                             width="w-28"
                           />
                         )}
@@ -647,11 +763,11 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
           ))}
           <FeedbackBox feedback={fb} />
           {!done.p9 ? (
-            <PrimaryBtn label="Überprüfen" onClick={chk9} />
+            <PrimaryBtn label="Überprüfen" onClick={c9} />
           ) : (
             <div className="my-3 px-4 py-3 rounded-xl border bg-emerald-500/10 border-emerald-500/30 text-emerald-200 text-sm leading-relaxed">
-              🎉 <strong>Geschafft!</strong> Kompletter Weg BÜB → BAB → Kostenträger durchgerechnet!<br /><br />
-              Tische: <strong>{fmtEur(tKT.sk)}</strong> | Regale: <strong>{fmtEur(rKT.sk)}</strong> | Kontrolle: <strong>{fmtEur(tKT.sk + rKT.sk)} = {fmtEur(KORE)}</strong> ✓
+              🎉 <strong>Geschafft!</strong> BÜB → BAB → Kostenträger komplett!<br /><br />
+              Tische: <strong>{fmtEur(tK.sk)}</strong> | Regale: <strong>{fmtEur(rK.sk)}</strong> | Kontrolle: <strong>{fmtEur(tK.sk + rK.sk)} = {fmtEur(KORE)}</strong> ✓
             </div>
           )}
         </div>

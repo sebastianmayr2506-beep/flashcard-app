@@ -78,6 +78,89 @@ export function ProgressBar({
   );
 }
 
+// ─── Step-Nav: klickbare Schritte mit ✓-Markierung + optionalem Gruppen-Split ─
+//
+// Im Gegensatz zur ProgressBar kann der User hier auch zurück- (oder
+// vor-)springen, sieht alle Schritte als nummerierte Buttons, und
+// abgeschlossene Schritte werden mit ✓ + hellem Hintergrund markiert.
+export interface StepNavItem {
+  id: string;
+  n: number;
+  label: string;
+  /** Optionaler Gruppen-Key — Steps mit demselben Key werden gleich eingefärbt. */
+  group?: string;
+}
+
+export function StepNav({
+  steps,
+  current,
+  done,
+  onSelect,
+  groupLabels,
+}: {
+  steps: StepNavItem[];
+  current: string;
+  done: Record<string, boolean>;
+  onSelect: (id: string) => void;
+  /** Optional: zwei Gruppen-Labels über der Step-Reihe (z.B. "BÜB" / "BAB"). */
+  groupLabels?: { left: string; right: string; splitAt: number };
+}) {
+  // Gruppenfarbe: Default = indigo, alternative Gruppe (alles ab splitAt) = emerald
+  const colorFor = (idx: number): 'indigo' | 'emerald' =>
+    groupLabels && idx >= groupLabels.splitAt ? 'emerald' : 'indigo';
+
+  const palette = {
+    indigo: {
+      active: 'bg-indigo-500 text-white shadow-md shadow-indigo-500/30',
+      done: 'bg-indigo-500/15 text-indigo-300',
+      label: 'text-indigo-400',
+    },
+    emerald: {
+      active: 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30',
+      done: 'bg-emerald-500/15 text-emerald-300',
+      label: 'text-emerald-400',
+    },
+  } as const;
+
+  const activeLabel = steps.find(s => s.id === current)?.label;
+
+  return (
+    <div className="mb-6">
+      {groupLabels && (
+        <div className="flex gap-1 mb-2 text-[11px] font-bold uppercase tracking-wider">
+          <span className={`flex-1 text-center ${palette.indigo.label}`}>{groupLabels.left}</span>
+          <span className={`flex-1 text-center ${palette.emerald.label}`}>{groupLabels.right}</span>
+        </div>
+      )}
+      <div className="flex gap-1 flex-wrap">
+        {steps.map((s, i) => {
+          const isActive = current === s.id;
+          const isDone = !!done[s.id];
+          const c = colorFor(i);
+          const cls = isActive
+            ? palette[c].active
+            : isDone
+              ? palette[c].done
+              : 'bg-[#252840] text-[#6b7280]';
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => onSelect(s.id)}
+              className={`flex-1 min-w-[2rem] py-1.5 px-1 rounded-lg text-sm font-bold transition-all ${cls}`}
+            >
+              {isDone && !isActive ? '✓' : s.n}
+            </button>
+          );
+        })}
+      </div>
+      {activeLabel && (
+        <div className="text-center mt-1.5 text-xs text-[#9ca3af]">{activeLabel}</div>
+      )}
+    </div>
+  );
+}
+
 // ─── Step-Header: Schritt-Nummer + Titel + Untertitel ──────────────────
 export function StepHeader({ step, title, sub }: { step: string; title: string; sub?: string }) {
   return (

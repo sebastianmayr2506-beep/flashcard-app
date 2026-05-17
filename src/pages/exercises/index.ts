@@ -54,6 +54,16 @@ export const EXERCISES: ExerciseMeta[] = [
     estimatedMinutes: 45,
     component: lazy(() => import('./cashflow-kurs')),
   },
+  {
+    slug: 'ruecklagen-rueckstellungen',
+    title: 'Rücklagen & Rückstellungen',
+    description: 'Bilanzierung: Wann ist es Eigenkapital, wann Fremdkapital? 6 Theorie-Lektionen + 5 Praxis-Übungen inkl. „Bilanz bauen" per Click-to-Place.',
+    subject: 'Bilanzierung',
+    difficulty: 'mittel',
+    icon: '🏦',
+    estimatedMinutes: 35,
+    component: lazy(() => import('./ruecklagen-rueckstellungen-kurs')),
+  },
 ];
 
 export function findExercise(slug: string): ExerciseMeta | undefined {

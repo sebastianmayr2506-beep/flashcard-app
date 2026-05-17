@@ -44,6 +44,16 @@ export const EXERCISES: ExerciseMeta[] = [
     estimatedMinutes: 30,
     component: lazy(() => import('./bueb-bab-trainer')),
   },
+  {
+    slug: 'cashflow-kurs',
+    title: 'Cash-Flow Kurs',
+    description: 'Kompletter Mini-Kurs zur Kapitalflussrechnung: 7 Theorie-Lektionen (oCF-Formel, Working Capital, Anlagenverkauf) + 5 Praxis-Szenarien von Pizzeria bis Brauerei.',
+    subject: 'Bilanzierung',
+    difficulty: 'mittel',
+    icon: '💧',
+    estimatedMinutes: 45,
+    component: lazy(() => import('./cashflow-kurs')),
+  },
 ];
 
 export function findExercise(slug: string): ExerciseMeta | undefined {

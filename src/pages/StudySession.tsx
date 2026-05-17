@@ -8,6 +8,7 @@ import MicPulseVisualizer from '../components/MicPulseVisualizer';
 import { LinkedCardsPanel } from '../components/LinkedCards';
 import QuickEditModal from '../components/QuickEditModal';
 import CardChatDrawer from '../components/CardChatDrawer';
+import { exportJSON } from '../utils/export';
 import { getNewCardsDoneToday, calculateDailyPlan } from '../utils/dailyGoal';
 import { applyFocus } from '../utils/priority';
 import { generateMCHintBundle } from '../utils/geminiMCHint';
@@ -2135,6 +2136,16 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                     title="Karte bearbeiten"
                   >
                     ✏️
+                  </button>
+                  <button
+                    onClick={e => {
+                      e.stopPropagation();
+                      exportJSON([currentCard], `karte_${currentCard.id.slice(0, 8)}.json`);
+                    }}
+                    className="text-[#6b7280] hover:text-indigo-400 text-base transition-colors px-1.5 sm:px-2 py-1.5 rounded-lg hover:bg-[#252840] shrink-0"
+                    title="Karte als JSON exportieren"
+                  >
+                    📦
                   </button>
                   {confirmDeleteId === currentCard.id ? (
                     <div className="flex items-center gap-1">

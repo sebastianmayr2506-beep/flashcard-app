@@ -7,6 +7,7 @@ import { previewClassification, inspectDistribution } from '../utils/priority';
 import { normalizeAll, type NormalizationSummary } from '../utils/normalizeStats';
 import InfoTooltip from '../components/InfoTooltip';
 import { ADMIN_EMAIL } from '../utils/admin';
+import AdminStatsPanel from '../components/AdminStatsPanel';
 
 // ─── Tageslimit-Presets ──────────────────────────────────────────────────────
 // Ein Preset setzt die 3 echten Settings (dailyNewCardGoal, ...Mode,
@@ -414,6 +415,11 @@ export default function Settings({
       {/* Invite codes — admin only */}
       {userEmail === ADMIN_EMAIL && (
         <InviteCodesPanel showToast={showToast} />
+      )}
+
+      {/* Admin-Stats — admin only, default zugeklappt, lädt lazy */}
+      {userEmail === ADMIN_EMAIL && (
+        <AdminStatsPanel adminEmail={userEmail} />
       )}
 
       {/* SRS Reset */}

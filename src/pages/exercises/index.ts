@@ -36,12 +36,12 @@ export interface ExerciseMeta {
 export const EXERCISES: ExerciseMeta[] = [
   {
     slug: 'bueb-bab-trainer',
-    title: 'BÜB → BAB → Kostenträger',
-    description: 'Tischlerei Berger KG, März — kompletter Weg vom FIBU-Aufwand über Betriebsüberleitung, Betriebsabrechnungsbogen bis zu den Selbstkosten der Produkte.',
+    title: 'BÜB & BAB Kurs',
+    description: 'Kompletter Kurs zur Betriebsüberleitung und Betriebsabrechnung: 8 Theorie-Lektionen (Kostenarten, kalkulatorische Kosten, Verteilungsschlüssel) + 9 Praxis-Phasen vom FIBU-Aufwand bis zu Selbstkosten der Produkte.',
     subject: 'Kostenrechnung',
     difficulty: 'schwer',
     icon: '📊',
-    estimatedMinutes: 30,
+    estimatedMinutes: 50,
     component: lazy(() => import('./bueb-bab-trainer')),
   },
   {

@@ -1,14 +1,12 @@
-// BÜB → BAB → Kostenträger Trainer (v3)
-// Tischlerei Berger KG, März — 9 klickbare Phasen.
+// BÜB & BAB Kurs (vormals BÜB-Trainer v3, jetzt mit Theorie-Sektion)
+// Tischlerei Berger KG, März — 8 Theorie-Lektionen + 9 Praxis-Phasen.
 //
-// Verbesserungen ggü. v2:
-//   • Klickbare Step-Navigation (StepNav statt linear ProgressBar)
-//   • Schritt 7 redesigned: zwei-Layer-Entscheidung Direkt/Schlüssel →
-//     KS/Verteilungsbasis. Euro-Beträge werden nicht mehr eingegeben,
-//     sondern nach erfolgreicher Klassifizierung in einer Übersichts-
-//     Tabelle automatisch dargestellt.
-//   • Toleranz beim Check für Step 8 + 9 (Rundungs-Slack: ±0.5 % bzw.
-//     ±200 € für Euros, <1 % Abweichung für Prozente).
+// Die Praxis-Logik ist identisch zur früheren v3 des reinen Trainers
+// (Klassifizierung → BÜB → BAB → Kostenträger). Neu drum herum:
+//   • Mode-Toggle Theorie/Üben
+//   • 8 Theorie-Lektionen mit visuellen Blöcken (flow, cards, steps,
+//     formula, comparison, twoCol, ksCards, summary)
+//   • Klickbare Progress-Dots in Theorie
 //
 // Konventionen siehe EXERCISE_GUIDE.md.
 
@@ -74,8 +72,8 @@ interface GkItem {
   name: string;
   amount: number;
   isDirekt: boolean;
-  target?: KsKey;             // wenn isDirekt: welche KS
-  basis?: BasisKey;           // wenn !isDirekt: welcher Verteilungsschlüssel
+  target?: KsKey;
+  basis?: BasisKey;
   dist: Record<KsKey, number>;
 }
 
@@ -99,7 +97,6 @@ const pct = (a: number, b: number) => Math.round((a / b) * 10000) / 100;
 const MGK_P = pct(MGK, MEK_T), FGK_P = pct(FGK, FEK_T);
 const VwGK_P = pct(VwGK, HK_VAL), VtGK_P = pct(VtGK, HK_VAL);
 
-// Toleranz: Rundungsfehler bei Euro (±0.5 % oder ±200 €) bzw. Prozent (<1 %)
 const closeEur = (a: number, b: number) => Math.abs(a - b) <= Math.max(Math.abs(b) * 0.005, 200);
 const closePct = (a: number, b: number) => Math.abs(a - b) < 1;
 
@@ -116,7 +113,418 @@ const STEPS: StepNavItem[] = [
 ];
 type StepId = typeof STEPS[number]['id'];
 
-// ─── kleine UI-Helfer (übungsspezifisch) ──────────────────────────────
+// ─── Theorie-Daten ─────────────────────────────────────────────────────
+
+type ColorKey = 'indigo' | 'blue' | 'emerald' | 'red' | 'amber' | 'purple';
+
+type TheoryBlock =
+  | { type: 'text'; value: string }
+  | { type: 'callout'; emoji: string; value: string }
+  | { type: 'flow'; steps: { label: string; desc: string; icon: string }[] }
+  | { type: 'cards'; items: { label: string; desc: string; example: string; color: ColorKey; icon: string }[] }
+  | { type: 'steps'; items: { n: string; title: string; desc: string; sign: '+' | '−' | '±'; color: ColorKey }[] }
+  | { type: 'formula'; lines: string[] }
+  | { type: 'comparison'; items: { label: string; buchm: string; kalk: string; icon: string }[] }
+  | { type: 'twoCol'; left: TwoColCol; right: TwoColCol }
+  | { type: 'ksCards'; items: { label: string; icon: string; desc: string; basis: string }[] }
+  | { type: 'summary'; items: string[] };
+
+interface TwoColCol {
+  title: string;
+  color: ColorKey;
+  icon: string;
+  desc: string;
+  items: string[];
+}
+
+interface TheoryPage {
+  title: string;
+  icon: string;
+  content: TheoryBlock[];
+}
+
+const theoryPages: TheoryPage[] = [
+  {
+    title: 'Der Weg zum echten Preis', icon: '🗺️',
+    content: [
+      { type: 'text', value: 'Stell dir vor, du baust Tische. Du willst wissen: Was kostet mich ein Tisch WIRKLICH? Die Buchhaltung (FIBU) kennt nur Aufwände nach Steuerrecht – das ist nicht die ganze Wahrheit.' },
+      {
+        type: 'flow', steps: [
+          { label: 'FIBU-Aufwand',  desc: 'Was laut Gesetz aufgewendet wurde',           icon: '📋' },
+          { label: 'BÜB',           desc: 'Korrektur: Was hat der Betrieb wirklich gekostet?', icon: '🔧' },
+          { label: 'KoRe-Kosten',   desc: 'Betriebswirtschaftlich echte Kosten',         icon: '💰' },
+          { label: 'BAB',           desc: 'Verteilung auf Abteilungen',                  icon: '📊' },
+          { label: 'Selbstkosten',  desc: 'Was kostet ein Produkt wirklich?',            icon: '🏷️' },
+        ],
+      },
+      { type: 'callout', emoji: '⚠️', value: 'Wer einfach FIBU-Aufwände als Kosten nimmt, kalkuliert falsch – und verkauft vielleicht unter den echten Kosten!' },
+    ],
+  },
+  {
+    title: 'Die 4 Kostenarten', icon: '🧩',
+    content: [
+      { type: 'text', value: 'Im BÜB begegnest du vier Arten von Positionen. Jede wird anders behandelt:' },
+      {
+        type: 'cards', items: [
+          { label: 'Grundkosten',       desc: 'Aufwand = Kosten, identisch. Einfach 1:1 übernehmen.',     example: 'Hallenmiete, Energie, Gehälter',                     color: 'blue',    icon: '✅' },
+          { label: 'Neutraler Aufwand', desc: 'Hat nichts mit dem Betrieb zu tun. Muss raus!',            example: 'Spenden, Brandschaden, Steuernachzahlung Vorjahr',   color: 'red',     icon: '🚫' },
+          { label: 'Anderskosten',      desc: 'Existiert in FIBU, aber wir bewerten anders.',             example: 'Buchm. AfA → Kalk. AfA, FK-Zinsen → Kalk. Zinsen',   color: 'amber',   icon: '🔄' },
+          { label: 'Zusatzkosten',      desc: 'In der FIBU gar nicht vorhanden. Muss dazu!',              example: 'Kalk. Unternehmerlohn, Kalk. Miete eigener Gebäude', color: 'emerald', icon: '➕' },
+        ],
+      },
+      { type: 'callout', emoji: '💡', value: 'Anderskosten + Zusatzkosten = Kalkulatorische Kosten. Sie zeigen die betriebswirtschaftliche Realität.' },
+    ],
+  },
+  {
+    title: 'Die 3 Korrekturen im BÜB', icon: '🔧',
+    content: [
+      { type: 'text', value: 'Der BÜB macht drei Korrekturen am FIBU-Aufwand:' },
+      {
+        type: 'steps', items: [
+          { n: '1', title: 'Neutralen Aufwand herausnehmen', desc: 'Betriebsfremd (Spende), außerordentlich (Brandschaden) oder periodenfremd (Steuernachzahlung Vorjahr) – alles raus!', sign: '−', color: 'red' },
+          { n: '2', title: 'Anderskosten ersetzen', desc: 'Buchm. Werte durch kalk. Werte austauschen. Z.B. steuerliche AfA → AfA auf Wiederbeschaffungswert. Die Differenz wird verrechnet.', sign: '±', color: 'amber' },
+          { n: '3', title: 'Zusatzkosten hinzufügen', desc: 'Kosten, die in der FIBU nicht existieren: Kalk. Unternehmerlohn, kalk. Miete, kalk. Wagnisse, kalk. EK-Zinsen.', sign: '+', color: 'emerald' },
+        ],
+      },
+      { type: 'formula', lines: ['FIBU-Aufwand', '− Neutrale Aufwände', '± Anderskosten-Differenz', '+ Zusatzkosten', '────────────────────', '= Kosten laut KoRe'] },
+    ],
+  },
+  {
+    title: 'Warum kalkulatorische Kosten?', icon: '🤔',
+    content: [
+      { type: 'text', value: 'Die Buchhaltung folgt dem Steuerrecht. Aber intern wollen wir wissen, was der Betrieb WIRKLICH kostet:' },
+      {
+        type: 'comparison', items: [
+          { label: 'Kalk. AfA',    buchm: 'Steuerl. AfA auf Anschaffungskosten',     kalk: 'AfA auf Wiederbeschaffungswert – was kostet die Maschine HEUTE?',                icon: '🏭' },
+          { label: 'Kalk. Zinsen', buchm: 'Nur Fremdkapitalzinsen',                  kalk: 'Zinsen auf gesamtes betriebsnotw. Kapital (EK hat Opportunitätskosten!)',         icon: '💰' },
+          { label: 'Kalk. U-Lohn', buchm: 'Kein Aufwand (Chef = Eigentümer)',        kalk: 'Was müsste man einem angestellten Geschäftsführer zahlen?',                       icon: '👤' },
+          { label: 'Kalk. Miete',  buchm: 'Kein Aufwand (eigenes Gebäude)',          kalk: 'Was könnte man durch Vermietung verdienen?',                                       icon: '🏠' },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'BAB: Gemeinkosten verteilen', icon: '📊',
+    content: [
+      { type: 'text', value: 'Nach dem BÜB haben wir die echten Kosten. Jetzt die Frage: Wie viel davon steckt in jedem Produkt?' },
+      {
+        type: 'twoCol',
+        left: {
+          title: 'Einzelkosten', color: 'blue', icon: '🎯', desc: 'Direkt einem Produkt zuordenbar',
+          items: ['Materialeinzelkosten (MEK) – z.B. Holz für Tisch X', 'Fertigungseinzelkosten (FEK) – z.B. Lohn für Tisch X'],
+        },
+        right: {
+          title: 'Gemeinkosten', color: 'purple', icon: '🌐', desc: 'Fallen für den ganzen Betrieb an',
+          items: ['Hilfsstoffe (Leim, Schrauben)', 'Hallenmiete, Energie', 'Gehälter Verwaltung/Vertrieb', 'Kalk. AfA, Zinsen, etc.'],
+        },
+      },
+      { type: 'callout', emoji: '📌', value: 'Einzelkosten → direkt zum Produkt. Gemeinkosten → müssen über den BAB auf 4 Kostenstellen verteilt werden.' },
+    ],
+  },
+  {
+    title: 'Die 4 Kostenstellen', icon: '🏢',
+    content: [
+      { type: 'text', value: 'Jede Abteilung ist eine Kostenstelle. Gemeinkosten werden zuerst auf diese Kostenstellen verteilt:' },
+      {
+        type: 'ksCards', items: [
+          { label: 'Material',    icon: '📦', desc: 'Einkauf, Lager, Hilfsstoffe',           basis: 'Bezugsgröße: MEK' },
+          { label: 'Fertigung',   icon: '⚙️', desc: 'Produktion, Maschinen, Werkstatt',     basis: 'Bezugsgröße: FEK' },
+          { label: 'Verwaltung',  icon: '🏛️', desc: 'Buchhaltung, HR, Geschäftsführung',    basis: 'Bezugsgröße: HK' },
+          { label: 'Vertrieb',    icon: '📣', desc: 'Verkauf, Marketing, Versand',          basis: 'Bezugsgröße: HK' },
+        ],
+      },
+      { type: 'text', value: 'Die Verteilung passiert entweder direkt (Gehälter Verwaltung → 100% Verwaltung) oder über einen Verteilungsschlüssel (Miete → nach m² pro Abteilung).' },
+    ],
+  },
+  {
+    title: 'Vom BAB zu Selbstkosten', icon: '🏷️',
+    content: [
+      { type: 'text', value: 'Am Ende des BAB stehen die Gemeinkostenzuschlagssätze. Damit rechnest du die Selbstkosten je Produkt:' },
+      {
+        type: 'formula', lines: [
+          '  MEK (direkt zugeordnet)',
+          '+ MGK (MEK × MGK-Zuschlag%)',
+          '+ FEK (direkt zugeordnet)',
+          '+ FGK (FEK × FGK-Zuschlag%)',
+          '────────────────────────────',
+          '= HERSTELLKOSTEN (HK)',
+          '+ VwGK (HK × VwGK-Zuschlag%)',
+          '+ VtGK (HK × VtGK-Zuschlag%)',
+          '────────────────────────────',
+          '= SELBSTKOSTEN',
+        ],
+      },
+      { type: 'callout', emoji: '🎯', value: 'Die Selbstkosten sind die Preisuntergrenze – darunter macht das Unternehmen Verlust.' },
+    ],
+  },
+  {
+    title: 'Bereit zum Üben!', icon: '🚀',
+    content: [
+      { type: 'text', value: 'Du kennst jetzt alle Bausteine. Hier nochmal die Kurzfassung:' },
+      {
+        type: 'summary', items: [
+          'BÜB überführt FIBU-Aufwände in echte betriebswirtschaftliche Kosten',
+          '3 Korrekturen: Neutral raus, Anderskosten ersetzen, Zusatzkosten dazu',
+          'BAB verteilt Gemeinkosten auf Kostenstellen (Material, Fertigung, Verwaltung, Vertrieb)',
+          'Direkte Kosten → 100% zu einer Kostenstelle, sonst Verteilungsschlüssel',
+          'Zuschlagssätze = Gemeinkosten ÷ Bezugsgröße × 100',
+          'Selbstkosten = HK + VwGK + VtGK → Preisuntergrenze!',
+        ],
+      },
+      { type: 'callout', emoji: '💪', value: 'Im Übungsteil rechnest du jetzt ein komplettes Beispiel durch – vom FIBU-Aufwand bis zu den Selbstkosten pro Produkt.' },
+    ],
+  },
+];
+
+// ─── Color-Palette ─────────────────────────────────────────────────────
+
+const palette: Record<ColorKey, { text: string; bgSoft: string; border: string; bg: string }> = {
+  indigo:  { text: 'text-indigo-400',  bgSoft: 'bg-indigo-500/10',  border: 'border-indigo-500/40',  bg: 'bg-indigo-500' },
+  blue:    { text: 'text-blue-400',    bgSoft: 'bg-blue-500/10',    border: 'border-blue-500/40',    bg: 'bg-blue-500' },
+  emerald: { text: 'text-emerald-400', bgSoft: 'bg-emerald-500/10', border: 'border-emerald-500/40', bg: 'bg-emerald-500' },
+  red:     { text: 'text-red-400',     bgSoft: 'bg-red-500/10',     border: 'border-red-500/40',     bg: 'bg-red-500' },
+  amber:   { text: 'text-amber-400',   bgSoft: 'bg-amber-500/10',   border: 'border-amber-500/40',   bg: 'bg-amber-500' },
+  purple:  { text: 'text-purple-400',  bgSoft: 'bg-purple-500/10',  border: 'border-purple-500/40',  bg: 'bg-purple-500' },
+};
+
+// ─── Theorie-Block-Renderer ────────────────────────────────────────────
+
+function Block({ block }: { block: TheoryBlock }) {
+  if (block.type === 'text') {
+    return <p className="text-sm leading-relaxed text-[#d1d5db] my-3">{block.value}</p>;
+  }
+
+  if (block.type === 'callout') {
+    return (
+      <div className="px-4 py-3 rounded-xl bg-indigo-500/10 border border-indigo-500/30 my-3.5 flex gap-2.5 items-start">
+        <span className="text-lg shrink-0">{block.emoji}</span>
+        <span className="text-sm leading-relaxed text-[#d1d5db]">{block.value}</span>
+      </div>
+    );
+  }
+
+  if (block.type === 'flow') {
+    return (
+      <div className="my-4">
+        {block.steps.map((s, j) => (
+          <div key={j}>
+            <Card className="flex items-center gap-3 py-2.5 my-1">
+              <span className="text-2xl">{s.icon}</span>
+              <div>
+                <div className="font-bold text-sm text-white">{s.label}</div>
+                <div className="text-xs text-[#9ca3af]">{s.desc}</div>
+              </div>
+            </Card>
+            {j < block.steps.length - 1 && (
+              <div className="text-center text-[#6b7280] text-base">↓</div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (block.type === 'cards') {
+    return (
+      <div className="my-3.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {block.items.map((c, j) => {
+          const p = palette[c.color];
+          return (
+            <div
+              key={j}
+              className={`bg-[#1e2130] border border-[#2d3148] rounded-xl p-3.5 ${p.text}`}
+              style={{ borderLeft: '4px solid currentColor' }}
+            >
+              <div className="text-lg mb-1">{c.icon}</div>
+              <div className={`font-extrabold text-xs ${p.text} mb-1`}>{c.label}</div>
+              <div className="text-xs text-[#d1d5db] leading-relaxed mb-1.5">{c.desc}</div>
+              <div className="text-[11px] text-[#9ca3af] italic">{c.example}</div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (block.type === 'steps') {
+    return (
+      <div className="my-3.5">
+        {block.items.map((s, j) => {
+          const p = palette[s.color];
+          return (
+            <div key={j} className="flex gap-3 mb-2.5 items-start">
+              <div className={`w-9 h-9 rounded-full ${p.bg} text-white flex items-center justify-center font-extrabold text-base shrink-0`}>
+                {s.sign}
+              </div>
+              <div className="flex-1">
+                <div className="font-bold text-sm text-white">{s.title}</div>
+                <div className="text-xs text-[#9ca3af] leading-relaxed mt-0.5">{s.desc}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (block.type === 'formula') {
+    return (
+      <div className="bg-[#0c0e14] border border-[#2d3148] rounded-xl px-5 py-4 my-3.5 font-mono text-sm leading-loose overflow-x-auto">
+        {block.lines.map((l, j) => {
+          const color = l.startsWith('=') || l.startsWith('─')
+            ? 'text-amber-400'
+            : l.startsWith('+')
+              ? 'text-emerald-400'
+              : l.startsWith('−')
+                ? 'text-red-400'
+                : 'text-[#d1d5db]';
+          return <div key={j} className={`${color} whitespace-pre`}>{l}</div>;
+        })}
+      </div>
+    );
+  }
+
+  if (block.type === 'comparison') {
+    return (
+      <div className="my-3.5">
+        {block.items.map((c, j) => (
+          <Card key={j} className="flex gap-2.5 mb-2 items-start">
+            <span className="text-xl shrink-0">{c.icon}</span>
+            <div className="flex-1">
+              <div className="font-bold text-sm text-white mb-1">{c.label}</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                <div className="text-xs text-red-300 bg-red-500/10 px-2 py-1 rounded-md">
+                  <strong>FIBU:</strong> {c.buchm}
+                </div>
+                <div className="text-xs text-emerald-300 bg-emerald-500/10 px-2 py-1 rounded-md">
+                  <strong>KoRe:</strong> {c.kalk}
+                </div>
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  if (block.type === 'twoCol') {
+    const renderCol = (col: TwoColCol) => {
+      const p = palette[col.color];
+      return (
+        <div className={`bg-[#1e2130] border ${p.border} rounded-xl p-3.5`}>
+          <div className="text-xl mb-1">{col.icon}</div>
+          <div className={`font-extrabold text-sm ${p.text}`}>{col.title}</div>
+          <div className="text-xs text-[#9ca3af] mb-2">{col.desc}</div>
+          {col.items.map((item, k) => (
+            <div
+              key={k}
+              className={`text-xs text-[#d1d5db] leading-relaxed pl-2 mb-1 ${p.border}`}
+              style={{ borderLeft: '2px solid currentColor' }}
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+      );
+    };
+    return (
+      <div className="my-3.5 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        {renderCol(block.left)}
+        {renderCol(block.right)}
+      </div>
+    );
+  }
+
+  if (block.type === 'ksCards') {
+    return (
+      <div className="my-3.5 grid grid-cols-2 gap-2">
+        {block.items.map((c, j) => (
+          <Card key={j} className="text-center">
+            <div className="text-3xl mb-1">{c.icon}</div>
+            <div className="font-extrabold text-sm text-white">{c.label}</div>
+            <div className="text-xs text-[#9ca3af] mt-0.5">{c.desc}</div>
+            <div className="text-[11px] text-indigo-400 font-bold mt-1.5 bg-indigo-500/15 px-2 py-0.5 rounded-md inline-block">
+              {c.basis}
+            </div>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  if (block.type === 'summary') {
+    return (
+      <div className="my-3.5">
+        {block.items.map((item, j) => (
+          <div key={j} className="flex gap-2.5 items-start mb-2">
+            <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-extrabold text-xs shrink-0 mt-0.5">
+              ✓
+            </div>
+            <span className="text-sm text-[#d1d5db] leading-relaxed">{item}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return null;
+}
+
+// ─── Theorie-Ansicht ───────────────────────────────────────────────────
+
+function TheoryView({
+  page, pageIndex, totalPages, onNext, onPrev, onStartPractice,
+}: {
+  page: TheoryPage;
+  pageIndex: number;
+  totalPages: number;
+  onNext: () => void;
+  onPrev: () => void;
+  onStartPractice: () => void;
+}) {
+  const isLast = pageIndex === totalPages - 1;
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-4">
+        <span className="text-3xl">{page.icon}</span>
+        <h2 className="text-xl font-extrabold text-white leading-tight m-0">{page.title}</h2>
+      </div>
+      {page.content.map((b, i) => <Block key={i} block={b} />)}
+
+      <div className="flex gap-2.5 mt-5">
+        {pageIndex > 0 && (
+          <button
+            type="button"
+            onClick={onPrev}
+            className="flex-1 py-3 rounded-xl border border-[#2d3148] bg-[#1e2130] hover:bg-[#252840] text-[#9ca3af] hover:text-white text-sm font-bold transition-colors"
+          >
+            ← Zurück
+          </button>
+        )}
+        {isLast ? (
+          <button
+            type="button"
+            onClick={onStartPractice}
+            className="flex-[2] py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-sm font-bold transition-colors"
+          >
+            ✏️ Jetzt üben!
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onNext}
+            className="flex-[2] py-3 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-bold transition-colors"
+          >
+            Weiter →
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Praxis-Helfer ─────────────────────────────────────────────────────
+
 function Table({ children }: { children: React.ReactNode }) {
   return (
     <div className="overflow-x-auto -mx-1">
@@ -152,29 +560,28 @@ function SumRow({
   );
 }
 
-// ─── Hauptkomponente ───────────────────────────────────────────────────
+// ─── Praxis-Ansicht (alte v3-Logik, leicht umorganisiert) ──────────────
 
-export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
+function PracticeView({ onBackToTheory }: { onBackToTheory: () => void }) {
   const [step, setStep] = useState<StepId>('p1');
   const [done, setDone] = useState<Record<string, boolean>>({});
   const [fb, setFb] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const [types, setTypes] = useState<Record<number, string>>({});
   const [reasons, setReasons] = useState<Record<number, string>>({});
-  const [nSum, setNSum] = useState<string>('');
+  const [nSum, setNSum] = useState('');
   const [kV, setKV] = useState<Record<number, string>>({});
   const [dV, setDV] = useState<Record<number, string>>({});
-  const [dSum, setDSum] = useState<string>('');
+  const [dSum, setDSum] = useState('');
   const [zV, setZV] = useState<Record<string, string>>({});
-  const [zSum, setZSum] = useState<string>('');
-  const [koreA, setKoreA] = useState<string>('');
-  const [ekA, setEkA] = useState<string>('');
-  const [gkA, setGkA] = useState<string>('');
-  // Step 7 — drei separate State-Maps, eine pro Layer
+  const [zSum, setZSum] = useState('');
+  const [koreA, setKoreA] = useState('');
+  const [ekA, setEkA] = useState('');
+  const [gkA, setGkA] = useState('');
   const [babType, setBabType] = useState<Record<string, 'direkt' | 'schlüssel'>>({});
   const [babTarget, setBabTarget] = useState<Record<string, KsKey>>({});
   const [babBasis, setBabBasis] = useState<Record<string, BasisKey>>({});
-  const [hkA, setHkA] = useState<string>('');
+  const [hkA, setHkA] = useState('');
   const [zsA, setZsA] = useState<Record<string, string>>({});
   const [ktA, setKtA] = useState<Record<string, string>>({});
 
@@ -195,7 +602,6 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
   const tK = cKT(MEK_TI, FEK_TI);
   const rK = cKT(MEK_RE, FEK_RE);
 
-  // ─── Checks ─────────────────────────────────────────────────────────
   const c1 = () => {
     if (!FIBU.every(f => types[f.id])) return err('Bitte alle Positionen zuordnen.');
     const w = FIBU.filter(f => types[f.id] !== f.type);
@@ -208,7 +614,7 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
     const w = it.filter(f => reasons[f.id] !== f.reason);
     if (w.length) return err(`Falsch: ${w.map(x => x.name).join(', ')}`);
     const s = it.reduce((a, f) => a + f.amount, 0);
-    if (numFromInput(nSum) !== s) return err('Begründungen stimmen, aber Summe falsch.');
+    if (numFromInput(nSum) !== s) return err('Begründungen stimmen, Summe falsch.');
     suc(`Neutraler Aufwand: −${fmtEur(s)}`); ok('p2');
   };
   const c3 = () => {
@@ -218,14 +624,14 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
       if (numFromInput(dV[f.id]) !== (f.kalkValue! - f.amount)) return err(`${f.name}: Differenz falsch.`);
     }
     const s = it.reduce((a, f) => a + (f.kalkValue! - f.amount), 0);
-    if (numFromInput(dSum) !== s) return err('Einzelwerte stimmen, Gesamtdifferenz falsch.');
+    if (numFromInput(dSum) !== s) return err('Gesamtdifferenz falsch.');
     suc(`Anderskosten-Differenz: +${fmtEur(s)}`); ok('p3');
   };
   const c4 = () => {
     const w = ZUSATZ.filter(z => numFromInput(zV[z.id]) !== z.amount);
     if (w.length) return err(`Falsch: ${w.map(z => z.name).join(', ')}`);
     const s = ZUSATZ.reduce((a, z) => a + z.amount, 0);
-    if (numFromInput(zSum) !== s) return err('Beträge stimmen, Summe falsch.');
+    if (numFromInput(zSum) !== s) return err('Summe falsch.');
     suc(`Zusatzkosten: +${fmtEur(s)}`); ok('p4');
   };
   const c5 = () => {
@@ -242,16 +648,16 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
     GK_ITEMS.forEach(g => {
       const typ = babType[g.id];
       if (!typ) { errs.push(`${g.name}: Methode fehlt`); return; }
-      if (g.isDirekt && typ !== 'direkt') { errs.push(`${g.name}: Sollte direkt zugeordnet werden`); return; }
-      if (!g.isDirekt && typ !== 'schlüssel') { errs.push(`${g.name}: Braucht einen Verteilungsschlüssel`); return; }
+      if (g.isDirekt && typ !== 'direkt') { errs.push(`${g.name}: Sollte direkt sein`); return; }
+      if (!g.isDirekt && typ !== 'schlüssel') { errs.push(`${g.name}: Braucht Schlüssel`); return; }
       if (g.isDirekt) {
-        if (babTarget[g.id] !== g.target) { errs.push(`${g.name}: Falsche Kostenstelle`); }
+        if (babTarget[g.id] !== g.target) errs.push(`${g.name}: Falsche KS`);
       } else {
-        if (babBasis[g.id] !== g.basis) { errs.push(`${g.name}: Falscher Schlüssel`); }
+        if (babBasis[g.id] !== g.basis) errs.push(`${g.name}: Falscher Schlüssel`);
       }
     });
     if (errs.length) return err(errs.slice(0, 4).join(' · ') + (errs.length > 4 ? ` · +${errs.length - 4} weitere` : ''));
-    suc(`Alles richtig! Mat: ${fmtEur(MGK)} | Fert: ${fmtEur(FGK)} | Verw: ${fmtEur(VwGK)} | Vertr: ${fmtEur(VtGK)}`);
+    suc(`Richtig! Mat: ${fmtEur(MGK)} | Fert: ${fmtEur(FGK)} | Verw: ${fmtEur(VwGK)} | Vertr: ${fmtEur(VtGK)}`);
     ok('p7');
   };
   const c8 = () => {
@@ -278,7 +684,6 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
     <PrimaryBtn label={label} onClick={() => go(nextId)} color="emerald" />
   );
 
-  // ─── Step 7 GK Card ─────────────────────────────────────────────────
   function GKCard({ g }: { g: GkItem }) {
     const typ = babType[g.id];
     const tgt = babTarget[g.id];
@@ -286,13 +691,11 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
 
     return (
       <Card className="mb-2.5">
-        {/* Header */}
         <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
           <span className="font-bold text-white text-sm">{g.name}</span>
           <span className="font-mono text-[#d1d5db] text-sm">{fmtEur(g.amount)}</span>
         </div>
 
-        {/* Layer 1 */}
         <div className="mb-2.5">
           <div className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wider mb-1.5">
             ① Wie verteilen?
@@ -313,7 +716,6 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        {/* Layer 2a: Direkt → welche KS */}
         {typ === 'direkt' && (
           <div className="pl-4 border-l-[3px] border-blue-500">
             <div className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wider mb-1.5">
@@ -333,7 +735,6 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {/* Layer 2b: Schlüssel → welche Basis */}
         {typ === 'schlüssel' && (
           <div className="pl-4 border-l-[3px] border-purple-500">
             <div className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wider mb-1.5">
@@ -360,11 +761,7 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <ExerciseShell
-      title="BÜB → BAB → Kostenträger"
-      subtitle="Tischlerei Berger KG – März"
-      onClose={onClose}
-    >
+    <div>
       <StepNav
         steps={STEPS}
         current={step}
@@ -373,7 +770,7 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
         groupLabels={{ left: 'BÜB', right: 'BAB + Kostenträger', splitAt: 5 }}
       />
 
-      {/* ═══ P1 ═══ */}
+      {/* P1 */}
       {step === 'p1' && (
         <div>
           <StepHeader step="1" title="Kostenarten klassifizieren" sub="Ordne jede Position zu." />
@@ -426,7 +823,7 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* ═══ P2 ═══ */}
+      {/* P2 */}
       {step === 'p2' && (
         <div>
           <StepHeader step="2" title="Neutrale Aufwände begründen" sub="Begründung + Summe berechnen." />
@@ -466,7 +863,7 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* ═══ P3 ═══ */}
+      {/* P3 */}
       {step === 'p3' && (
         <div>
           <StepHeader step="3" title="Anderskosten-Differenz" sub="Kalk. Wert + Differenz + Summe selbst berechnen." />
@@ -508,7 +905,7 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* ═══ P4 ═══ */}
+      {/* P4 */}
       {step === 'p4' && (
         <div>
           <StepHeader step="4" title="Kalkulatorische Zusatzkosten" sub="Beträge + Summe berechnen." />
@@ -543,7 +940,7 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* ═══ P5 ═══ */}
+      {/* P5 */}
       {step === 'p5' && (
         <div>
           <StepHeader step="5" title="BÜB-Ergebnis" sub="Kosten laut Kostenrechnung berechnen." />
@@ -570,7 +967,7 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* ═══ P6 ═══ */}
+      {/* P6 */}
       {step === 'p6' && (
         <div>
           <StepHeader step="6" title="Einzel- & Gemeinkosten" sub="EK und GK selbst berechnen." />
@@ -602,7 +999,7 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* ═══ P7 ═══ */}
+      {/* P7 */}
       {step === 'p7' && (
         <div>
           <StepHeader step="7" title="Gemeinkosten verteilen" sub={`${fmtEur(GK_T)} auf 4 Kostenstellen – entscheide selbst WIE.`} />
@@ -668,7 +1065,7 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* ═══ P8 ═══ */}
+      {/* P8 */}
       {step === 'p8' && (
         <div>
           <StepHeader step="8" title="Herstellkosten & Zuschlagssätze" sub="HK berechnen, dann Zuschlagssätze." />
@@ -715,7 +1112,7 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* ═══ P9 ═══ */}
+      {/* P9 */}
       {step === 'p9' && (
         <div>
           <StepHeader step="9" title="Kostenträgerrechnung" sub="Selbstkosten berechnen." />
@@ -772,6 +1169,101 @@ export default function BuebBabTrainer({ onClose }: { onClose: () => void }) {
           )}
         </div>
       )}
+
+      <button
+        type="button"
+        onClick={onBackToTheory}
+        className="w-full py-2.5 rounded-lg border border-indigo-500/30 bg-transparent text-[#9ca3af] hover:text-white text-xs transition-colors mt-4"
+      >
+        📖 Zurück zur Theorie
+      </button>
+    </div>
+  );
+}
+
+// ─── Hauptkomponente ───────────────────────────────────────────────────
+
+export default function BuebBabKurs({ onClose }: { onClose: () => void }) {
+  const [mode, setMode] = useState<'theory' | 'practice'>('theory');
+  const [tp, setTp] = useState(0);
+
+  return (
+    <ExerciseShell
+      title="BÜB & BAB Kurs"
+      subtitle="Tischlerei Berger KG – März"
+      onClose={onClose}
+    >
+      <div className="max-w-2xl mx-auto">
+        {/* Mode toggle */}
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#2d3148]">
+          <div>
+            <div className="text-[10px] font-extrabold text-indigo-400 uppercase tracking-[0.2em]">
+              BÜB & BAB Kurs
+            </div>
+            <div className="text-[11px] text-[#6b7280] mt-0.5">
+              {mode === 'theory' ? `Lektion ${tp + 1}/${theoryPages.length}` : 'Übungsmodus'}
+            </div>
+          </div>
+          <div className="flex rounded-lg overflow-hidden border border-indigo-500/30">
+            <button
+              type="button"
+              onClick={() => setMode('theory')}
+              className={`px-3 py-1.5 text-xs font-bold transition-colors ${
+                mode === 'theory' ? 'bg-indigo-500 text-white' : 'bg-transparent text-[#9ca3af] hover:text-white'
+              }`}
+            >
+              📖 Theorie
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('practice')}
+              className={`px-3 py-1.5 text-xs font-bold transition-colors ${
+                mode === 'practice' ? 'bg-indigo-500 text-white' : 'bg-transparent text-[#9ca3af] hover:text-white'
+              }`}
+            >
+              ✏️ Üben
+            </button>
+          </div>
+        </div>
+
+        {/* Klickbare Progress-Dots (nur in Theorie) */}
+        {mode === 'theory' && (
+          <div className="flex gap-1 mb-5">
+            {theoryPages.map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setTp(i)}
+                className={`flex-1 h-1.5 rounded-full transition-colors ${
+                  i === tp
+                    ? 'bg-indigo-500'
+                    : i < tp
+                      ? 'bg-emerald-500/50'
+                      : 'bg-[#252840]'
+                }`}
+                aria-label={`Lektion ${i + 1}`}
+              />
+            ))}
+          </div>
+        )}
+
+        {mode === 'theory' ? (
+          <TheoryView
+            page={theoryPages[tp]}
+            pageIndex={tp}
+            totalPages={theoryPages.length}
+            onNext={() => setTp(p => Math.min(p + 1, theoryPages.length - 1))}
+            onPrev={() => setTp(p => Math.max(p - 1, 0))}
+            onStartPractice={() => setMode('practice')}
+          />
+        ) : (
+          <PracticeView onBackToTheory={() => setMode('theory')} />
+        )}
+
+        <div className="text-center text-[10px] text-[#6b7280] mt-5 pb-4">
+          FH Wien · Kostenrechnung · BÜB & BAB
+        </div>
+      </div>
     </ExerciseShell>
   );
 }

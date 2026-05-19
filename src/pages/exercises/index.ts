@@ -64,6 +64,16 @@ export const EXERCISES: ExerciseMeta[] = [
     estimatedMinutes: 35,
     component: lazy(() => import('./ruecklagen-rueckstellungen-kurs')),
   },
+  {
+    slug: 'kennzahlen-kurs',
+    title: 'Unternehmenskennzahlen',
+    description: 'Die 14 wichtigsten Finanzkennzahlen (Rentabilität, Stabilität, Liquidität, Effizienz) mit URG-Grenzwerten. 6 Theorie-Lektionen + 4 Praxis-Mechaniken: Formel-Baukasten, Interpretation, Berechnen, Krisendiagnose.',
+    subject: 'Finanzmanagement',
+    difficulty: 'mittel',
+    icon: '📊',
+    estimatedMinutes: 45,
+    component: lazy(() => import('./kennzahlen-kurs')),
+  },
 ];
 
 export function findExercise(slug: string): ExerciseMeta | undefined {

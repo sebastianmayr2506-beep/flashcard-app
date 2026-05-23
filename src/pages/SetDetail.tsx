@@ -174,6 +174,7 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
   // Filter state
   const [srsFilter, setSrsFilter] = useState<SrsFilter>('alle');
   const [diffFilter, setDiffFilter] = useState<DiffFilter>('alle');
+  const [examinerFilter, setExaminerFilter] = useState<string>('alle');
   const [onlyDue, setOnlyDue] = useState(false);
   const [onlyFlagged, setOnlyFlagged] = useState(false);
 
@@ -182,18 +183,26 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
   const flaggedCount = setCards.filter(c => c.flagged).length;
   const srsGroups = computeSrsGroups(setCards);
 
+  // Unique examiners across all cards in this set (only show if >1 examiner exists)
+  const availableExaminers = useMemo(() => {
+    const s = new Set<string>();
+    setCards.forEach(c => c.examiners?.forEach(e => s.add(e)));
+    return Array.from(s).sort();
+  }, [setCards]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Apply filters
   const filteredCards = useMemo(() => {
     return setCards.filter(card => {
       if (srsFilter !== 'alle' && getSRSStatus(card) !== srsFilter) return false;
       if (diffFilter !== 'alle' && card.difficulty !== diffFilter) return false;
+      if (examinerFilter !== 'alle' && !card.examiners?.includes(examinerFilter)) return false;
       if (onlyDue && !isDueToday(card)) return false;
       if (onlyFlagged && !card.flagged) return false;
       return true;
     });
-  }, [setCards, srsFilter, diffFilter, onlyDue, onlyFlagged]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [setCards, srsFilter, diffFilter, examinerFilter, onlyDue, onlyFlagged]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filtersActive = srsFilter !== 'alle' || diffFilter !== 'alle' || onlyDue || onlyFlagged;
+  const filtersActive = srsFilter !== 'alle' || diffFilter !== 'alle' || examinerFilter !== 'alle' || onlyDue || onlyFlagged;
 
   const handleSrsLevelClick = (srs: SrsKey) => {
     const filtered = setCards.filter(c => getSRSStatus(c) === srs);
@@ -240,6 +249,7 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
   const resetFilters = () => {
     setSrsFilter('alle');
     setDiffFilter('alle');
+    setExaminerFilter('alle');
     setOnlyDue(false);
     setOnlyFlagged(false);
   };
@@ -428,6 +438,29 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
                 onClick={() => setDiffFilter(diffFilter === 'schwer' ? 'alle' : 'schwer')}
               />
             </div>
+
+            {/* Prüfer-Filter — nur sichtbar wenn Karten mehrere Prüfer haben */}
+            {availableExaminers.length > 1 && (
+              <>
+                <div className="w-px bg-[#2d3148] self-stretch mx-0.5" />
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] text-[#6b7280] font-medium">👤</span>
+                  {availableExaminers.map(examiner => {
+                    // Kürze lange Namen: "Gerald Hollaus" → "Hollaus"
+                    const short = examiner.split(' ').pop() ?? examiner;
+                    return (
+                      <FilterChip
+                        key={examiner}
+                        label={short}
+                        active={examinerFilter === examiner}
+                        color="bg-violet-500/20 border-violet-500/40 text-violet-300"
+                        onClick={() => setExaminerFilter(examinerFilter === examiner ? 'alle' : examiner)}
+                      />
+                    );
+                  })}
+                </div>
+              </>
+            )}
 
             {/* Divider */}
             <div className="w-px bg-[#2d3148] self-stretch mx-0.5" />

@@ -175,6 +175,7 @@ export function importFromCSV(csvText: string): Flashcard[] {
       customTags: idx.tags >= 0 && cols[idx.tags]
         ? cols[idx.tags].split(';').map(t => t.trim()).filter(Boolean)
         : [],
+      setIds: [],
       createdAt: now,
       updatedAt: now,
       ...srs,

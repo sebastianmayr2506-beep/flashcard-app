@@ -173,6 +173,7 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
       const freshCards: Flashcard[] = payload.cards.map(c => ({
         ...c,
         id: crypto.randomUUID(),
+        setIds: [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         interval: 0,

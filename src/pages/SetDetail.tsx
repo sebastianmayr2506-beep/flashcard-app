@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import type { CardSet, Flashcard, CardLink, SRSStatus, Difficulty } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
-import { exportSetJSON, exportSetCSV } from '../utils/export';
+import { exportSetJSON, exportSetCSV, exportShareJSON } from '../utils/export';
 import { createShareCode } from '../utils/shareCode';
+import InfoTooltip from '../components/InfoTooltip';
 import DifficultyBadge from '../components/DifficultyBadge';
 import SRSBadge from '../components/SRSBadge';
 import MarkdownText from '../components/MarkdownText';
@@ -201,7 +202,8 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
     onStudy(filtered);
   };
 
-  const handleExportJSON = () => { exportSetJSON(set, setCards); showToast(`${setCards.length} Karten als JSON exportiert`); };
+  const handleBackupJSON = () => { exportSetJSON(set, setCards); showToast(`${setCards.length} Karten als Backup exportiert`); };
+  const handleShareJSON  = () => { exportShareJSON(setCards);    showToast(`${setCards.length} Karten als Share-JSON exportiert`); };
   const handleExportCSV  = () => { exportSetCSV(set, setCards);  showToast(`${setCards.length} Karten als CSV exportiert`); };
 
   const handleShare = async () => {
@@ -276,9 +278,15 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
             ▶ {filtersActive ? `${filteredCards.length} Gefilterte lernen` : `Lernen (${setCards.length})`}
           </button>
         )}
-        <button onClick={handleExportJSON} disabled={setCards.length === 0}
+        <button onClick={handleBackupJSON} disabled={setCards.length === 0}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1e2130] hover:bg-[#252840] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm font-medium transition-colors disabled:opacity-40">
-          📦 JSON
+          💾 Backup
+          <InfoTooltip side="bottom" text="Vollständiger Export mit deinem persönlichen Lernfortschritt (SRS-Daten, Intervalle). Nur für dein eigenes Backup — nicht zum Weitergeben geeignet." />
+        </button>
+        <button onClick={handleShareJSON} disabled={setCards.length === 0}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1e2130] hover:bg-[#252840] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm font-medium transition-colors disabled:opacity-40">
+          📤 Als Datei teilen
+          <InfoTooltip side="bottom" text="Export zum Weitergeben: Karteninhalte & Prüfer-Metadaten bleiben erhalten, persönlicher Lernfortschritt (SRS, Flaggen, Intervalle) wird zurückgesetzt. Empfänger starten frisch." />
         </button>
         <button onClick={handleExportCSV} disabled={setCards.length === 0}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1e2130] hover:bg-[#252840] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm font-medium transition-colors disabled:opacity-40">
@@ -286,7 +294,7 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
         </button>
         <button onClick={handleShare} disabled={sharing || setCards.length === 0}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1e2130] hover:bg-[#252840] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm font-medium transition-colors disabled:opacity-40">
-          {sharing ? '⟳ Teilen…' : '🔗 Teilen'}
+          {sharing ? '⟳ Teilen…' : '🔗 Code teilen'}
         </button>
       </div>
 

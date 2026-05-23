@@ -9,7 +9,7 @@ interface Props {
   userId: string;
   onAddSet: (data: Omit<CardSet, 'id' | 'createdAt' | 'updatedAt' | 'userId'>, userId: string) => CardSet;
   onUpdateSet: (id: string, data: Partial<Omit<CardSet, 'id' | 'userId' | 'createdAt'>>) => void;
-  onDeleteSet: (id: string) => void;
+  onDeleteSet: (id: string) => void | Promise<void>;
   onViewSet: (set: CardSet) => void;
   onStudySet: (cards: Flashcard[]) => void;
 }

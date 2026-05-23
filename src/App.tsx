@@ -751,6 +751,19 @@ export default function App() {
     setSplitResult(null);
   }, [splitSource, splitAfterCallback, cards, links, addCard, addLink, removeCard, showToast]);
 
+  const handleDeleteSet = useCallback(async (id: string) => {
+    const ok = await removeSet(id);
+    if (!ok) {
+      showToast('Set konnte nicht gelöscht werden — bitte nochmal versuchen.', 'error');
+      return;
+    }
+    // Karten-Cleanup: setId aus setIds aller betroffenen Karten entfernen
+    const affected = cards.filter(c => c.setIds?.includes(id));
+    affected.forEach(c => {
+      updateCard(c.id, { setIds: c.setIds.filter(s => s !== id) });
+    });
+  }, [removeSet, cards, updateCard, showToast]);
+
   const handleViewSet = useCallback((set: CardSet) => {
     setViewingSet(set);
     setPage('set-detail');
@@ -1039,7 +1052,7 @@ export default function App() {
             userId={user.id}
             onAddSet={addSet}
             onUpdateSet={updateSet}
-            onDeleteSet={removeSet}
+            onDeleteSet={handleDeleteSet}
             onViewSet={handleViewSet}
             onStudySet={handleStudyFiltered}
           />

@@ -160,12 +160,19 @@ export function useSets(userId: string | null) {
     });
   }, []);
 
-  const removeSet = useCallback((id: string) => {
-    if (!userId) return;
+  const removeSet = useCallback(async (id: string): Promise<boolean> => {
+    if (!userId) return false;
+    // Optimistisch entfernen
+    const snapshot = setsRef.current;
     setSets(prev => prev.filter(s => s.id !== id));
-    supabase.from('sets').delete().eq('id', id).eq('user_id', userId).then(({ error }) => {
-      if (error) console.error('Failed to delete set:', error);
-    });
+    const { error } = await supabase.from('sets').delete().eq('id', id).eq('user_id', userId);
+    if (error) {
+      // Rollback — Set wieder einfügen
+      console.error('Failed to delete set:', error);
+      setSets(snapshot);
+      return false;
+    }
+    return true;
   }, [userId]);
 
   return { sets, refresh, addSet, updateSet, removeSet };

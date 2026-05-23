@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import type { CardSet, Flashcard, CardLink, SRSStatus, Difficulty } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
 import { exportSetJSON, exportSetCSV } from '../utils/export';
@@ -20,39 +20,11 @@ interface Props {
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-// ── Filter state ─────────────────────────────────────────────────────────────
-type SrsFilter = 'alle' | SRSStatus;
-type DiffFilter = 'alle' | Difficulty;
+// ── Shared select style ───────────────────────────────────────────────────────
+const selectCls = 'text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none appearance-none cursor-pointer';
+const selectActiveCls = 'bg-indigo-500/15 border-indigo-500/40 text-indigo-400';
 
-// Small chip button used for filter row
-function FilterChip({
-  label,
-  active,
-  color,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  color?: string; // tailwind bg class when active
-  onClick: () => void;
-}) {
-  const activeClass = color ?? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300';
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-all ${
-        active
-          ? activeClass
-          : 'bg-[#1e2130] border-[#2d3148] text-[#6b7280] hover:text-[#9ca3af] hover:border-[#3d4168]'
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
-
-// Expandable card row
+// ── Expandable card row ───────────────────────────────────────────────────────
 function CardRow({
   card,
   onEdit,
@@ -72,27 +44,22 @@ function CardRow({
         due ? 'border-indigo-500/30' : open ? 'border-[#3d4168]' : 'border-[#2d3148]'
       }`}
     >
-      {/* ── Row header — always visible ── */}
+      {/* Row header */}
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
         className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-[#252840]/40 transition-colors rounded-xl"
       >
-        {/* Expand indicator */}
         <span className={`text-[#6b7280] text-xs shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
-
-        {/* Front text */}
         <div className="flex-1 min-w-0">
           <p className="text-sm text-white font-medium truncate">
             <MarkdownText text={card.front || '(leer)'} />
           </p>
         </div>
-
-        {/* Badges — always visible (not hidden on mobile anymore) */}
         <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
           {card.flagged && (
             <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400 font-medium">
-              🚩 Flagge
+              🚩
             </span>
           )}
           <DifficultyBadge difficulty={card.difficulty} />
@@ -105,47 +72,34 @@ function CardRow({
         </div>
       </button>
 
-      {/* ── Expanded body ── */}
+      {/* Expanded body */}
       {open && (
         <div className="px-4 pb-4 border-t border-[#2d3148]">
-          {/* Front */}
           <div className="mt-3">
             <p className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider mb-1">Vorderseite</p>
             <div className="text-sm text-white leading-relaxed">
               <MarkdownText text={card.front || '(leer)'} />
             </div>
           </div>
-
-          {/* Back */}
           <div className="mt-3">
             <p className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider mb-1">Rückseite</p>
             <div className="text-sm text-[#d1d5db] leading-relaxed whitespace-pre-wrap">
               <MarkdownText text={card.back || '(leer)'} />
             </div>
           </div>
-
-          {/* Extra meta */}
           {(card.examiners?.length > 0 || card.subjects?.length > 0 || card.customTags?.length > 0) && (
             <div className="mt-3 flex flex-wrap gap-1.5">
               {card.examiners?.map(e => (
-                <span key={e} className="text-[11px] px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">
-                  👤 {e}
-                </span>
+                <span key={e} className="text-[11px] px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">👤 {e}</span>
               ))}
               {card.subjects?.map(s => (
-                <span key={s} className="text-[11px] px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">
-                  {s}
-                </span>
+                <span key={s} className="text-[11px] px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">{s}</span>
               ))}
               {card.customTags?.map(t => (
-                <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#6b7280]">
-                  #{t}
-                </span>
+                <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#6b7280]">#{t}</span>
               ))}
             </div>
           )}
-
-          {/* Actions */}
           <div className="flex gap-2 mt-4">
             <button
               onClick={() => onEdit(card)}
@@ -166,68 +120,92 @@ function CardRow({
   );
 }
 
+// ── Main component ────────────────────────────────────────────────────────────
 export default function SetDetail({ set, cards, links, userId, onBack, onEdit, onDelete, onStudy, showToast }: Props) {
   const [shareCode, setShareCode] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [copyLabel, setCopyLabel] = useState('Kopieren');
 
   // Filter state
-  const [srsFilter, setSrsFilter] = useState<SrsFilter>('alle');
-  const [diffFilter, setDiffFilter] = useState<DiffFilter>('alle');
-  const [examinerFilter, setExaminerFilter] = useState<string>('alle');
+  const [filterSRS, setFilterSRS] = useState<SRSStatus | ''>('');
+  const [filterDiff, setFilterDiff] = useState<Difficulty | ''>('');
+  const [filterExaminers, setFilterExaminers] = useState<Set<string>>(new Set());
   const [onlyDue, setOnlyDue] = useState(false);
   const [onlyFlagged, setOnlyFlagged] = useState(false);
+  const [examinerOpen, setExaminerOpen] = useState(false);
+  const examinerRef = useRef<HTMLDivElement>(null);
+
+  // Close examiner dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (examinerRef.current && !examinerRef.current.contains(e.target as Node)) {
+        setExaminerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const setCards = cards.filter(c => c.setId === set.id);
-  const dueCount = setCards.filter(isDueToday).length;
-  const flaggedCount = setCards.filter(c => c.flagged).length;
   const srsGroups = computeSrsGroups(setCards);
 
-  // Unique examiners across all cards in this set (only show if >1 examiner exists)
+  // Derive available filter options from actual cards in set
+  const availableSRS = useMemo(() => {
+    const s = new Set<SRSStatus>();
+    setCards.forEach(c => s.add(getSRSStatus(c)));
+    const order: SRSStatus[] = ['neu', 'lernend', 'wiederholen', 'beherrscht'];
+    return order.filter(v => s.has(v));
+  }, [setCards]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const availableDiff = useMemo(() => {
+    const s = new Set<Difficulty>();
+    setCards.forEach(c => s.add(c.difficulty));
+    const order: Difficulty[] = ['einfach', 'mittel', 'schwer'];
+    return order.filter(v => s.has(v));
+  }, [setCards]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const availableExaminers = useMemo(() => {
     const s = new Set<string>();
     setCards.forEach(c => c.examiners?.forEach(e => s.add(e)));
     return Array.from(s).sort();
   }, [setCards]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const dueCount = setCards.filter(isDueToday).length;
+  const flaggedCount = setCards.filter(c => c.flagged).length;
+
   // Apply filters
   const filteredCards = useMemo(() => {
     return setCards.filter(card => {
-      if (srsFilter !== 'alle' && getSRSStatus(card) !== srsFilter) return false;
-      if (diffFilter !== 'alle' && card.difficulty !== diffFilter) return false;
-      if (examinerFilter !== 'alle' && !card.examiners?.includes(examinerFilter)) return false;
+      if (filterSRS && getSRSStatus(card) !== filterSRS) return false;
+      if (filterDiff && card.difficulty !== filterDiff) return false;
+      if (filterExaminers.size > 0 && !card.examiners?.some(e => filterExaminers.has(e))) return false;
       if (onlyDue && !isDueToday(card)) return false;
       if (onlyFlagged && !card.flagged) return false;
       return true;
     });
-  }, [setCards, srsFilter, diffFilter, examinerFilter, onlyDue, onlyFlagged]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [setCards, filterSRS, filterDiff, filterExaminers, onlyDue, onlyFlagged]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filtersActive = srsFilter !== 'alle' || diffFilter !== 'alle' || examinerFilter !== 'alle' || onlyDue || onlyFlagged;
+  const filtersActive = !!filterSRS || !!filterDiff || filterExaminers.size > 0 || onlyDue || onlyFlagged;
+
+  const resetFilters = () => {
+    setFilterSRS('');
+    setFilterDiff('');
+    setFilterExaminers(new Set());
+    setOnlyDue(false);
+    setOnlyFlagged(false);
+  };
 
   const handleSrsLevelClick = (srs: SrsKey) => {
     const filtered = setCards.filter(c => getSRSStatus(c) === srs);
-    if (filtered.length === 0) {
-      showToast('Keine Karten auf diesem Level', 'info');
-      return;
-    }
+    if (filtered.length === 0) { showToast('Keine Karten auf diesem Level', 'info'); return; }
     onStudy(filtered);
   };
 
-  const handleExportJSON = () => {
-    exportSetJSON(set, setCards);
-    showToast(`${setCards.length} Karten als JSON exportiert`);
-  };
-
-  const handleExportCSV = () => {
-    exportSetCSV(set, setCards);
-    showToast(`${setCards.length} Karten als CSV exportiert`);
-  };
+  const handleExportJSON = () => { exportSetJSON(set, setCards); showToast(`${setCards.length} Karten als JSON exportiert`); };
+  const handleExportCSV  = () => { exportSetCSV(set, setCards);  showToast(`${setCards.length} Karten als CSV exportiert`); };
 
   const handleShare = async () => {
-    if (setCards.length === 0) {
-      showToast('Set enthält keine Karten zum Teilen', 'error');
-      return;
-    }
+    if (setCards.length === 0) { showToast('Set enthält keine Karten zum Teilen', 'error'); return; }
     setSharing(true);
     try {
       const code = await createShareCode(set, cards, links, userId);
@@ -246,12 +224,11 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
     setTimeout(() => setCopyLabel('Kopieren'), 2000);
   };
 
-  const resetFilters = () => {
-    setSrsFilter('alle');
-    setDiffFilter('alle');
-    setExaminerFilter('alle');
-    setOnlyDue(false);
-    setOnlyFlagged(false);
+  const srsLabels: Record<SRSStatus, string> = {
+    neu: 'Neu', lernend: 'Lernend', wiederholen: 'Wiederholen', beherrscht: 'Beherrscht',
+  };
+  const diffLabels: Record<string, string> = {
+    einfach: 'Einfach', mittel: 'Mittel', schwer: 'Schwer',
   };
 
   return (
@@ -278,11 +255,11 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
             </div>
             {set.description && <p className="text-[#9ca3af] text-sm mt-0.5">{set.description}</p>}
             <div className="flex gap-2 flex-wrap mt-2">
-              {set.subject && <span className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">{set.subject}</span>}
-              {set.examiner && <span className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">👤 {set.examiner}</span>}
+              {set.subject   && <span className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">{set.subject}</span>}
+              {set.examiner  && <span className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">👤 {set.examiner}</span>}
               <span className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">{setCards.length} Karte{setCards.length !== 1 ? 'n' : ''}</span>
-              {dueCount > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">{dueCount} fällig</span>}
-              {flaggedCount > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400">🚩 {flaggedCount} flagged</span>}
+              {dueCount    > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">{dueCount} fällig</span>}
+              {flaggedCount > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400">🚩 {flaggedCount}</span>}
             </div>
           </div>
         </div>
@@ -296,30 +273,19 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
             disabled={filteredCards.length === 0}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-semibold text-sm transition-colors disabled:opacity-40"
           >
-            ▶ {filtersActive
-              ? `${filteredCards.length} Gefilterte lernen`
-              : `Lernen (${setCards.length})`}
+            ▶ {filtersActive ? `${filteredCards.length} Gefilterte lernen` : `Lernen (${setCards.length})`}
           </button>
         )}
-        <button
-          onClick={handleExportJSON}
-          disabled={setCards.length === 0}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1e2130] hover:bg-[#252840] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm font-medium transition-colors disabled:opacity-40"
-        >
+        <button onClick={handleExportJSON} disabled={setCards.length === 0}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1e2130] hover:bg-[#252840] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm font-medium transition-colors disabled:opacity-40">
           📦 JSON
         </button>
-        <button
-          onClick={handleExportCSV}
-          disabled={setCards.length === 0}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1e2130] hover:bg-[#252840] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm font-medium transition-colors disabled:opacity-40"
-        >
+        <button onClick={handleExportCSV} disabled={setCards.length === 0}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1e2130] hover:bg-[#252840] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm font-medium transition-colors disabled:opacity-40">
           📊 CSV
         </button>
-        <button
-          onClick={handleShare}
-          disabled={sharing || setCards.length === 0}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1e2130] hover:bg-[#252840] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm font-medium transition-colors disabled:opacity-40"
-        >
+        <button onClick={handleShare} disabled={sharing || setCards.length === 0}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1e2130] hover:bg-[#252840] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm font-medium transition-colors disabled:opacity-40">
           {sharing ? '⟳ Teilen…' : '🔗 Teilen'}
         </button>
       </div>
@@ -336,17 +302,15 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
         />
       )}
 
-      {/* Share code display */}
+      {/* Share code */}
       {shareCode && (
         <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-2xl p-5">
           <p className="text-sm font-semibold text-white mb-1">Geteilter Code</p>
           <p className="text-xs text-[#9ca3af] mb-3">Gib diesen Code auf der Import/Export-Seite ein um das Set zu importieren.</p>
           <div className="flex items-center gap-3">
             <span className="font-mono text-2xl font-bold text-indigo-300 tracking-[0.3em] select-all">{shareCode}</span>
-            <button
-              onClick={handleCopyCode}
-              className="px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-400 text-xs font-medium transition-colors"
-            >
+            <button onClick={handleCopyCode}
+              className="px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-400 text-xs font-medium transition-colors">
               {copyLabel}
             </button>
           </div>
@@ -362,8 +326,8 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
         </div>
       ) : (
         <div className="space-y-3">
-          {/* Section header + filter bar */}
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+          {/* Section header */}
+          <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold text-[#9ca3af] uppercase tracking-wider">
               Karten
               {filtersActive && (
@@ -373,116 +337,116 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
               )}
             </h3>
             {filtersActive && (
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="text-xs text-[#6b7280] hover:text-[#9ca3af] transition-colors"
-              >
-                ✕ Filter zurücksetzen
+              <button type="button" onClick={resetFilters}
+                className="text-xs text-[#6b7280] hover:text-[#9ca3af] transition-colors">
+                ✕ Filter löschen
               </button>
             )}
           </div>
 
-          {/* Filter chips */}
-          <div className="flex flex-wrap gap-2 pb-1">
-            {/* SRS status */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <FilterChip label="Alle" active={srsFilter === 'alle'} onClick={() => setSrsFilter('alle')} />
-              <FilterChip
-                label="Neu"
-                active={srsFilter === 'neu'}
-                color="bg-purple-500/20 border-purple-500/40 text-purple-300"
-                onClick={() => setSrsFilter(srsFilter === 'neu' ? 'alle' : 'neu')}
-              />
-              <FilterChip
-                label="Lernend"
-                active={srsFilter === 'lernend'}
-                color="bg-blue-500/20 border-blue-500/40 text-blue-300"
-                onClick={() => setSrsFilter(srsFilter === 'lernend' ? 'alle' : 'lernend')}
-              />
-              <FilterChip
-                label="Wiederholen"
-                active={srsFilter === 'wiederholen'}
-                color="bg-amber-500/20 border-amber-500/40 text-amber-300"
-                onClick={() => setSrsFilter(srsFilter === 'wiederholen' ? 'alle' : 'wiederholen')}
-              />
-              <FilterChip
-                label="Beherrscht"
-                active={srsFilter === 'beherrscht'}
-                color="bg-green-500/20 border-green-500/40 text-green-300"
-                onClick={() => setSrsFilter(srsFilter === 'beherrscht' ? 'alle' : 'beherrscht')}
-              />
-            </div>
+          {/* Filter bar — Library-style dropdowns, only showing options present in this set */}
+          <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-3">
+            <div className="flex flex-wrap gap-2">
 
-            {/* Divider */}
-            <div className="w-px bg-[#2d3148] self-stretch mx-0.5" />
+              {/* SRS Status — nur Optionen die im Set vorkommen */}
+              {availableSRS.length > 1 && (
+                <select
+                  value={filterSRS}
+                  onChange={e => setFilterSRS(e.target.value as SRSStatus | '')}
+                  className={`${selectCls} ${filterSRS ? selectActiveCls : ''}`}
+                >
+                  <option value="">Status</option>
+                  {availableSRS.map(s => (
+                    <option key={s} value={s}>{srsLabels[s]}</option>
+                  ))}
+                </select>
+              )}
 
-            {/* Difficulty */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <FilterChip
-                label="Einfach"
-                active={diffFilter === 'einfach'}
-                color="bg-green-500/20 border-green-500/40 text-green-300"
-                onClick={() => setDiffFilter(diffFilter === 'einfach' ? 'alle' : 'einfach')}
-              />
-              <FilterChip
-                label="Mittel"
-                active={diffFilter === 'mittel'}
-                color="bg-amber-500/20 border-amber-500/40 text-amber-300"
-                onClick={() => setDiffFilter(diffFilter === 'mittel' ? 'alle' : 'mittel')}
-              />
-              <FilterChip
-                label="Schwer"
-                active={diffFilter === 'schwer'}
-                color="bg-red-500/20 border-red-500/40 text-red-300"
-                onClick={() => setDiffFilter(diffFilter === 'schwer' ? 'alle' : 'schwer')}
-              />
-            </div>
+              {/* Schwierigkeit — nur Optionen die im Set vorkommen */}
+              {availableDiff.length > 1 && (
+                <select
+                  value={filterDiff}
+                  onChange={e => setFilterDiff(e.target.value as Difficulty | '')}
+                  className={`${selectCls} ${filterDiff ? selectActiveCls : ''}`}
+                >
+                  <option value="">Schwierigkeit</option>
+                  {availableDiff.map(d => (
+                    <option key={d} value={d}>{diffLabels[d]}</option>
+                  ))}
+                </select>
+              )}
 
-            {/* Prüfer-Filter — nur sichtbar wenn Karten mehrere Prüfer haben */}
-            {availableExaminers.length > 1 && (
-              <>
-                <div className="w-px bg-[#2d3148] self-stretch mx-0.5" />
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[11px] text-[#6b7280] font-medium">👤</span>
-                  {availableExaminers.map(examiner => {
-                    // Kürze lange Namen: "Gerald Hollaus" → "Hollaus"
-                    const short = examiner.split(' ').pop() ?? examiner;
-                    return (
-                      <FilterChip
-                        key={examiner}
-                        label={short}
-                        active={examinerFilter === examiner}
-                        color="bg-violet-500/20 border-violet-500/40 text-violet-300"
-                        onClick={() => setExaminerFilter(examinerFilter === examiner ? 'alle' : examiner)}
-                      />
-                    );
-                  })}
+              {/* Prüfer — Multi-Select Dropdown wie in der Bibliothek */}
+              {availableExaminers.length > 1 && (
+                <div ref={examinerRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setExaminerOpen(o => !o)}
+                    className={`flex items-center gap-1.5 ${selectCls} ${filterExaminers.size > 0 ? selectActiveCls : ''}`}
+                  >
+                    👤 Prüfer{filterExaminers.size > 0 ? ` (${filterExaminers.size})` : ''}
+                    <span className="text-xs opacity-60 ml-1">{examinerOpen ? '▲' : '▼'}</span>
+                  </button>
+                  {examinerOpen && (
+                    <div className="absolute top-full left-0 mt-1 z-40 bg-[#1e2130] border border-[#2d3148] rounded-xl shadow-2xl min-w-[200px] max-h-64 overflow-y-auto py-1">
+                      {availableExaminers.map(ex => {
+                        const checked = filterExaminers.has(ex);
+                        return (
+                          <label
+                            key={ex}
+                            onClick={() => setFilterExaminers(prev => {
+                              const next = new Set(prev);
+                              if (next.has(ex)) next.delete(ex); else next.add(ex);
+                              return next;
+                            })}
+                            className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-[#252840] transition-colors"
+                          >
+                            <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                              checked ? 'bg-indigo-500 border-indigo-500' : 'bg-transparent border-[#3d4168]'
+                            }`}>
+                              {checked && <span className="text-white text-[10px] leading-none">✓</span>}
+                            </span>
+                            <span className="text-sm text-white truncate">{ex}</span>
+                          </label>
+                        );
+                      })}
+                      {filterExaminers.size > 0 && (
+                        <div className="border-t border-[#2d3148] mt-1 pt-1 px-3 pb-1">
+                          <button
+                            onClick={() => setFilterExaminers(new Set())}
+                            className="text-xs text-indigo-400 hover:text-indigo-300"
+                          >
+                            Auswahl löschen
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </>
-            )}
+              )}
 
-            {/* Divider */}
-            <div className="w-px bg-[#2d3148] self-stretch mx-0.5" />
-
-            {/* Special filters */}
-            <div className="flex items-center gap-1.5 flex-wrap">
+              {/* Fällig toggle — nur wenn Fällige vorhanden */}
               {dueCount > 0 && (
-                <FilterChip
-                  label={`⏰ Fällig (${dueCount})`}
-                  active={onlyDue}
-                  color="bg-indigo-500/20 border-indigo-500/40 text-indigo-300"
+                <button
+                  type="button"
                   onClick={() => setOnlyDue(d => !d)}
-                />
+                  className={`${selectCls} ${onlyDue ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-400' : ''}`}
+                >
+                  ⏰ Fällig ({dueCount})
+                </button>
               )}
+
+              {/* Flagged toggle — nur wenn Flagged vorhanden */}
               {flaggedCount > 0 && (
-                <FilterChip
-                  label={`🚩 Flagged (${flaggedCount})`}
-                  active={onlyFlagged}
-                  color="bg-orange-500/20 border-orange-500/40 text-orange-300"
+                <button
+                  type="button"
                   onClick={() => setOnlyFlagged(f => !f)}
-                />
+                  className={`${selectCls} ${onlyFlagged ? 'bg-orange-500/15 border-orange-500/40 text-orange-400' : ''}`}
+                >
+                  🚩 Flagged ({flaggedCount})
+                </button>
               )}
+
             </div>
           </div>
 
@@ -491,23 +455,15 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
             <div className="text-center py-10 bg-[#1e2130] border border-[#2d3148] rounded-xl">
               <p className="text-2xl mb-2">🔍</p>
               <p className="text-sm text-[#9ca3af]">Keine Karten entsprechen den Filtern</p>
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="mt-3 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-              >
+              <button type="button" onClick={resetFilters}
+                className="mt-3 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
                 Filter zurücksetzen
               </button>
             </div>
           ) : (
             <div className="flex flex-col gap-2">
               {filteredCards.map(card => (
-                <CardRow
-                  key={card.id}
-                  card={card}
-                  onEdit={onEdit}
-                  onDelete={onDelete}
-                />
+                <CardRow key={card.id} card={card} onEdit={onEdit} onDelete={onDelete} />
               ))}
             </div>
           )}

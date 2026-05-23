@@ -180,7 +180,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, us
       if (filterBlacklist === 'hide' && c.blacklisted) return false;
       if (filterBlacklist === 'only' && !c.blacklisted) return false;
       if (filterSRS && getSRSStatus(c) !== filterSRS) return false;
-      if (filterSet && c.setId !== filterSet) return false;
+      if (filterSet && !c.setIds?.includes(filterSet)) return false;
       if (filterCatalog && !c.askedInCatalogs?.some(v => v.includes(filterCatalog))) return false;
       if (filterFlagged && !c.flagged) return false;
       return true;
@@ -755,17 +755,22 @@ function Select({ value, onChange, placeholder, options }: {
   );
 }
 
-function SetDot({ setId, sets }: { setId?: string; sets: CardSet[] }) {
-  if (!setId) return null;
-  const set = sets.find(s => s.id === setId);
-  if (!set) return null;
+function SetDots({ setIds, sets }: { setIds?: string[]; sets: CardSet[] }) {
+  if (!setIds || setIds.length === 0) return null;
+  const matched = setIds.map(id => sets.find(s => s.id === id)).filter(Boolean) as CardSet[];
+  if (matched.length === 0) return null;
   return (
-    <span
-      className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border"
-      style={{ backgroundColor: set.color + '22', borderColor: set.color + '55', color: set.color }}
-    >
-      📂 {set.name}
-    </span>
+    <>
+      {matched.map(set => (
+        <span
+          key={set.id}
+          className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border"
+          style={{ backgroundColor: set.color + '22', borderColor: set.color + '55', color: set.color }}
+        >
+          📂 {set.name}
+        </span>
+      ))}
+    </>
   );
 }
 
@@ -854,7 +859,7 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
         <SRSBadge status={status} />
         {card.flagged && <span title={flagTooltip(card.id, flagAttempts, autoUnflagEnabled)} className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 cursor-help">🚩</span>}
         {linkCount > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">🔗 {linkCount}</span>}
-        <SetDot setId={card.setId} sets={sets} />
+        <SetDots setIds={card.setIds} sets={sets} />
       </div>
       {card.probabilityPercent != null && card.probabilityPercent > 0 && (
         <ProbabilityBadge pct={card.probabilityPercent} size="xs" />
@@ -970,7 +975,7 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
         {card.probabilityPercent != null && card.probabilityPercent > 0 && (
           <ProbabilityBadge pct={card.probabilityPercent} size="xs" />
         )}
-        <SetDot setId={card.setId} sets={sets} />
+        <SetDots setIds={card.setIds} sets={sets} />
       </div>
       {!selectionMode && (
         // Slim action row (List-View): Bearbeiten · Blacklist · Löschen.

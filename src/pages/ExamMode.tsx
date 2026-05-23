@@ -173,7 +173,7 @@ export default function ExamMode({ cards, settings, sets, links, onFlagCards, on
   const candidateCards = useMemo(() => {
     // Parkiert (blacklisted) cards are excluded from all study pools.
     let pool = cards.filter(c => !c.blacklisted);
-    if (config.source === 'set' && config.setId)    pool = pool.filter(c => c.setId === config.setId);
+    if (config.source === 'set' && config.setId)    pool = pool.filter(c => c.setIds?.includes(config.setId));
     if (config.source === 'flagged')                pool = pool.filter(c => c.flagged);
     if (config.source === 'klassiker')              pool = pool.filter(c => (c.probabilityPercent ?? 0) > 60);
     if (config.source === 'filter') {

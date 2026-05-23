@@ -7,6 +7,39 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-05-23 — Multi-Set-Membership für Karten
+
+**Was war kaputt:** Karte hatte `setId?: string` — also nur ein Set pro Karte.
+Wenn der User in der Bibliothek 3 Prüfer filterte und daraus ein Set "A" baute
+(127 Karten), dann mehr hinzufügte und ein Set "B" erstellte (31 Karten), wurden
+die Karten *aus A entfernt* statt zu B *hinzugefügt* — weil `setId` überschrieben
+wurde. 127 + 31 = 158, nicht die erwarteten 178.
+
+**Fix:** Datenmodell von `setId?: string` → `setIds: string[]` umgestellt. Eine
+Karte kann jetzt zu beliebig vielen Sets gehören. Bulk-Assign ist additiv
+(Set wird zu den existierenden setIds hinzugefügt, nicht überschrieben).
+CardEditor hat jetzt Multi-Select-Dropdown statt Single-Select.
+
+**DB-Migration:** `supabase_migration_multi_sets.sql` — neue Spalte
+`set_ids text[]` parallel zu `set_id` (kein Cutover), Daten-Migration via
+`UPDATE … SET set_ids = ARRAY[set_id]`, GIN-Index für `@>`-Queries,
+Trigger der Set-IDs aus allen `set_ids`-Arrays entfernt wenn ein Set
+gelöscht wird (Ersatz für die alte ON-DELETE-Cascade).
+
+**Backward-Compat:** Import liest sowohl `setId` (legacy) als auch `setIds`
+(neu) — alte Backup/Share-JSONs funktionieren weiterhin. Im fromDb-Mapper
+in useCards.ts wird `set_id` als Fallback verwendet, falls die SQL-Migration
+noch nicht gelaufen ist.
+
+**Files:** `src/types/card.ts`, `src/hooks/useCards.ts`, `src/utils/storage.ts`,
+`src/utils/shareCode.ts`, `src/utils/import.ts`, `src/utils/export.ts`,
+`src/App.tsx`, `src/pages/CardEditor.tsx`, `src/pages/Library.tsx`
+(SetDot → SetDots), `src/pages/SetDetail.tsx`, `src/pages/SetsPage.tsx`,
+`src/pages/StudySession.tsx`, `src/pages/ExamMode.tsx`,
+`supabase_migration_multi_sets.sql` (neu).
+
+---
+
 ## 2026-05-16 — Duplikat-Finder: KI-Tiefenscan für semantische Duplikate
 
 **What:** Der Jaccard-basierte Duplikat-Finder verpasst Duplikate die nicht

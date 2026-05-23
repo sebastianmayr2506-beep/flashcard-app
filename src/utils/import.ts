@@ -64,7 +64,12 @@ function validateCard(raw: unknown): Flashcard {
   const mcQuestionsGeneratedAt = pick<string>(c, 'mcQuestionsGeneratedAt', 'mc_questions_generated_at');
   const blacklisted = pick<unknown>(c, 'blacklisted');
   const flagged = pick<unknown>(c, 'flagged');
-  const setId = pick<string>(c, 'setId', 'set_id');
+  // Backward-compat: alte Exports hatten setId (single), neue haben setIds (array)
+  const setIdLegacy = pick<string>(c, 'setId', 'set_id');
+  const setIdsRaw = pick<unknown>(c, 'setIds', 'set_ids');
+  const setIds: string[] = Array.isArray(setIdsRaw)
+    ? setIdsRaw.filter(v => typeof v === 'string') as string[]
+    : (typeof setIdLegacy === 'string' && setIdLegacy ? [setIdLegacy] : []);
   const priorityRaw = pick<unknown>(c, 'priority');
 
   return {
@@ -80,7 +85,7 @@ function validateCard(raw: unknown): Flashcard {
     difficulty: (['einfach', 'mittel', 'schwer'].includes(c.difficulty as string)
       ? c.difficulty : 'mittel') as Difficulty,
     customTags: Array.isArray(c.customTags) ? c.customTags.map(String) : [],
-    setId: typeof setId === 'string' && setId ? setId : undefined,
+    setIds,
     flagged: typeof flagged === 'boolean' ? flagged : false,
     createdAt: String(c.createdAt ?? new Date().toISOString()),
     updatedAt: String(c.updatedAt ?? new Date().toISOString()),

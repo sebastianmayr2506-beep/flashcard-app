@@ -147,7 +147,7 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const setCards = cards.filter(c => c.setId === set.id);
+  const setCards = cards.filter(c => c.setIds?.includes(set.id));
   const srsGroups = computeSrsGroups(setCards);
 
   // Derive available filter options from actual cards in set

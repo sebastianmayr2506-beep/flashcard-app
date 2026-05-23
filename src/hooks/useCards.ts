@@ -12,7 +12,7 @@ import { isExistingAccount } from '../utils/accountState';
 // Hintergrund via fetchImages*().
 const META_COLUMNS =
   'id, user_id, front, back, subjects, examiners, difficulty, custom_tags, ' +
-  'set_id, flagged, times_asked, asked_by_examiners, asked_in_catalogs, ' +
+  'set_ids, flagged, times_asked, asked_by_examiners, asked_in_catalogs, ' +
   'probability_percent, created_at, updated_at, interval, repetitions, ' +
   'ease_factor, next_review_date, first_studied_at, priority, mc_questions, ' +
   'mc_questions_generated_at, blacklisted';
@@ -29,7 +29,10 @@ function fromDb(row: Record<string, any>): Flashcard {
     examiners: row.examiners ?? [],
     difficulty: row.difficulty,
     customTags: row.custom_tags ?? [],
-    setId: row.set_id ?? undefined,
+    // Backward-compat: nimm set_ids wenn vorhanden, sonst aus altem set_id ableiten
+    setIds: Array.isArray(row.set_ids)
+      ? (row.set_ids as string[])
+      : (row.set_id ? [row.set_id as string] : []),
     flagged: row.flagged ?? false,
     timesAsked: row.times_asked ?? 0,
     askedByExaminers: row.asked_by_examiners ?? [],
@@ -62,7 +65,7 @@ function toDb(card: Flashcard, userId: string) {
     examiners: card.examiners,
     difficulty: card.difficulty,
     custom_tags: card.customTags,
-    set_id: card.setId ?? null,
+    set_ids: card.setIds ?? [],
     flagged: card.flagged ?? false,
     times_asked: card.timesAsked ?? 0,
     asked_by_examiners: card.askedByExaminers ?? [],

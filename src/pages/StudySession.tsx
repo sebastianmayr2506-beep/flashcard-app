@@ -239,7 +239,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
       else if (filterPriority === 'B') result = result.filter(c => c.priority === 'B');
       else if (filterPriority === 'C') result = result.filter(c => c.priority === 'C');
       else if (filterPriority === 'AB') result = result.filter(c => c.priority === 'A' || c.priority === 'B');
-      if (filterSet) result = result.filter(c => c.setId === filterSet);
+      if (filterSet) result = result.filter(c => c.setIds?.includes(filterSet));
       if (!endlessMode && onlyDue) result = result.filter(isDueToday);
       if (filterKlassiker) result = result.filter(c => (c.probabilityPercent ?? 0) > 60);
 

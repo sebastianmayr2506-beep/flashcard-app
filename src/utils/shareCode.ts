@@ -44,7 +44,7 @@ export async function createShareCode(
   links: CardLink[],
   userId: string
 ): Promise<string> {
-  const setCards = cards.filter(c => c.setId === set.id);
+  const setCards = cards.filter(c => c.setIds?.includes(set.id));
   const setCardIds = new Set(setCards.map(c => c.id));
 
   const setLinks = links

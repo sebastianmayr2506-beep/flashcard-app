@@ -35,7 +35,7 @@ export default function SetsPage({
   const [form, setForm] = useState<SetFormState>(emptyForm());
   const [formError, setFormError] = useState('');
 
-  const cardCountForSet = (setId: string) => cards.filter(c => c.setId === setId).length;
+  const cardCountForSet = (setId: string) => cards.filter(c => c.setIds?.includes(setId)).length;
 
   const openCreate = () => {
     setEditingSet(null);
@@ -197,7 +197,7 @@ export default function SetsPage({
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {sets.map(set => {
             const count = cardCountForSet(set.id);
-            const setCards = cards.filter(c => c.setId === set.id);
+            const setCards = cards.filter(c => c.setIds?.includes(set.id));
             return (
               <div
                 key={set.id}

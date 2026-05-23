@@ -126,7 +126,10 @@ export function deleteSet(id: string): void {
   const sets = getSets().filter(s => s.id !== id);
   localStorage.setItem(SETS_KEY, JSON.stringify(sets));
   // Clear set_id from any cards belonging to this set
-  const cards = getCards().map(c => c.setId === id ? { ...c, setId: undefined } : c);
+  const cards = getCards().map(c => c.setIds?.includes(id)
+    ? { ...c, setIds: c.setIds.filter(s => s !== id) }
+    : c,
+  );
   saveAllCards(cards);
 }
 

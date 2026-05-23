@@ -82,7 +82,8 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
   const [examiners, setExaminers] = useState<string[]>(card?.examiners ?? []);
   const [difficulty, setDifficulty] = useState<Difficulty>(card?.difficulty ?? 'mittel');
   const [tagsInput, setTagsInput] = useState(card?.customTags.join(', ') ?? '');
-  const [selectedSetId, setSelectedSetId] = useState<string>(card?.setId ?? '');
+  const [selectedSetIds, setSelectedSetIds] = useState<Set<string>>(new Set(card?.setIds ?? []));
+  const [setDropdownOpen, setSetDropdownOpen] = useState(false);
   const [flagged, setFlagged] = useState<boolean>(card?.flagged ?? false);
   const [blacklisted, setBlacklisted] = useState<boolean>(card?.blacklisted ?? false);
   // SRS status override (only used when editing an existing card and the user
@@ -130,7 +131,7 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
       setSubjects(card.subjects ?? []); setExaminers(card.examiners ?? []);
       setDifficulty(card.difficulty);
       setTagsInput(card.customTags.join(', '));
-      setSelectedSetId(card.setId ?? '');
+      setSelectedSetIds(new Set(card.setIds ?? []));
       setFlagged(card.flagged ?? false);
       setBlacklisted(card.blacklisted ?? false);
       setSrsStatus(getSRSStatus(card));
@@ -159,13 +160,13 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
       front: front.trim(), back: back.trim(),
       frontImage, backImage,
       subjects, examiners, difficulty, customTags,
-      setId: selectedSetId || undefined,
+      setIds: Array.from(selectedSetIds),
       flagged,
       blacklisted,
     }, srsOverride);
   };
 
-  const selectedSet = sets.find(s => s.id === selectedSetId);
+  const selectedSets = sets.filter(s => selectedSetIds.has(s.id));
 
   return (
     <div className="p-4 md:p-6 lg:p-8 fade-in">
@@ -412,18 +413,79 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
             </div>
             {sets.length > 0 && (
               <div>
-                <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-1.5">Set / Ordner</label>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={selectedSetId}
-                    onChange={e => setSelectedSetId(e.target.value)}
-                    className="flex-1 text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
+                <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-1.5">
+                  Sets / Ordner
+                  <span className="ml-1 text-[10px] text-[#6b7280] normal-case font-normal tracking-normal">
+                    (eine Karte kann zu mehreren Sets gehören)
+                  </span>
+                </label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setSetDropdownOpen(o => !o)}
+                    className={`w-full flex items-center justify-between gap-2 text-sm rounded-xl px-3 py-2 border transition-colors text-left ${
+                      selectedSetIds.size > 0
+                        ? 'bg-indigo-500/10 border-indigo-500/40 text-white'
+                        : 'bg-[#252840] border-[#2d3148] text-[#9ca3af] hover:text-white'
+                    }`}
                   >
-                    <option value="">Kein Set</option>
-                    {sets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                  {selectedSet && (
-                    <div className="w-5 h-5 rounded-full shrink-0" style={{ backgroundColor: selectedSet.color }} />
+                    <span className="flex-1 flex items-center gap-1.5 flex-wrap min-w-0">
+                      {selectedSets.length === 0 ? (
+                        <span>Kein Set</span>
+                      ) : (
+                        selectedSets.map(s => (
+                          <span
+                            key={s.id}
+                            className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border"
+                            style={{ backgroundColor: s.color + '22', borderColor: s.color + '55', color: s.color }}
+                          >
+                            📂 {s.name}
+                          </span>
+                        ))
+                      )}
+                    </span>
+                    <span className="text-xs opacity-60 shrink-0">{setDropdownOpen ? '▲' : '▼'}</span>
+                  </button>
+                  {setDropdownOpen && (
+                    <>
+                      {/* Click-outside backdrop */}
+                      <div className="fixed inset-0 z-30" onClick={() => setSetDropdownOpen(false)} />
+                      <div className="absolute top-full left-0 right-0 mt-1 z-40 bg-[#1e2130] border border-[#2d3148] rounded-xl shadow-2xl max-h-64 overflow-y-auto py-1">
+                        {sets.map(s => {
+                          const checked = selectedSetIds.has(s.id);
+                          return (
+                            <label
+                              key={s.id}
+                              onClick={() => setSelectedSetIds(prev => {
+                                const next = new Set(prev);
+                                if (next.has(s.id)) next.delete(s.id); else next.add(s.id);
+                                return next;
+                              })}
+                              className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-[#252840] transition-colors"
+                            >
+                              <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                                checked ? 'bg-indigo-500 border-indigo-500' : 'bg-transparent border-[#3d4168]'
+                              }`}>
+                                {checked && <span className="text-white text-[10px] leading-none">✓</span>}
+                              </span>
+                              <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                              <span className="text-sm text-white truncate">{s.name}</span>
+                            </label>
+                          );
+                        })}
+                        {selectedSetIds.size > 0 && (
+                          <div className="border-t border-[#2d3148] mt-1 pt-1 px-3 pb-1">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedSetIds(new Set())}
+                              className="text-xs text-indigo-400 hover:text-indigo-300"
+                            >
+                              Alle abwählen
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </>
                   )}
                 </div>
               </div>

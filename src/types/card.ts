@@ -35,7 +35,11 @@ export interface Flashcard {
   examiners: string[];
   difficulty: Difficulty;
   customTags: string[];
-  setId?: string;
+  // Multi-Set-Membership: eine Karte kann zu beliebig vielen Sets gehören.
+  // Leeres Array = keinem Set zugeordnet. DB-Spalte: `set_ids text[]`.
+  // (Migrations-Note: die alte `setId?: string`-Form wurde via
+  //  supabase_migration_multi_sets.sql + Import-Backward-Compat ersetzt.)
+  setIds: string[];
   flagged?: boolean;
   // "Parkiert" — explicitly excluded from all study pickers (daily plan,
   // Lernen, Prüfungsmodus, MC-Session). Card stays in Library with a

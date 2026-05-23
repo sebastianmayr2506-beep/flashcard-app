@@ -341,10 +341,24 @@ export default function App() {
     }
   }, [cards, rateCard, settings.examDate, updateSettingsFn]);
 
+  // Bulk-Assign ist ADDITIV: das gewählte Set wird zu den existierenden setIds
+  // der Karte hinzugefügt (Duplikate werden via Set deduped). undefined =
+  // "Aus allen Sets entfernen" (Reset).
   const handleBulkAssignSet = useCallback((cardIds: string[], setId: string | undefined) => {
-    cardIds.forEach(id => updateCard(id, { setId }));
-    showToast(`${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} zugewiesen`, 'success');
-  }, [updateCard, showToast]);
+    cardIds.forEach(id => {
+      const card = cards.find(c => c.id === id);
+      if (!card) return;
+      if (setId === undefined) {
+        // Reset: entferne aus allen Sets
+        updateCard(id, { setIds: [] });
+      } else {
+        const next = Array.from(new Set([...(card.setIds ?? []), setId]));
+        updateCard(id, { setIds: next });
+      }
+    });
+    const verb = setId === undefined ? 'aus allen Sets entfernt' : 'zu Set hinzugefügt';
+    showToast(`${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} ${verb}`, 'success');
+  }, [cards, updateCard, showToast]);
 
   const handleBulkDelete = useCallback(async (cardIds: string[]) => {
     if (cardIds.length === 0) return;
@@ -473,9 +487,15 @@ export default function App() {
   const handleBulkCreateAndAssignSet = useCallback((cardIds: string[], setName: string) => {
     if (!userId) return;
     const newSet = addSet({ name: setName, color: '#6366f1' }, userId);
-    cardIds.forEach(id => updateCard(id, { setId: newSet.id }));
-    showToast(`Set "${setName}" erstellt und ${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} zugewiesen`, 'success');
-  }, [userId, addSet, updateCard, showToast]);
+    // Additiv: das neue Set zu existierenden setIds hinzufügen.
+    cardIds.forEach(id => {
+      const card = cards.find(c => c.id === id);
+      if (!card) return;
+      const next = Array.from(new Set([...(card.setIds ?? []), newSet.id]));
+      updateCard(id, { setIds: next });
+    });
+    showToast(`Set "${setName}" erstellt und ${cardIds.length} Karte${cardIds.length !== 1 ? 'n' : ''} hinzugefügt`, 'success');
+  }, [userId, cards, addSet, updateCard, showToast]);
 
   const handleMergeCards = useCallback(async (cardIds: string[]) => {
     if (cardIds.length < 2) return;
@@ -572,7 +592,8 @@ export default function App() {
       examiners,
       difficulty: merged.difficulty,
       customTags,
-      setId: mergeSources[0]?.setId,
+      // Union der setIds aller Quell-Karten — neue Karte erbt alle Set-Mitgliedschaften
+      setIds: Array.from(new Set(mergeSources.flatMap(c => c.setIds ?? []))),
       probabilityPercent,
       timesAsked: timesAsked > 0 ? timesAsked : undefined,
       askedByExaminers,
@@ -692,7 +713,7 @@ export default function App() {
         examiners: source.examiners ?? [],
         difficulty: nc.difficulty,
         customTags: tags,
-        setId: source.setId,
+        setIds: source.setIds ?? [],
         flagged: source.flagged ?? false,
         timesAsked: timesAsked > 0 ? timesAsked : undefined,
         askedByExaminers: source.askedByExaminers ?? [],
@@ -742,7 +763,7 @@ export default function App() {
     linkHints?: Array<{ cardFront: string; linkedCardFront: string; linkType: 'child' | 'related' }>
   ) => {
     const newSet = addSet(setData, ownerId);
-    const tagged = newCards.map(c => ({ ...c, id: c.id || uuidv4(), setId: newSet.id }));
+    const tagged = newCards.map(c => ({ ...c, id: c.id || uuidv4(), setIds: [newSet.id] }));
     await importCards(tagged, true); // wait for cards to be in Supabase before adding links
 
     if (linkHints && linkHints.length > 0) {

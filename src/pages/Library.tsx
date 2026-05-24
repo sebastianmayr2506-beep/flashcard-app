@@ -165,9 +165,14 @@ export default function Library({ cards, settings, sets, links, flagAttempts, us
   }, [cards, filterExaminers]);
 
   const filtered = useMemo(() => {
-    const q = search.toLowerCase();
+    const q = search.toLowerCase().trim();
+    // #42 Syntax → direkt nach Kartennummer filtern
+    const cardNumMatch = q.match(/^#(\d+)$/);
     const result = cards.filter(c => {
-      if (q && !c.front.toLowerCase().includes(q)) return false;
+      if (cardNumMatch) {
+        return c.cardNumber === parseInt(cardNumMatch[1], 10);
+      }
+      if (q && !c.front.toLowerCase().includes(q) && !c.back.toLowerCase().includes(q)) return false;
       if (filterSubject && !c.subjects?.includes(filterSubject)) return false;
       if (filterExaminers.size > 0 && !c.examiners?.some(e => filterExaminers.has(e))) return false;
       if (filterDifficulty && c.difficulty !== filterDifficulty) return false;
@@ -837,6 +842,9 @@ function CardGridItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
       )}
       {imgSrc && <img src={imgSrc} alt="" className="w-full h-28 object-cover rounded-xl" />}
       <div className="flex-1">
+        {card.cardNumber != null && (
+          <span className="text-[10px] font-mono text-[#6b7280] mb-0.5 block">#{card.cardNumber}</span>
+        )}
         <p className="text-sm text-white font-medium line-clamp-3 leading-snug">
           <MarkdownText text={card.front || '(leer)'} />
         </p>
@@ -951,6 +959,9 @@ function CardListItem({ card, sets, links, flagAttempts, autoUnflagEnabled, sele
       )}
       <div className="flex-1 min-w-0">
         <p className="text-sm text-white font-medium truncate">
+          {card.cardNumber != null && (
+            <span className="font-mono text-[#6b7280] text-xs mr-1.5">#{card.cardNumber}</span>
+          )}
           <MarkdownText text={card.front || '(leer)'} />
         </p>
       </div>

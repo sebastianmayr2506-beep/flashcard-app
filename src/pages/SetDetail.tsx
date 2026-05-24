@@ -52,6 +52,9 @@ function CardRow({
         className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-[#252840]/40 transition-colors rounded-xl"
       >
         <span className={`text-[#6b7280] text-xs shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
+        {card.cardNumber != null && (
+          <span className="font-mono text-[10px] text-[#6b7280] shrink-0">#{card.cardNumber}</span>
+        )}
         <div className="flex-1 min-w-0">
           <p className="text-sm text-white font-medium truncate">
             <MarkdownText text={card.front || '(leer)'} />
@@ -178,7 +181,9 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
   // Apply filters
   const filteredCards = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const cardNumMatch = q.match(/^#(\d+)$/);
     return setCards.filter(card => {
+      if (cardNumMatch) return card.cardNumber === parseInt(cardNumMatch[1], 10);
       if (q && !card.front.toLowerCase().includes(q) && !card.back.toLowerCase().includes(q)) return false;
       if (filterSRS && getSRSStatus(card) !== filterSRS) return false;
       if (filterDiff && card.difficulty !== filterDiff) return false;
@@ -361,7 +366,7 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
             {/* Suchfeld */}
             <input
               type="text"
-              placeholder="Karten durchsuchen…"
+              placeholder="Suchen… oder #42 für Karte direkt"
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none"

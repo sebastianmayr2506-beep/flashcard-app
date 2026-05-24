@@ -35,6 +35,10 @@ export interface Flashcard {
   examiners: string[];
   difficulty: Difficulty;
   customTags: string[];
+  // Stabile, aufsteigende Nummer pro User. Einmal vergeben, nie geändert.
+  // Für externe Referenzen ("Karte #42 in meinen Notizen").
+  // Wird von der DB (Trigger assign_card_number) automatisch gesetzt.
+  cardNumber?: number;
   // Multi-Set-Membership: eine Karte kann zu beliebig vielen Sets gehören.
   // Leeres Array = keinem Set zugeordnet. DB-Spalte: `set_ids text[]`.
   // (Migrations-Note: die alte `setId?: string`-Form wurde via

@@ -181,9 +181,11 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
   // Apply filters
   const filteredCards = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const cardNumMatch = q.match(/^#(\d+)$/);
+    // "#42 #87 #103" → Set von Nummern, zeigt genau diese Karten
+    const numTokens = [...q.matchAll(/#(\d+)/g)].map(m => parseInt(m[1], 10));
+    const cardNumMatch = numTokens.length > 0 && q.replace(/#\d+/g, '').trim() === '';
     return setCards.filter(card => {
-      if (cardNumMatch) return card.cardNumber === parseInt(cardNumMatch[1], 10);
+      if (cardNumMatch) return card.cardNumber != null && numTokens.includes(card.cardNumber);
       if (q && !card.front.toLowerCase().includes(q) && !card.back.toLowerCase().includes(q)) return false;
       if (filterSRS && getSRSStatus(card) !== filterSRS) return false;
       if (filterDiff && card.difficulty !== filterDiff) return false;

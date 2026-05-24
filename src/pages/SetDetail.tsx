@@ -128,6 +128,7 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
   const [copyLabel, setCopyLabel] = useState('Kopieren');
 
   // Filter state
+  const [search, setSearch] = useState('');
   const [filterSRS, setFilterSRS] = useState<SRSStatus | ''>('');
   const [filterDiff, setFilterDiff] = useState<Difficulty | ''>('');
   const [filterExaminers, setFilterExaminers] = useState<Set<string>>(new Set());
@@ -176,7 +177,9 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
 
   // Apply filters
   const filteredCards = useMemo(() => {
+    const q = search.trim().toLowerCase();
     return setCards.filter(card => {
+      if (q && !card.front.toLowerCase().includes(q) && !card.back.toLowerCase().includes(q)) return false;
       if (filterSRS && getSRSStatus(card) !== filterSRS) return false;
       if (filterDiff && card.difficulty !== filterDiff) return false;
       if (filterExaminers.size > 0 && !card.examiners?.some(e => filterExaminers.has(e))) return false;
@@ -184,11 +187,12 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
       if (onlyFlagged && !card.flagged) return false;
       return true;
     });
-  }, [setCards, filterSRS, filterDiff, filterExaminers, onlyDue, onlyFlagged]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [setCards, search, filterSRS, filterDiff, filterExaminers, onlyDue, onlyFlagged]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filtersActive = !!filterSRS || !!filterDiff || filterExaminers.size > 0 || onlyDue || onlyFlagged;
+  const filtersActive = !!search || !!filterSRS || !!filterDiff || filterExaminers.size > 0 || onlyDue || onlyFlagged;
 
   const resetFilters = () => {
+    setSearch('');
     setFilterSRS('');
     setFilterDiff('');
     setFilterExaminers(new Set());
@@ -353,7 +357,15 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
           </div>
 
           {/* Filter bar — Library-style dropdowns, only showing options present in this set */}
-          <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-3">
+          <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-3 space-y-2">
+            {/* Suchfeld */}
+            <input
+              type="text"
+              placeholder="Karten durchsuchen…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none"
+            />
             <div className="flex flex-wrap gap-2">
 
               {/* SRS Status — nur Optionen die im Set vorkommen */}

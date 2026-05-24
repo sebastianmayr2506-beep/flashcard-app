@@ -140,7 +140,6 @@ function CardRow({
         </div>
       )}
     </div>
-    </div>
   );
 }
 

@@ -166,12 +166,11 @@ export default function Library({ cards, settings, sets, links, flagAttempts, us
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    // #42 Syntax → direkt nach Kartennummer filtern
-    const cardNumMatch = q.match(/^#(\d+)$/);
+    // "#42 #87 #103" → zeigt genau diese Karten (wie in SetDetail)
+    const numTokens = [...q.matchAll(/#(\d+)/g)].map(m => parseInt(m[1], 10));
+    const cardNumMatch = numTokens.length > 0 && q.replace(/#\d+/g, '').trim() === '';
     const result = cards.filter(c => {
-      if (cardNumMatch) {
-        return c.cardNumber === parseInt(cardNumMatch[1], 10);
-      }
+      if (cardNumMatch) return c.cardNumber != null && numTokens.includes(c.cardNumber);
       if (q && !c.front.toLowerCase().includes(q) && !c.back.toLowerCase().includes(q)) return false;
       if (filterSubject && !c.subjects?.includes(filterSubject)) return false;
       if (filterExaminers.size > 0 && !c.examiners?.some(e => filterExaminers.has(e))) return false;
@@ -442,7 +441,7 @@ export default function Library({ cards, settings, sets, links, flagAttempts, us
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <input
             type="text"
-            placeholder="Suchen…"
+            placeholder="Suchen… oder #42 #87"
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="col-span-2 sm:col-span-1 sm:flex-1 sm:min-w-[160px] text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none"

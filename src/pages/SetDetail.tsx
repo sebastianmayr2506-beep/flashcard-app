@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import type { CardSet, Flashcard, CardLink, SRSStatus, Difficulty } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
-import { exportSetJSON, exportSetCSV, exportShareJSON } from '../utils/export';
+import { exportSetJSON, exportSetCSV, exportShareJSON, exportJSON } from '../utils/export';
 import { createShareCode } from '../utils/shareCode';
 import InfoTooltip from '../components/InfoTooltip';
 import DifficultyBadge from '../components/DifficultyBadge';
@@ -30,27 +30,46 @@ function CardRow({
   card,
   onEdit,
   onDelete,
+  selectionMode = false,
+  selected = false,
+  onToggleSelect,
 }: {
   card: Flashcard;
   onEdit: (c: Flashcard) => void;
   onDelete: (id: string) => void;
+  selectionMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const status = getSRSStatus(card);
   const due = isDueToday(card);
 
+  const handleRowClick = () => {
+    if (selectionMode) { onToggleSelect?.(); return; }
+    setOpen(o => !o);
+  };
+
   return (
     <div
       className={`bg-[#1e2130] border rounded-xl transition-all ${
+        selected ? 'border-indigo-500 ring-1 ring-indigo-500/50' :
         due ? 'border-indigo-500/30' : open ? 'border-[#3d4168]' : 'border-[#2d3148]'
       }`}
     >
       {/* Row header */}
       <button
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onClick={handleRowClick}
         className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-[#252840]/40 transition-colors rounded-xl"
       >
+        {selectionMode && (
+          <div className={`shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${
+            selected ? 'bg-indigo-500 border-indigo-500' : 'bg-[#252840] border-[#3d4168]'
+          }`}>
+            {selected && <span className="text-white text-xs font-bold">✓</span>}
+          </div>
+        )}
         <span className={`text-[#6b7280] text-xs shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
         {card.cardNumber != null && (
           <span className="font-mono text-[10px] text-[#6b7280] shrink-0">#{card.cardNumber}</span>
@@ -76,8 +95,8 @@ function CardRow({
         </div>
       </button>
 
-      {/* Expanded body */}
-      {open && (
+      {/* Expanded body — only when not in selection mode */}
+      {open && !selectionMode && (
         <div className="px-4 pb-4 border-t border-[#2d3148]">
           <div className="mt-3">
             <p className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider mb-1">Vorderseite</p>
@@ -121,6 +140,7 @@ function CardRow({
         </div>
       )}
     </div>
+    </div>
   );
 }
 
@@ -129,6 +149,17 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
   const [shareCode, setShareCode] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [copyLabel, setCopyLabel] = useState('Kopieren');
+
+  // Selection mode
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const toggleSelection = (id: string) => setSelectedIds(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const exitSelectionMode = () => { setSelectionMode(false); setSelectedIds(new Set()); };
 
   // Filter state
   const [search, setSearch] = useState('');
@@ -207,6 +238,18 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
     setOnlyFlagged(false);
   };
 
+  const selectedCount = selectedIds.size;
+  const allFilteredSelected = filteredCards.length > 0 && filteredCards.every(c => selectedIds.has(c.id));
+  const selectAll = () => setSelectedIds(new Set(filteredCards.map(c => c.id)));
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleBulkExport = () => {
+    if (selectedIds.size === 0) return;
+    const toExport = setCards.filter(c => selectedIds.has(c.id));
+    exportJSON(toExport, `karten_auswahl_${selectedIds.size}.json`);
+    showToast(`${selectedIds.size} Karten exportiert`);
+  };
+
   const handleSrsLevelClick = (srs: SrsKey) => {
     const filtered = setCards.filter(c => getSRSStatus(c) === srs);
     if (filtered.length === 0) { showToast('Keine Karten auf diesem Level', 'info'); return; }
@@ -245,7 +288,45 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
   };
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 space-y-6 fade-in">
+    <div className="fade-in">
+      {/* Sticky selection bar */}
+      {selectionMode && (
+        <div className="sticky top-0 z-30 bg-[#1a1d27] border-b border-[#3d4168] px-4 md:px-6 lg:px-8 py-3 shadow-lg">
+          <div className="flex items-center gap-3 flex-wrap max-w-screen-xl">
+            <span className="text-sm font-semibold text-white shrink-0">
+              {selectedCount > 0 ? `${selectedCount} Karte${selectedCount !== 1 ? 'n' : ''} ausgewählt` : 'Karten auswählen'}
+            </span>
+            <button
+              onClick={allFilteredSelected ? clearSelection : selectAll}
+              className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors shrink-0"
+            >
+              {allFilteredSelected ? 'Alle abwählen' : `Alle ${filteredCards.length} auswählen`}
+            </button>
+            <button
+              onClick={handleBulkExport}
+              disabled={selectedCount === 0}
+              className="px-4 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-400 text-sm font-semibold transition-colors shrink-0"
+            >
+              📦 Exportieren
+            </button>
+            <button
+              onClick={() => { onStudy(setCards.filter(c => selectedIds.has(c.id))); exitSelectionMode(); }}
+              disabled={selectedCount === 0}
+              className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors shrink-0"
+            >
+              ▶ Lernen ({selectedCount})
+            </button>
+            <button
+              onClick={exitSelectionMode}
+              className="ml-auto px-3 py-2 rounded-xl bg-[#252840] hover:bg-[#2d3148] border border-[#2d3148] text-[#9ca3af] hover:text-white text-sm transition-colors shrink-0"
+            >
+              Abbrechen
+            </button>
+          </div>
+        </div>
+      )}
+
+    <div className="p-4 md:p-6 lg:p-8 space-y-6">
       {/* Header */}
       <div>
         <button
@@ -287,6 +368,18 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-semibold text-sm transition-colors disabled:opacity-40"
           >
             ▶ {filtersActive ? `${filteredCards.length} Gefilterte lernen` : `Lernen (${setCards.length})`}
+          </button>
+        )}
+        {setCards.length > 0 && (
+          <button
+            onClick={() => { setSelectionMode(s => !s); clearSelection(); }}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
+              selectionMode
+                ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-400'
+                : 'bg-[#1e2130] border-[#2d3148] text-[#9ca3af] hover:text-white'
+            }`}
+          >
+            ☑ Auswählen
           </button>
         )}
         <button onClick={handleBackupJSON} disabled={setCards.length === 0}
@@ -490,12 +583,21 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
           ) : (
             <div className="flex flex-col gap-2">
               {filteredCards.map(card => (
-                <CardRow key={card.id} card={card} onEdit={onEdit} onDelete={onDelete} />
+                <CardRow
+                  key={card.id}
+                  card={card}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                  selectionMode={selectionMode}
+                  selected={selectedIds.has(card.id)}
+                  onToggleSelect={() => toggleSelection(card.id)}
+                />
               ))}
             </div>
           )}
         </div>
       )}
+    </div>
     </div>
   );
 }

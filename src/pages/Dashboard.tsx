@@ -168,9 +168,6 @@ export default function Dashboard({ cards, sets, settings, onNavigate, onNavigat
           <FocusToggleInline
             focusMode={focusMode}
             onSetFocusMode={onSetFocusMode}
-            focusedCount={focusedCards.length}
-            totalCount={activeCardsCount}
-            isFocused={focusMode !== 'all'}
           />
 
           {/* Set selector — scopes all metrics to one set */}
@@ -183,6 +180,16 @@ export default function Dashboard({ cards, sets, settings, onNavigate, onNavigat
               onSelect={handleSetFilter}
             />
           )}
+
+          {/* Unified filter status line — single source of truth for
+              "how many cards are you working with right now" */}
+          <FilterStatusLine
+            displayCount={displayCards.length}
+            totalCount={activeCardsCount}
+            focusMode={focusMode}
+            activeSet={activeSet}
+            onClearSet={() => handleSetFilter('')}
+          />
 
           {/* Tagesziel + Action */}
           <TagesZiel
@@ -509,6 +516,68 @@ function TagesZiel({
   );
 }
 
+// ─── Filter Status Line ───────────────────────────────────────────
+// One line below the filter controls showing the exact scope:
+//   "189 Karten · Set: Bachelorprüfung · Fokus: Nur A  ✕"
+// This is the single source of truth — removes the need for per-section counts
+// in the Fokus toggle and Set selector headers.
+
+function FilterStatusLine({
+  displayCount,
+  totalCount,
+  focusMode,
+  activeSet,
+  onClearSet,
+}: {
+  displayCount: number;
+  totalCount: number;
+  focusMode: FocusMode;
+  activeSet: CardSet | null;
+  onClearSet: () => void;
+}) {
+  const hasFilter = focusMode !== 'all' || !!activeSet;
+  const focusLabel = focusMode === 'A' ? 'Nur A' : focusMode === 'AB' ? 'A + B' : null;
+
+  return (
+    <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
+      <div className="flex items-center gap-1.5 flex-wrap text-xs">
+        <span className="font-bold text-white text-sm">{displayCount.toLocaleString()}</span>
+        <span className="text-[#9ca3af]">Karten</span>
+        {activeSet && (
+          <>
+            <span className="text-[#3d4168]">·</span>
+            <span className="text-amber-300 font-medium">📂 {activeSet.name}</span>
+          </>
+        )}
+        {focusLabel && (
+          <>
+            <span className="text-[#3d4168]">·</span>
+            <span className="text-amber-300 font-medium">🎯 {focusLabel}</span>
+          </>
+        )}
+        {hasFilter && (
+          <>
+            <span className="text-[#3d4168]">·</span>
+            <span className="text-[#6b7280]">{totalCount.toLocaleString()} gesamt</span>
+          </>
+        )}
+        {!hasFilter && (
+          <span className="text-[#6b7280]">· alle Karten</span>
+        )}
+      </div>
+      {activeSet && (
+        <button
+          onClick={onClearSet}
+          className="text-xs text-[#6b7280] hover:text-white transition-colors shrink-0"
+          title="Set-Filter zurücksetzen"
+        >
+          ✕ Set zurücksetzen
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ─── Set Filter Selector ──────────────────────────────────────────
 // Sits below the Fokus toggle in the hero block. Shows a scrollable pill row
 // (or dropdown for many sets) so the user can scope all dashboard metrics
@@ -537,24 +606,7 @@ function SetFilterSelector({
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-white flex items-center gap-2">
-          📂 Set
-          {activeSet && (
-            <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-              aktiv
-            </span>
-          )}
-        </p>
-        {activeSet && (
-          <button
-            onClick={() => onSelect('')}
-            className="text-xs text-[#9ca3af] hover:text-white transition-colors"
-          >
-            ✕ Alle anzeigen
-          </button>
-        )}
-      </div>
+      <p className="text-sm font-semibold text-white">📂 Set</p>
       {/* Horizontal scrollable pill row */}
       <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
         <button
@@ -605,37 +657,19 @@ function SetFilterSelector({
 function FocusToggleInline({
   focusMode,
   onSetFocusMode,
-  focusedCount,
-  totalCount,
-  isFocused,
 }: {
   focusMode: FocusMode;
   onSetFocusMode: (m: FocusMode) => void;
-  focusedCount: number;
-  totalCount: number;
-  isFocused: boolean;
 }) {
   return (
     <div className="space-y-2.5">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p className="text-sm font-semibold text-white flex items-center gap-2">
-          🎯 Fokus
-          <InfoTooltip
-            side="bottom"
-            text="Reduziert die App auf einen Karten-Subset (A oder A+B), damit 'Heute zu lernen' eine machbare Zahl zeigt statt der überfordernden Gesamtzahl. Andere Karten sind nicht weg — nur ausgeblendet bis du den Fokus wechselst."
-          />
-          {isFocused && (
-            <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-              aktiv
-            </span>
-          )}
-        </p>
-        <p className="text-xs text-[#9ca3af]">
-          {isFocused
-            ? `${focusedCount.toLocaleString()} von ${totalCount.toLocaleString()} Karten im Fokus`
-            : `${totalCount.toLocaleString()} Karten gesamt`}
-        </p>
-      </div>
+      <p className="text-sm font-semibold text-white flex items-center gap-2">
+        🎯 Fokus
+        <InfoTooltip
+          side="bottom"
+          text="Reduziert die App auf einen Karten-Subset (A oder A+B), damit 'Heute zu lernen' eine machbare Zahl zeigt statt der überfordernden Gesamtzahl. Andere Karten sind nicht weg — nur ausgeblendet bis du den Fokus wechselst."
+        />
+      </p>
       {/* Segmented control */}
       <div className="flex gap-1 p-1 rounded-xl bg-[#15172a] border border-[#2d3148]">
         {(['all', 'AB', 'A'] as FocusMode[]).map(m => {

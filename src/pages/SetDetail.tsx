@@ -61,37 +61,38 @@ function CardRow({
       <button
         type="button"
         onClick={handleRowClick}
-        className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-[#252840]/40 transition-colors rounded-xl"
+        className="w-full px-4 py-3 flex items-start gap-3 text-left hover:bg-[#252840]/40 transition-colors rounded-xl"
       >
         {selectionMode && (
-          <div className={`shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${
+          <div className={`shrink-0 w-5 h-5 mt-0.5 rounded-md border-2 flex items-center justify-center transition-colors ${
             selected ? 'bg-indigo-500 border-indigo-500' : 'bg-[#252840] border-[#3d4168]'
           }`}>
             {selected && <span className="text-white text-xs font-bold">✓</span>}
           </div>
         )}
-        <span className={`text-[#6b7280] text-xs shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
+        <span className={`text-[#6b7280] text-xs shrink-0 mt-0.5 transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
         {card.cardNumber != null && (
-          <span className="font-mono text-[10px] text-[#6b7280] shrink-0">#{card.cardNumber}</span>
+          <span className="font-mono text-[10px] text-[#6b7280] shrink-0 mt-1">#{card.cardNumber}</span>
         )}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm text-white font-medium truncate">
+        {/* Text + badges stack vertically — prevents badges from squeezing the title on mobile */}
+        <div className="flex-1 min-w-0 space-y-1.5">
+          <p className="text-sm text-white font-medium line-clamp-2 leading-snug">
             <MarkdownText text={card.front || '(leer)'} />
           </p>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-          {card.flagged && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400 font-medium">
-              🚩
-            </span>
-          )}
-          <DifficultyBadge difficulty={card.difficulty} />
-          <SRSBadge status={status} />
-          {due && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">
-              Fällig
-            </span>
-          )}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {card.flagged && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400 font-medium">
+                🚩
+              </span>
+            )}
+            <DifficultyBadge difficulty={card.difficulty} />
+            <SRSBadge status={status} />
+            {due && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">
+                Fällig
+              </span>
+            )}
+          </div>
         </div>
       </button>
 

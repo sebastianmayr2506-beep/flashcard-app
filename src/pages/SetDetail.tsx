@@ -76,7 +76,7 @@ function CardRow({
         )}
         {/* Text + badges stack vertically — prevents badges from squeezing the title on mobile */}
         <div className="flex-1 min-w-0 space-y-1.5">
-          <p className="text-sm text-white font-medium line-clamp-2 leading-snug">
+          <p className="text-sm text-white font-medium leading-snug">
             <MarkdownText text={card.front || '(leer)'} />
           </p>
           <div className="flex items-center gap-1.5 flex-wrap">

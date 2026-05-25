@@ -484,6 +484,17 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
     setSessionCards([]);
   };
 
+  // Auto-start: when cards were pre-selected (SetDetail / Library-Filter), skip
+  // the setup screen entirely. The user already made their choice — showing the
+  // setup screen again is friction. Only fires on mount and only when there is
+  // no paused/restored session that should take priority.
+  useEffect(() => {
+    if (preFilteredCards && preFilteredCards.length > 0 && !restoredSession) {
+      startSession();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally one-shot
+
   const startSession = () => {
     // Auto-resume: if user has a paused MC session, "Los geht's" continues
     // it instead of starting fresh. To start fresh, user has to click

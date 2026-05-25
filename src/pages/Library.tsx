@@ -247,7 +247,10 @@ export default function Library({ cards, settings, sets, links, flagAttempts, us
   const handleBulkExport = () => {
     if (selectedIds.size === 0) return;
     const toExport = cards.filter(c => selectedIds.has(c.id));
-    exportJSON(toExport, `karten_auswahl_${selectedIds.size}.json`);
+    const filename = toExport.length === 1 && toExport[0].cardNumber != null
+      ? `#${toExport[0].cardNumber}_karte.json`
+      : `karten_auswahl_${selectedIds.size}.json`;
+    exportJSON(toExport, filename);
   };
 
   const selectedCount = selectedIds.size;

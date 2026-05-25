@@ -176,7 +176,6 @@ export default function Dashboard({ cards, sets, settings, onNavigate, onNavigat
               sets={sets}
               cards={focusedCards}
               activeSetFilter={activeSetFilter}
-              activeSet={activeSet}
               onSelect={handleSetFilter}
             />
           )}
@@ -587,13 +586,11 @@ function SetFilterSelector({
   sets,
   cards,
   activeSetFilter,
-  activeSet,
   onSelect,
 }: {
   sets: CardSet[];
   cards: Flashcard[];
   activeSetFilter: string;
-  activeSet: CardSet | null;
   onSelect: (id: string) => void;
 }) {
   // Pre-compute card count per set for display (only from the passed cards,

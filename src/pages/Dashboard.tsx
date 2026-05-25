@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { Flashcard, AppSettings } from '../types/card';
+import type { Flashcard, AppSettings, CardSet } from '../types/card';
 import { getSRSStatus, isDueToday } from '../types/card';
 import { calculateDailyPlan, getCardsRatedToday, getNewCardsDoneToday } from '../utils/dailyGoal';
 import { applyFocus, type FocusMode } from '../utils/priority';
@@ -11,17 +11,35 @@ import MarkdownText from '../components/MarkdownText';
 
 interface Props {
   cards: Flashcard[];
+  sets: CardSet[];
   settings: AppSettings;
   onNavigate: (page: string) => void;
   onNavigateToLibraryWithSrs: (srs: string) => void;
   onStartDailySession: () => void;
+  onStudySet: (cards: Flashcard[]) => void;
   onDismissUnflagNotification: () => void;
   onEditCard: (card: Flashcard) => void;
   onSetFocusMode: (m: FocusMode) => void;
 }
 
+const DASHBOARD_SET_KEY = 'dashboard:setFilter';
 
-export default function Dashboard({ cards, settings, onNavigate, onNavigateToLibraryWithSrs, onStartDailySession, onDismissUnflagNotification, onEditCard, onSetFocusMode }: Props) {
+export default function Dashboard({ cards, sets, settings, onNavigate, onNavigateToLibraryWithSrs, onStartDailySession, onStudySet, onDismissUnflagNotification, onEditCard, onSetFocusMode }: Props) {
+  // ── Set-Filter ────────────────────────────────────────────────────────────
+  // Allows scoping all dashboard metrics to a single set — useful when users
+  // are specialised to one examiner's set. Persisted across reloads.
+  const [dashboardSetFilter, setDashboardSetFilter] = useState<string>(
+    () => localStorage.getItem(DASHBOARD_SET_KEY) ?? ''
+  );
+  const handleSetFilter = (id: string) => {
+    setDashboardSetFilter(id);
+    if (id) localStorage.setItem(DASHBOARD_SET_KEY, id);
+    else localStorage.removeItem(DASHBOARD_SET_KEY);
+  };
+  // Validate: if the stored set was deleted, fall back to 'all'
+  const activeSetFilter = sets.some(s => s.id === dashboardSetFilter) ? dashboardSetFilter : '';
+  const activeSet = sets.find(s => s.id === activeSetFilter) ?? null;
+
   // Focus-Modus filter applied once at the top — every downstream metric
   // (Fällig heute, Tagesziel, Beherrscht, Klassiker, …) operates on this
   // narrowed subset. With focus='all' this is just `cards`, no change.
@@ -33,52 +51,64 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
     () => applyFocus(cards, focusMode).filter(c => !c.blacklisted),
     [cards, focusMode],
   );
-  const isFocused = focusMode !== 'all';
+  // displayCards = focusedCards further narrowed by the optional set filter.
+  // All metric computations (plan, stats, ratedToday, …) use displayCards so
+  // the numbers always reflect what the user is looking at.
+  const displayCards = useMemo(
+    () => activeSetFilter
+      ? focusedCards.filter(c => c.setIds?.includes(activeSetFilter))
+      : focusedCards,
+    [focusedCards, activeSetFilter],
+  );
+
+  const isFocused = focusMode !== 'all' || !!activeSetFilter;
 
   // Reconciled count via the dedicated firstStudiedAt field — see getNewCardsDoneToday.
-  // Note we feed `focusedCards` so "Neu heute" reflects what's in focus.
-  const newDoneToday = getNewCardsDoneToday(focusedCards, settings);
+  const newDoneToday = getNewCardsDoneToday(displayCards, settings);
 
   // Pass newDoneToday so the plan reflects remaining work, not the original full quota
   const plan = useMemo(
-    () => calculateDailyPlan(focusedCards, settings, newDoneToday),
+    () => calculateDailyPlan(displayCards, settings, newDoneToday),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [focusedCards, settings, newDoneToday],
+    [displayCards, settings, newDoneToday],
   );
 
   // Always derive ratedToday from card state — getCardsRatedToday now uses
   // the (nextReviewDate - updatedAt === interval) heuristic so it can't be
   // inflated by edits/merges/sync events.
-  //
-  // We deliberately do NOT use snap.totalDone here, even when fresh:
-  // session-start bootstraps it via getCardsRatedToday(cards), so a buggy
-  // bootstrap (pre-fix) would freeze a wrong number into the snapshot.
-  // Card-state is always the truth; the snapshot is just a (now redundant)
-  // performance cache. See "getCardsRatedToday over-counted merges/edits"
-  // entry in CHANGELOG.
-  const ratedToday = getCardsRatedToday(focusedCards);
+  const ratedToday = getCardsRatedToday(displayCards);
 
-  // "Aktive" Karten = alle ohne Parkiert-Flag. Parkierte werden nirgends
-  // mehr mitberechnet (Total, Fokus-Anteil, Sidebar-Badge).
+  // "Aktive" Karten = alle ohne Parkiert-Flag.
   const activeCardsCount = useMemo(
     () => cards.filter(c => !c.blacklisted).length,
     [cards],
   );
 
   const stats = useMemo(() => {
-    const due = focusedCards.filter(isDueToday);
+    const due = displayCards.filter(isDueToday);
     const srsGroups = { neu: 0, lernend: 0, wiederholen: 0, beherrscht: 0 };
-    focusedCards.forEach(c => srsGroups[getSRSStatus(c)]++);
-    return { due, srsGroups, total: focusedCards.length, grandTotal: activeCardsCount };
-  }, [focusedCards, activeCardsCount]);
+    displayCards.forEach(c => srsGroups[getSRSStatus(c)]++);
+    return { due, srsGroups, total: displayCards.length, grandTotal: activeCardsCount };
+  }, [displayCards, activeCardsCount]);
 
   const topKlassiker = useMemo(() =>
-    focusedCards
+    displayCards
       .filter(c => (c.probabilityPercent ?? 0) > 0)
       .sort((a, b) => (b.probabilityPercent ?? 0) - (a.probabilityPercent ?? 0))
       .slice(0, 5),
-    [focusedCards]
+    [displayCards]
   );
+
+  // "Jetzt lernen": when a set is active, start a filtered session for that
+  // set (bypasses the daily-plan modal). When no set, use normal daily plan.
+  const handleStart = () => {
+    if (activeSetFilter) {
+      const toStudy = [...plan.reviewCards, ...plan.newCards];
+      if (toStudy.length > 0) onStudySet(toStudy);
+    } else {
+      onStartDailySession();
+    }
+  };
 
   const unflagNotif = settings.autoUnflagNotification;
   const showUnflagBanner = unflagNotif &&
@@ -140,8 +170,19 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
             onSetFocusMode={onSetFocusMode}
             focusedCount={focusedCards.length}
             totalCount={activeCardsCount}
-            isFocused={isFocused}
+            isFocused={focusMode !== 'all'}
           />
+
+          {/* Set selector — scopes all metrics to one set */}
+          {sets.length > 0 && (
+            <SetFilterSelector
+              sets={sets}
+              cards={focusedCards}
+              activeSetFilter={activeSetFilter}
+              activeSet={activeSet}
+              onSelect={handleSetFilter}
+            />
+          )}
 
           {/* Tagesziel + Action */}
           <TagesZiel
@@ -150,8 +191,9 @@ export default function Dashboard({ cards, settings, onNavigate, onNavigateToLib
             ratedToday={ratedToday}
             progressPct={progressPct}
             progressTotal={progressTotal}
-            onStart={onStartDailySession}
+            onStart={handleStart}
             onNavigate={onNavigate}
+            activeSetName={activeSet?.name}
           />
         </div>
       )}
@@ -320,6 +362,7 @@ function TagesZiel({
   progressTotal,
   onStart,
   onNavigate,
+  activeSetName,
 }: {
   plan: ReturnType<typeof calculateDailyPlan>;
   settings: AppSettings;
@@ -328,6 +371,7 @@ function TagesZiel({
   progressTotal: number;
   onStart: () => void;
   onNavigate: (p: string) => void;
+  activeSetName?: string;
 }) {
   const totalToday = plan.reviewCards.length + plan.newCards.length;
   const goalDone = ratedToday >= progressTotal && progressTotal > 0;
@@ -423,7 +467,7 @@ function TagesZiel({
         disabled={totalToday === 0}
         className="w-full py-3.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors flex items-center justify-center gap-2 text-base"
       >
-        ▶ Jetzt lernen
+        ▶ {activeSetName ? `${activeSetName} lernen` : 'Jetzt lernen'}
         {totalToday > 0 && (
           <span className="bg-white/20 text-xs px-2 py-0.5 rounded-full">{totalToday}</span>
         )}
@@ -461,6 +505,94 @@ function TagesZiel({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Set Filter Selector ──────────────────────────────────────────
+// Sits below the Fokus toggle in the hero block. Shows a scrollable pill row
+// (or dropdown for many sets) so the user can scope all dashboard metrics
+// to a single set — useful when specialised to one examiner's set.
+
+function SetFilterSelector({
+  sets,
+  cards,
+  activeSetFilter,
+  activeSet,
+  onSelect,
+}: {
+  sets: CardSet[];
+  cards: Flashcard[];
+  activeSetFilter: string;
+  activeSet: CardSet | null;
+  onSelect: (id: string) => void;
+}) {
+  // Pre-compute card count per set for display (only from the passed cards,
+  // already focus-filtered, so counts reflect the active Fokus too).
+  const countBySet = useMemo(() => {
+    const m: Record<string, number> = {};
+    cards.forEach(c => c.setIds?.forEach(id => { m[id] = (m[id] ?? 0) + 1; }));
+    return m;
+  }, [cards]);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-white flex items-center gap-2">
+          📂 Set
+          {activeSet && (
+            <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              aktiv
+            </span>
+          )}
+        </p>
+        {activeSet && (
+          <button
+            onClick={() => onSelect('')}
+            className="text-xs text-[#9ca3af] hover:text-white transition-colors"
+          >
+            ✕ Alle anzeigen
+          </button>
+        )}
+      </div>
+      {/* Horizontal scrollable pill row */}
+      <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+        <button
+          onClick={() => onSelect('')}
+          className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all whitespace-nowrap ${
+            !activeSetFilter
+              ? 'bg-indigo-500 text-white border-indigo-500 shadow-sm shadow-indigo-500/30'
+              : 'bg-[#15172a] border-[#2d3148] text-[#9ca3af] hover:text-white hover:border-[#3d4168]'
+          }`}
+        >
+          Alle
+        </button>
+        {sets.map(s => {
+          const count = countBySet[s.id] ?? 0;
+          const active = activeSetFilter === s.id;
+          return (
+            <button
+              key={s.id}
+              onClick={() => onSelect(s.id)}
+              className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all whitespace-nowrap ${
+                active
+                  ? 'text-white border-transparent shadow-sm'
+                  : 'bg-[#15172a] border-[#2d3148] text-[#9ca3af] hover:text-white hover:border-[#3d4168]'
+              }`}
+              style={active ? { backgroundColor: s.color + 'cc', borderColor: s.color } : undefined}
+            >
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: s.color }}
+              />
+              {s.name}
+              <span className={`text-[10px] ${active ? 'text-white/70' : 'text-[#6b7280]'}`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

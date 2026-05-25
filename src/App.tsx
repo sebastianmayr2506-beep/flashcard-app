@@ -995,10 +995,12 @@ export default function App() {
         {page === 'dashboard' && (
           <Dashboard
             cards={cards}
+            sets={sets}
             settings={settings}
             onNavigate={navigate}
             onNavigateToLibraryWithSrs={handleNavigateToLibraryWithSrs}
             onStartDailySession={handleStartDailySession}
+            onStudySet={handleStudyFiltered}
             onDismissUnflagNotification={handleDismissUnflagNotification}
             onEditCard={handleEditCard}
             onSetFocusMode={(m: FocusMode) => updateSettings({ focusMode: m })}

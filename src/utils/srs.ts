@@ -28,8 +28,8 @@ export function applySM2(card: Flashcard, rating: RatingValue, daysUntilExam?: n
     // Success (Schwer / Gut / Einfach) — card is remembered, progress it.
     // Schwer grows the interval gently (*1.2); Gut/Einfach follow the ease factor.
     if (repetitions === 0) {
-      // First review: Einfach 2 days, Gut/Schwer 1 day
-      interval = rating === 3 ? 2 : 1;
+      // First review: Einfach/Gut 2 days, Schwer 1 day
+      interval = rating >= 2 ? 2 : 1;
     } else if (repetitions === 1) {
       interval = rating === 1 ? Math.max(1, Math.round(interval * 1.2)) : 6;
     } else {

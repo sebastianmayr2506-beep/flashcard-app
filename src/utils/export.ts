@@ -80,6 +80,26 @@ export function exportSetCSV(set: CardSet, cards: Flashcard[]): void {
 // Renders cards as readable Q&A text — ideal for NotebookLM "Kopierter Text"
 // or "PDF/TXT"-Import. No metadata noise, just Frage + Antwort + Kontext.
 
+/** Strip common Markdown syntax so NotebookLM sees clean plain text. */
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/#{1,6}\s+/g, '')           // headings
+    .replace(/\*\*(.+?)\*\*/g, '$1')     // **bold**
+    .replace(/\*(.+?)\*/g, '$1')         // *italic*
+    .replace(/__(.+?)__/g, '$1')         // __bold__
+    .replace(/_(.+?)_/g, '$1')           // _italic_
+    .replace(/~~(.+?)~~/g, '$1')         // ~~strikethrough~~
+    .replace(/`(.+?)`/g, '$1')           // `code`
+    .replace(/```[\s\S]*?```/g, '')      // ```code blocks```
+    .replace(/^\s*[-*+]\s+/gm, '• ')    // unordered lists → bullet
+    .replace(/^\s*\d+\.\s+/gm, '')      // ordered lists (remove number)
+    .replace(/\[(.+?)\]\(.+?\)/g, '$1') // [link text](url) → text
+    .replace(/!\[.*?\]\(.+?\)/g, '')     // images → remove
+    .replace(/^>\s+/gm, '')              // blockquotes
+    .replace(/\n{3,}/g, '\n\n')          // collapse excess blank lines
+    .trim();
+}
+
 export function buildNotebookLMText(cards: Flashcard[]): string {
   return cards.map((card, i) => {
     const lines: string[] = [];
@@ -90,8 +110,8 @@ export function buildNotebookLMText(cards: Flashcard[]): string {
     if (card.subjects?.length) tags.push(card.subjects.join(', '));
     if (card.examiners?.length) tags.push(card.examiners.join(', '));
     lines.push(`--- Karte ${num}${tags.length ? ' · ' + tags.join(' · ') : ''} ---`);
-    lines.push(`Frage: ${card.front.trim()}`);
-    lines.push(`Antwort: ${card.back.trim()}`);
+    lines.push(`Frage: ${stripMarkdown(card.front)}`);
+    lines.push(`Antwort: ${stripMarkdown(card.back)}`);
     return lines.join('\n');
   }).join('\n\n');
 }

@@ -91,6 +91,10 @@ function stripMarkdown(text: string): string {
     .replace(/~~(.+?)~~/g, '$1')         // ~~strikethrough~~
     .replace(/`(.+?)`/g, '$1')           // `code`
     .replace(/```[\s\S]*?```/g, '')      // ```code blocks```
+    // Tables: remove separator rows (|---|---|), then strip pipes from data rows
+    .replace(/^\|[\s\-:|]+\|[\s\-:|]*$/gm, '')   // | --- | --- | separator lines
+    .replace(/^\|(.*)\|$/gm, (_, inner) =>        // | cell | cell | → "cell  cell"
+      inner.split('|').map((c: string) => c.trim()).filter(Boolean).join('  '))
     .replace(/^\s*[-*+]\s+/gm, '• ')    // unordered lists → bullet
     .replace(/^\s*\d+\.\s+/gm, '')      // ordered lists (remove number)
     .replace(/\[(.+?)\]\(.+?\)/g, '$1') // [link text](url) → text

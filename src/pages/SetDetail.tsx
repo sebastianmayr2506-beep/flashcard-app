@@ -253,7 +253,7 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
     showToast(`${selectedIds.size} Karte${selectedIds.size !== 1 ? 'n' : ''} exportiert`);
   };
 
-  const [copyLabel, setCopyLabel] = useState('📋 Kopieren');
+  const [nlmCopyLabel, setNlmCopyLabel] = useState('📋 Kopieren');
   const handleExportTxt = () => {
     if (selectedIds.size === 0) return;
     exportNotebookLMText(setCards.filter(c => selectedIds.has(c.id)));
@@ -262,8 +262,8 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
   const handleCopyText = async () => {
     if (selectedIds.size === 0) return;
     await copyNotebookLMText(setCards.filter(c => selectedIds.has(c.id)));
-    setCopyLabel('✓ Kopiert!');
-    setTimeout(() => setCopyLabel('📋 Kopieren'), 2000);
+    setNlmCopyLabel('✓ Kopiert!');
+    setTimeout(() => setNlmCopyLabel('📋 Kopieren'), 2000);
     showToast('In Zwischenablage kopiert');
   };
 
@@ -340,7 +340,7 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
               className="px-4 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-400 text-sm font-semibold transition-colors shrink-0"
               title="Als Text in Zwischenablage kopieren → direkt in NotebookLM einfügen"
             >
-              {copyLabel}
+              {nlmCopyLabel}
             </button>
             <button
               onClick={() => { onStudy(setCards.filter(c => selectedIds.has(c.id))); exitSelectionMode(); }}

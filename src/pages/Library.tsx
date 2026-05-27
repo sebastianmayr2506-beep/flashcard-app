@@ -6,7 +6,7 @@ import DifficultyBadge from '../components/DifficultyBadge';
 import SRSBadge from '../components/SRSBadge';
 import MarkdownText from '../components/MarkdownText';
 import ProbabilityBadge from '../components/ProbabilityBadge';
-import { exportJSON } from '../utils/export';
+import { exportJSON, exportNotebookLMText, copyNotebookLMText } from '../utils/export';
 import DuplicateFinderModal from '../components/DuplicateFinderModal';
 import CardChatDrawer from '../components/CardChatDrawer';
 import { PriorityBadge } from '../components/PriorityPicker';
@@ -253,6 +253,18 @@ export default function Library({ cards, settings, sets, links, flagAttempts, us
     exportJSON(toExport, filename);
   };
 
+  const [copyLabel, setCopyLabel] = useState('📋 Kopieren');
+  const handleExportTxt = () => {
+    if (selectedIds.size === 0) return;
+    exportNotebookLMText(cards.filter(c => selectedIds.has(c.id)));
+  };
+  const handleCopyText = async () => {
+    if (selectedIds.size === 0) return;
+    await copyNotebookLMText(cards.filter(c => selectedIds.has(c.id)));
+    setCopyLabel('✓ Kopiert!');
+    setTimeout(() => setCopyLabel('📋 Kopieren'), 2000);
+  };
+
   const selectedCount = selectedIds.size;
   const allFilteredSelected = filtered.length > 0 && filtered.every(c => selectedIds.has(c.id));
 
@@ -335,6 +347,22 @@ export default function Library({ cards, settings, sets, links, flagAttempts, us
               className="px-4 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-400 text-sm font-semibold transition-colors shrink-0"
             >
               📦 Exportieren
+            </button>
+            <button
+              onClick={handleExportTxt}
+              disabled={selectedCount === 0}
+              className="px-4 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-400 text-sm font-semibold transition-colors shrink-0"
+              title="Als .txt für NotebookLM exportieren"
+            >
+              📄 NotebookLM
+            </button>
+            <button
+              onClick={handleCopyText}
+              disabled={selectedCount === 0}
+              className="px-4 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-400 text-sm font-semibold transition-colors shrink-0"
+              title="Als Text in Zwischenablage kopieren → direkt in NotebookLM einfügen"
+            >
+              {copyLabel}
             </button>
             {selectedCount >= 2 && (
               <button

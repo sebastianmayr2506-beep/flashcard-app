@@ -76,6 +76,38 @@ export function exportSetCSV(set: CardSet, cards: Flashcard[]): void {
   downloadFile('\uFEFF' + csv, filename, 'text/csv;charset=utf-8');
 }
 
+// ── NotebookLM / Plain-Text Export ───────────────────────────────────────────
+// Renders cards as readable Q&A text — ideal for NotebookLM "Kopierter Text"
+// or "PDF/TXT"-Import. No metadata noise, just Frage + Antwort + Kontext.
+
+export function buildNotebookLMText(cards: Flashcard[]): string {
+  return cards.map((card, i) => {
+    const lines: string[] = [];
+    const num = card.cardNumber != null ? `#${card.cardNumber}` : `${i + 1}`;
+    const tags: string[] = [];
+    if (card.difficulty) tags.push(card.difficulty);
+    if (card.flagged) tags.push('🚩 Flagged');
+    if (card.subjects?.length) tags.push(card.subjects.join(', '));
+    if (card.examiners?.length) tags.push(card.examiners.join(', '));
+    lines.push(`--- Karte ${num}${tags.length ? ' · ' + tags.join(' · ') : ''} ---`);
+    lines.push(`Frage: ${card.front.trim()}`);
+    lines.push(`Antwort: ${card.back.trim()}`);
+    return lines.join('\n');
+  }).join('\n\n');
+}
+
+/** Download as .txt — NotebookLM accepts this as a source document */
+export function exportNotebookLMText(cards: Flashcard[], filename?: string): void {
+  const date = new Date().toISOString().slice(0, 10);
+  const name = filename ?? `karteikarten_notebooklm_${date}.txt`;
+  downloadFile(buildNotebookLMText(cards), name, 'text/plain;charset=utf-8');
+}
+
+/** Copy to clipboard — for small selections, paste directly into NotebookLM */
+export async function copyNotebookLMText(cards: Flashcard[]): Promise<void> {
+  await navigator.clipboard.writeText(buildNotebookLMText(cards));
+}
+
 function buildCSV(cards: Flashcard[]): string {
   const headers = ['front_text', 'back_text', 'subjects', 'examiners', 'difficulty', 'customTags'];
   const rows = cards.map(card => [

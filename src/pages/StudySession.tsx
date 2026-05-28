@@ -2132,6 +2132,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                         <AICheckWidget
                           state={effectiveAiCheck}
                           speechSupported={speechSupported}
+                          hasGaps={!!(currentCard?.gaps && currentCard.gaps.length > 0)}
                           onSetMode={handleSetAICheckMode}
                           onSetProbeMode={handleSetAICheckProbeMode}
                           onSetText={handleSetAICheckText}
@@ -2735,6 +2736,7 @@ function MCHintSummary({ questions, answers, onReset }: MCHintSummaryProps) {
 interface AICheckWidgetProps {
   state: AICheckState;
   speechSupported: boolean;
+  hasGaps?: boolean; // card has stored gaps → probe questions shown in red
   onSetMode: (mode: AICheckMode) => void;
   onSetProbeMode: (probeMode: AIProbeMode) => void;
   onSetText: (text: string) => void;
@@ -2747,7 +2749,7 @@ interface AICheckWidgetProps {
 }
 
 function AICheckWidget({
-  state, speechSupported,
+  state, speechSupported, hasGaps,
   onSetMode, onSetProbeMode, onSetText, onToggleMic, onSubmit, onSubmitProbe, onSkipProbe, onClose, onPickRating,
 }: AICheckWidgetProps) {
   const isInput = state.status === 'input';
@@ -2931,7 +2933,7 @@ function AICheckWidget({
                   key={i}
                   className={`w-1.5 h-1.5 rounded-full ${
                     i < state.idx ? 'bg-green-400' :
-                    i === state.idx ? 'bg-purple-400' :
+                    i === state.idx ? (hasGaps ? 'bg-red-400' : 'bg-purple-400') :
                     'bg-[#2d3148]'
                   }`}
                 />
@@ -2939,10 +2941,10 @@ function AICheckWidget({
             </div>
           </div>
 
-          {/* The follow-up question */}
-          <div className="px-3 py-2.5 rounded-xl bg-purple-500/10 border border-purple-500/30">
-            <p className="text-[11px] font-semibold text-purple-300/80 uppercase tracking-wider mb-1">
-              Frage
+          {/* The follow-up question — red tint when card has gaps (gap-aware session) */}
+          <div className={`px-3 py-2.5 rounded-xl border ${hasGaps ? 'bg-red-500/10 border-red-500/30' : 'bg-purple-500/10 border-purple-500/30'}`}>
+            <p className={`text-[11px] font-semibold uppercase tracking-wider mb-1 ${hasGaps ? 'text-red-300/80' : 'text-purple-300/80'}`}>
+              {hasGaps ? '📌 Wissenslücke · Frage' : 'Frage'}
             </p>
             <p className="text-sm text-white leading-snug">{state.followUps[state.idx]}</p>
           </div>

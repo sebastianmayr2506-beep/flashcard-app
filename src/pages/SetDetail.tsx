@@ -168,6 +168,7 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
   const [filterExaminers, setFilterExaminers] = useState<Set<string>>(new Set());
   const [onlyDue, setOnlyDue] = useState(false);
   const [onlyFlagged, setOnlyFlagged] = useState(false);
+  const [onlyGaps, setOnlyGaps] = useState(false);
   const [examinerOpen, setExaminerOpen] = useState(false);
   const examinerRef = useRef<HTMLDivElement>(null);
 
@@ -208,6 +209,7 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
 
   const dueCount = setCards.filter(isDueToday).length;
   const flaggedCount = setCards.filter(c => c.flagged).length;
+  const gapsCount = setCards.filter(c => c.gaps && c.gaps.length > 0).length;
 
   // Apply filters
   const filteredCards = useMemo(() => {
@@ -223,11 +225,12 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
       if (filterExaminers.size > 0 && !card.examiners?.some(e => filterExaminers.has(e))) return false;
       if (onlyDue && !isDueToday(card)) return false;
       if (onlyFlagged && !card.flagged) return false;
+      if (onlyGaps && !(card.gaps && card.gaps.length > 0)) return false;
       return true;
     });
-  }, [setCards, search, filterSRS, filterDiff, filterExaminers, onlyDue, onlyFlagged]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [setCards, search, filterSRS, filterDiff, filterExaminers, onlyDue, onlyFlagged, onlyGaps]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filtersActive = !!search || !!filterSRS || !!filterDiff || filterExaminers.size > 0 || onlyDue || onlyFlagged;
+  const filtersActive = !!search || !!filterSRS || !!filterDiff || filterExaminers.size > 0 || onlyDue || onlyFlagged || onlyGaps;
 
   const resetFilters = () => {
     setSearch('');
@@ -236,6 +239,7 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
     setFilterExaminers(new Set());
     setOnlyDue(false);
     setOnlyFlagged(false);
+    setOnlyGaps(false);
   };
 
   const selectedCount = selectedIds.size;
@@ -387,6 +391,7 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
               <span className="text-xs px-2 py-0.5 rounded-full bg-[#252840] border border-[#2d3148] text-[#9ca3af]">{setCards.length} Karte{setCards.length !== 1 ? 'n' : ''}</span>
               {dueCount    > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">{dueCount} fällig</span>}
               {flaggedCount > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400">🚩 {flaggedCount}</span>}
+              {gapsCount    > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400">📌 {gapsCount}</span>}
             </div>
           </div>
         </div>
@@ -597,6 +602,15 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
                   className={`${selectCls} ${onlyFlagged ? 'bg-orange-500/15 border-orange-500/40 text-orange-400' : ''}`}
                 >
                   🚩 Flagged ({flaggedCount})
+                </button>
+              )}
+              {gapsCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setOnlyGaps(f => !f)}
+                  className={`${selectCls} ${onlyGaps ? 'bg-red-500/15 border-red-500/40 text-red-400' : ''}`}
+                >
+                  📌 Lücken ({gapsCount})
                 </button>
               )}
 

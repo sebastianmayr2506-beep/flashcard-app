@@ -45,6 +45,7 @@ export function exportShareJSON(cards: Flashcard[]): void {
     // Persönliche Felder die der Empfänger nicht erben soll:
     firstStudiedAt: _fsa,    // Timestamp deines ersten Lernens
     blacklisted: _bl,        // deine persönliche „Parkiert"-Auswahl
+    gaps: _gaps,             // persönliche Lücken-Markierungen
     ...rest
   }) => ({
     ...rest,

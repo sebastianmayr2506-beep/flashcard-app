@@ -218,6 +218,12 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
   const [chatOpen, setChatOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [splitInProgress, setSplitInProgress] = useState(false);
+  // Gaps / Lücken-Markierung
+  // After Gut/Einfach on a card that has gaps, we ask the user if the gaps
+  // are now closed before advancing to the next card.
+  const [pendingGapsClear, setPendingGapsClear] = useState<{
+    cardId: string; rating: RatingValue; nextAction: () => void;
+  } | null>(null);
   const [mcHint, setMcHint] = useState<MCHintState | null>(null);
   const [aiCheck, setAiCheck] = useState<AICheckState | null>(null);
   const recognizerRef = useRef<RecognizerHandle | null>(null);
@@ -646,6 +652,25 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
     setSessionState('studying');
   };
 
+  // ── Gaps / Lücken ───────────────────────────────────────────────────────────
+  const handleAddGap = () => {
+    const text = window.getSelection()?.toString().trim();
+    if (!text || !currentCard) return;
+    const existing = currentCard.gaps ?? [];
+    if (existing.includes(text)) { window.getSelection()?.removeAllRanges(); return; }
+    const updated = [...existing, text];
+    onUpdateCard(currentCard.id, { gaps: updated });
+    setSessionCards(prev => prev.map(c => c.id === currentCard.id ? { ...c, gaps: updated } : c));
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const handleRemoveGap = (gap: string) => {
+    if (!currentCard) return;
+    const updated = (currentCard.gaps ?? []).filter(g => g !== gap);
+    onUpdateCard(currentCard.id, { gaps: updated });
+    setSessionCards(prev => prev.map(c => c.id === currentCard.id ? { ...c, gaps: updated } : c));
+  };
+
   const handleParkCurrent = () => {
     const card = sessionCards[currentIdx];
     // Persist the parked flag — useCards will subsequently filter it from study pools.
@@ -1031,11 +1056,28 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
 
   const handleRate = (rating: RatingValue) => {
     const card = sessionCards[currentIdx];
+
+    // If the card has gaps and was rated Gut (2) or Einfach (3), ask the user
+    // whether the gaps are now closed BEFORE advancing. The actual SRS update
+    // + navigation is bundled into `nextAction` and runs after the user decides.
+    if (rating >= 2 && card.gaps && card.gaps.length > 0) {
+      const proceed = () => {
+        doRate(card, rating);
+      };
+      setPendingGapsClear({ cardId: card.id, rating, nextAction: proceed });
+      return;
+    }
+
+    doRate(card, rating);
+  };
+
+  const doRate = (card: Flashcard, rating: RatingValue) => {
     setConfirmDeleteId(null);
     onRate(card.id, rating);
     const key = ['nochmal', 'schwer', 'gut', 'einfach'][rating] as keyof RatingCount;
     setRatings(prev => ({ ...prev, [key]: prev[key] + 1 }));
     setIsFlipped(false);
+    setPendingGapsClear(null);
 
     if (rating === 0) {
       // Re-queue at end — session continues until every card is rated ≥ 1
@@ -2165,6 +2207,13 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                     );
                   })()}
                   <button
+                    onClick={e => { e.stopPropagation(); handleAddGap(); }}
+                    title="Markierten Text als Lücke speichern — Text zuerst mit der Maus/Finger auswählen"
+                    className="text-base px-1.5 sm:px-2 py-1.5 rounded-lg border border-transparent text-[#6b7280] hover:text-amber-400 hover:bg-[#252840] transition-colors shrink-0"
+                  >
+                    📌
+                  </button>
+                  <button
                     onClick={e => { e.stopPropagation(); setChatOpen(true); }}
                     title="KI fragen"
                     className="text-base px-1.5 sm:px-2 py-1.5 rounded-lg border border-transparent text-[#6b7280] hover:text-indigo-400 hover:bg-[#252840] transition-colors shrink-0"
@@ -2238,11 +2287,33 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                   ))}
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto px-6 md:px-10 pb-6 flex flex-col items-start gap-3">
+              <div className="flex-1 overflow-y-auto px-6 md:px-10 pb-6 flex flex-col items-start gap-3" onClick={e => e.stopPropagation()}>
+                {/* Gaps from last review — shown prominently so user can verify they closed them */}
+                {currentCard.gaps && currentCard.gaps.length > 0 && (
+                  <div className="w-full bg-amber-500/10 border border-amber-500/25 rounded-xl p-3 space-y-2">
+                    <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider">📌 Letzte Lücken</p>
+                    <div className="flex flex-col gap-1.5">
+                      {currentCard.gaps.map((gap, i) => (
+                        <div key={i} className="flex items-start gap-2 group">
+                          <span className="flex-1 text-sm text-amber-200 bg-amber-500/10 rounded-lg px-2.5 py-1.5 leading-snug">{gap}</span>
+                          <button
+                            onClick={() => handleRemoveGap(gap)}
+                            title="Lücke entfernen"
+                            className="shrink-0 mt-1 text-[#6b7280] hover:text-amber-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {backImg && <img src={backImg} alt="" onClick={e => { e.stopPropagation(); setZoomedImg(backImg); }} className="max-h-40 max-w-full object-contain rounded-xl cursor-zoom-in" />}
-                <p className="text-base md:text-lg text-[#e8eaf0] text-left leading-relaxed w-full">
+                <p className="text-base md:text-lg text-[#e8eaf0] text-left leading-relaxed w-full select-text">
                   <MarkdownText text={currentCard.back} />
                 </p>
+                {/* Selection hint */}
+                <p className="text-[11px] text-[#4b5563] mt-1">Text auswählen → 📌 drücken um Lücke zu markieren</p>
               </div>
             </div>
           </div>
@@ -2258,7 +2329,40 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
         />
       </div>
 
-      {/* Rating buttons (hidden in history/Rückblick mode) */}
+      {/* "Lücken geschlossen?" prompt — replaces rating buttons temporarily */}
+      {pendingGapsClear && pendingGapsClear.cardId === currentCard?.id && (
+        <div className="shrink-0 px-4 md:px-8 pb-2">
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 space-y-3">
+            <p className="text-sm font-semibold text-amber-300 text-center">
+              📌 Lücken jetzt geschlossen?
+            </p>
+            <p className="text-xs text-[#9ca3af] text-center leading-snug">
+              Du hattest {pendingGapsClear.cardId === currentCard.id ? (currentCard.gaps?.length ?? 0) : 0} markierte Lücke(n) auf dieser Karte.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  // Clear gaps, then advance
+                  onUpdateCard(pendingGapsClear.cardId, { gaps: [] });
+                  setSessionCards(prev => prev.map(c => c.id === pendingGapsClear.cardId ? { ...c, gaps: [] } : c));
+                  pendingGapsClear.nextAction();
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-semibold text-sm transition-colors"
+              >
+                ✓ Ja, löschen
+              </button>
+              <button
+                onClick={() => pendingGapsClear.nextAction()}
+                className="flex-1 py-2.5 rounded-xl bg-[#1e2130] hover:bg-[#252840] border border-[#2d3148] text-[#9ca3af] hover:text-white font-semibold text-sm transition-colors"
+              >
+                ✗ Noch nicht
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rating buttons (hidden in history/Rückblick mode or while gaps prompt is showing) */}
       <div className="shrink-0 px-4 md:px-8 pb-6 md:pb-8 space-y-3">
         {isHistoryView ? (
           <button
@@ -2267,7 +2371,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
           >
             ▶ Zur aktuellen Karte ({currentIdx + 1})
           </button>
-        ) : (
+        ) : pendingGapsClear ? null : (
           <>
             {isFlipped && (
               <LinkedCardsPanel

@@ -95,6 +95,11 @@ export interface Flashcard {
   // signal — used by the Dashboard reconciler so the "Neu heute" count is
   // independent of the snapshot's reliability.
   firstStudiedAt?: string;
+  // Text snippets the user marked as "didn't know this" during a review.
+  // Shown highlighted (amber) on the next review so the user can check if
+  // the gap is now closed. Cleared when user confirms "Lücken geschlossen"
+  // after a Gut/Einfach rating, or manually.
+  gaps?: string[];
 }
 
 export interface AppSettings {

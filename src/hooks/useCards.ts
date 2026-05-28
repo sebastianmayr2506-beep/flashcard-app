@@ -15,7 +15,7 @@ const META_COLUMNS =
   'set_ids, flagged, times_asked, asked_by_examiners, asked_in_catalogs, ' +
   'probability_percent, created_at, updated_at, interval, repetitions, ' +
   'ease_factor, next_review_date, first_studied_at, priority, mc_questions, ' +
-  'mc_questions_generated_at, blacklisted, card_number';
+  'mc_questions_generated_at, blacklisted, card_number, gaps';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function fromDb(row: Record<string, any>): Flashcard {
@@ -51,6 +51,7 @@ function fromDb(row: Record<string, any>): Flashcard {
     mcQuestionsGeneratedAt: typeof row.mc_questions_generated_at === 'string' ? row.mc_questions_generated_at : undefined,
     blacklisted: !!row.blacklisted,
     cardNumber: typeof row.card_number === 'number' ? row.card_number : undefined,
+    gaps: Array.isArray(row.gaps) ? (row.gaps as string[]) : undefined,
   };
 }
 
@@ -84,6 +85,7 @@ function toDb(card: Flashcard, userId: string) {
     mc_questions: card.mcQuestions ?? null,
     mc_questions_generated_at: card.mcQuestionsGeneratedAt ?? null,
     blacklisted: card.blacklisted ?? false,
+    gaps: card.gaps ?? null,
   };
 }
 

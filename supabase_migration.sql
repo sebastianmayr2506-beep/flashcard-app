@@ -118,3 +118,8 @@ alter table public.shared_sets enable row level security;
 create policy "read shared sets"  on public.shared_sets for select using (true);
 create policy "create shares"     on public.shared_sets for insert with check (auth.uid() = created_by);
 create policy "delete own shares" on public.shared_sets for delete using (auth.uid() = created_by);
+
+-- ── 2026-05-28: gaps (Lücken-Markierungen) ────────────────────────────────
+-- Stores text snippets the user marked as "didn't know this" during a review.
+-- Cleared when user confirms "Lücken geschlossen" after Gut/Einfach rating.
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS gaps jsonb DEFAULT NULL;

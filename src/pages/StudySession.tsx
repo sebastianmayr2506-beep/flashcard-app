@@ -203,6 +203,11 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
   const [endlessMode, setEndlessMode] = useState(false);
   const [sessionCards, setSessionCards] = useState<Flashcard[]>(restoredSession?.sessionCards ?? []);
   const [currentIdx, setCurrentIdx] = useState(restoredSession?.currentIdx ?? 0);
+  // viewIdx: which card is currently DISPLAYED (may lag behind currentIdx when
+  // the user browses history via the back arrow). currentIdx is the SRS progress
+  // pointer — the card that will be rated. When viewIdx < currentIdx the session
+  // is in "Rückblick"-mode: card is readable / flippable but not rateable.
+  const [viewIdx, setViewIdx] = useState(restoredSession?.currentIdx ?? 0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [ratings, setRatings] = useState<RatingCount>(
     restoredSession?.ratings ?? { nochmal: 0, schwer: 0, gut: 0, einfach: 0 }
@@ -569,6 +574,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
     // Classic mode
     setSessionCards(ordered);
     setCurrentIdx(0);
+    setViewIdx(0);
     setIsFlipped(false);
     setRatings({ nochmal: 0, schwer: 0, gut: 0, einfach: 0 });
     setSessionState('studying');
@@ -582,6 +588,8 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
     setMcSelected([]);
     setMcSubmitted(false);
     setMcAnswers(new Map());
+    setCurrentIdx(0);
+    setViewIdx(0);
     setRatings({ nochmal: 0, schwer: 0, gut: 0, einfach: 0 });
     setSessionState('studying');
   };
@@ -649,7 +657,9 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
       setSessionState('summary');
     } else {
       setSessionCards(next);
-      if (currentIdx >= next.length) setCurrentIdx(next.length - 1);
+      const clamped = currentIdx >= next.length ? next.length - 1 : currentIdx;
+      if (currentIdx >= next.length) setCurrentIdx(clamped);
+      setViewIdx(clamped);
     }
   };
 
@@ -665,7 +675,9 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
     } else {
       setSessionCards(next);
       // currentIdx stays — the next card slides into this slot; clamp if we deleted the last
-      if (currentIdx >= next.length) setCurrentIdx(next.length - 1);
+      const clamped = currentIdx >= next.length ? next.length - 1 : currentIdx;
+      if (currentIdx >= next.length) setCurrentIdx(clamped);
+      setViewIdx(clamped);
     }
   };
 
@@ -1031,15 +1043,21 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
         const rest = prev.filter((_, i) => i !== currentIdx);
         return [...rest, card];
       });
-      // currentIdx stays the same — next card slides into this position
+      // currentIdx stays the same — next card slides into this position.
+      // Snap view to the current card (in case user was browsing history).
+      setViewIdx(currentIdx);
     } else if (currentIdx + 1 >= sessionCards.length) {
       setSessionState('summary');
     } else {
       setCurrentIdx(idx => idx + 1);
+      setViewIdx(idx => idx + 1); // keep view in sync with progress
     }
   };
 
-  const currentCard = sessionCards[currentIdx];
+  // currentCard = displayed card (follows viewIdx).
+  // In Rückblick-mode viewIdx < currentIdx — the card is read-only (no rating).
+  const currentCard = sessionCards[viewIdx];
+  const isHistoryView = viewIdx < currentIdx;
   // Auto-invalidate MC hint when the card changes
   const effectiveMcHint = mcHint?.cardId === currentCard?.id ? mcHint : null;
   // Same for AI Prüfung — also stop any active recognizer when card changes
@@ -1909,9 +1927,42 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
           <button onClick={() => setSessionState('setup')} className="text-[#9ca3af] hover:text-white text-sm transition-colors">
             ✕ Beenden
           </button>
-          <span className="text-sm text-[#9ca3af] font-medium">{currentIdx + 1} / {sessionCards.length}</span>
+          {/* Back / forward navigation */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setViewIdx(v => v - 1); setIsFlipped(false); }}
+              disabled={viewIdx === 0}
+              title="Vorherige Karte ansehen"
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-sm transition-colors disabled:opacity-25 disabled:cursor-not-allowed text-[#9ca3af] hover:text-white hover:bg-[#252840]"
+            >
+              ←
+            </button>
+            <span className="text-sm text-[#9ca3af] font-medium min-w-[4rem] text-center">
+              {viewIdx + 1} / {sessionCards.length}
+            </span>
+            <button
+              onClick={() => { setViewIdx(v => v + 1); setIsFlipped(false); }}
+              disabled={viewIdx >= currentIdx}
+              title="Nächste Karte"
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-sm transition-colors disabled:opacity-25 disabled:cursor-not-allowed text-[#9ca3af] hover:text-white hover:bg-[#252840]"
+            >
+              →
+            </button>
+          </div>
           <DifficultyBadge difficulty={currentCard.difficulty} />
         </div>
+        {/* History banner */}
+        {isHistoryView && (
+          <div className="flex items-center justify-center gap-2 px-4 py-1.5 bg-amber-500/10 border-b border-amber-500/20">
+            <span className="text-xs text-amber-400 font-medium">🔍 Rückblick — Bewertung nur bei der aktuellen Karte</span>
+            <button
+              onClick={() => { setViewIdx(currentIdx); setIsFlipped(false); }}
+              className="text-xs text-amber-300 hover:text-white font-semibold underline underline-offset-2 transition-colors"
+            >
+              Zur aktuellen Karte →
+            </button>
+          </div>
+        )}
         <div className="h-1 bg-[#2d3148]">
           <div className="h-full bg-indigo-500 transition-all duration-500" style={{ width: `${progress}%` }} />
         </div>
@@ -2120,6 +2171,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                   >
                     💬
                   </button>
+                  {!isHistoryView && (
                   <button
                     onClick={e => { e.stopPropagation(); handleParkCurrent(); }}
                     title="Auf Blacklist setzen — Karte aus allen Lern-Pools ausschließen (bleibt in Bibliothek)"
@@ -2127,7 +2179,8 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                   >
                     🚫
                   </button>
-                  {onSplitCard && (
+                  )}
+                  {!isHistoryView && onSplitCard && (
                     <button
                       onClick={e => { e.stopPropagation(); handleSplitCurrent(); }}
                       disabled={splitInProgress}
@@ -2158,7 +2211,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                   >
                     📦
                   </button>
-                  {confirmDeleteId === currentCard.id ? (
+                  {!isHistoryView && (confirmDeleteId === currentCard.id ? (
                     <div className="flex items-center gap-1">
                       <span className="text-xs text-red-400 font-medium whitespace-nowrap">Löschen?</span>
                       <button
@@ -2182,7 +2235,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                     >
                       🗑️
                     </button>
-                  )}
+                  ))}
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto px-6 md:px-10 pb-6 flex flex-col items-start gap-3">
@@ -2205,37 +2258,48 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
         />
       </div>
 
-      {/* Rating buttons */}
+      {/* Rating buttons (hidden in history/Rückblick mode) */}
       <div className="shrink-0 px-4 md:px-8 pb-6 md:pb-8 space-y-3">
-        {isFlipped && (
-          <LinkedCardsPanel
-            cardId={currentCard.id}
-            allCards={cards}
-            links={links}
-            title="🔗 Tiefer gehen?"
-            onRate={onRate}
-          />
-        )}
-        {!isFlipped ? (
+        {isHistoryView ? (
           <button
-            onClick={() => setIsFlipped(true)}
-            className="w-full py-4 rounded-2xl bg-[#1e2130] hover:bg-[#252840] border border-[#2d3148] hover:border-indigo-500/40 text-white font-semibold transition-all text-lg"
+            onClick={() => { setViewIdx(currentIdx); setIsFlipped(false); }}
+            className="w-full py-4 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-semibold transition-all text-base"
           >
-            Antwort zeigen
+            ▶ Zur aktuellen Karte ({currentIdx + 1})
           </button>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {STUDY_RATINGS.map(r => (
+          <>
+            {isFlipped && (
+              <LinkedCardsPanel
+                cardId={currentCard.id}
+                allCards={cards}
+                links={links}
+                title="🔗 Tiefer gehen?"
+                onRate={onRate}
+              />
+            )}
+            {!isFlipped ? (
               <button
-                key={r.value}
-                onClick={() => handleRate(r.value)}
-                className={`py-3 md:py-4 rounded-2xl ${r.bgColor} ${r.hoverColor} border transition-all font-semibold text-sm md:text-base`}
-                style={{ color: r.color, borderColor: r.color + '40' }}
+                onClick={() => setIsFlipped(true)}
+                className="w-full py-4 rounded-2xl bg-[#1e2130] hover:bg-[#252840] border border-[#2d3148] hover:border-indigo-500/40 text-white font-semibold transition-all text-lg"
               >
-                {r.label}
+                Antwort zeigen
               </button>
-            ))}
-          </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {STUDY_RATINGS.map(r => (
+                  <button
+                    key={r.value}
+                    onClick={() => handleRate(r.value)}
+                    className={`py-3 md:py-4 rounded-2xl ${r.bgColor} ${r.hoverColor} border transition-all font-semibold text-sm md:text-base`}
+                    style={{ color: r.color, borderColor: r.color + '40' }}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 

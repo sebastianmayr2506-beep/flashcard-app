@@ -2155,7 +2155,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
               )}
             </div>
             {/* Back */}
-            <div className="card-face card-back-face bg-[#1e2130] border border-indigo-500/40 rounded-3xl flex flex-col select-none" style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
+            <div className="card-face card-back-face bg-[#1e2130] border border-indigo-500/40 rounded-3xl flex flex-col" style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
               {/* Header row: label left, action icons right.
                   On mobile we cut horizontal padding and allow the icon row
                   to scroll horizontally — 7 actions + label don't fit on a
@@ -2288,7 +2288,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                   ))}
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto px-6 md:px-10 pb-6 flex flex-col items-start gap-3" onClick={e => e.stopPropagation()}>
+              <div className="flex-1 overflow-y-auto px-6 md:px-10 pb-6 flex flex-col items-start gap-3">
                 {/* Gaps from last review — shown prominently so user can verify they closed them */}
                 {currentCard.gaps && currentCard.gaps.length > 0 && (
                   <div className="w-full bg-amber-500/10 border border-amber-500/25 rounded-xl p-3 space-y-2">
@@ -2313,8 +2313,6 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                 <p className="text-base md:text-lg text-[#e8eaf0] text-left leading-relaxed w-full select-text">
                   <MarkdownText text={currentCard.back} />
                 </p>
-                {/* Selection hint */}
-                <p className="text-[11px] text-[#4b5563] mt-1">Text auswählen → 📌 drücken um Lücke zu markieren</p>
               </div>
             </div>
           </div>

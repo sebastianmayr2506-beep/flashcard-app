@@ -1928,25 +1928,25 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
             ✕ Beenden
           </button>
           {/* Back / forward navigation */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={() => { setViewIdx(v => v - 1); setIsFlipped(false); }}
               disabled={viewIdx === 0}
               title="Vorherige Karte ansehen"
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-sm transition-colors disabled:opacity-25 disabled:cursor-not-allowed text-[#9ca3af] hover:text-white hover:bg-[#252840]"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-30 disabled:cursor-not-allowed bg-[#1e2130] border border-[#2d3148] hover:border-indigo-500/50 hover:text-white text-[#9ca3af]"
             >
-              ←
+              ‹ Zurück
             </button>
-            <span className="text-sm text-[#9ca3af] font-medium min-w-[4rem] text-center">
+            <span className="text-sm text-[#9ca3af] font-medium min-w-[3.5rem] text-center">
               {viewIdx + 1} / {sessionCards.length}
             </span>
             <button
               onClick={() => { setViewIdx(v => v + 1); setIsFlipped(false); }}
               disabled={viewIdx >= currentIdx}
-              title="Nächste Karte"
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-sm transition-colors disabled:opacity-25 disabled:cursor-not-allowed text-[#9ca3af] hover:text-white hover:bg-[#252840]"
+              title="Zur nächsten Karte"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-30 disabled:cursor-not-allowed bg-[#1e2130] border border-[#2d3148] hover:border-indigo-500/50 hover:text-white text-[#9ca3af]"
             >
-              →
+              Weiter ›
             </button>
           </div>
           <DifficultyBadge difficulty={currentCard.difficulty} />

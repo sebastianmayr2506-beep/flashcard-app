@@ -2653,6 +2653,14 @@ function AICheckWidget({
   const isFinalizing = state.status === 'finalizing';
   const isResult = state.status === 'result';
 
+  // Auto-resize textarea ref callback: called on mount and whenever the ref
+  // changes (i.e. every render when value changes). No useEffect needed.
+  const autoResizeRef = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  };
+
   return (
     <div className="w-full space-y-2.5 p-3 rounded-2xl bg-[#15172a] border border-purple-500/30">
       {/* Header */}
@@ -2757,11 +2765,12 @@ function AICheckWidget({
                 <MicPulseVisualizer />
               ) : (
                 <textarea
+                  ref={autoResizeRef}
                   value={state.text}
-                  onChange={e => onSetText(e.target.value)}
+                  onChange={e => { onSetText(e.target.value); autoResizeRef(e.target); }}
                   placeholder='Klicke auf "Aufnahme starten" oder tippe direkt hier…'
-                  rows={4}
-                  className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
+                  rows={3}
+                  className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-none overflow-hidden"
                 />
               )}
             </div>
@@ -2770,12 +2779,13 @@ function AICheckWidget({
           {/* Text-only mode UI */}
           {(state.mode === 'text' || !speechSupported) && (
             <textarea
+              ref={autoResizeRef}
               value={state.text}
-              onChange={e => onSetText(e.target.value)}
+              onChange={e => { onSetText(e.target.value); autoResizeRef(e.target); }}
               placeholder="Tippe deine Erklärung hier… (z.B. in der U-Bahn 🚇)"
-              rows={5}
+              rows={3}
               autoFocus
-              className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
+              className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-none overflow-hidden"
             />
           )}
 
@@ -2859,11 +2869,12 @@ function AICheckWidget({
                 <MicPulseVisualizer barCount={5} />
               ) : (
                 <textarea
+                  ref={autoResizeRef}
                   value={state.currentText}
-                  onChange={e => onSetText(e.target.value)}
+                  onChange={e => { onSetText(e.target.value); autoResizeRef(e.target); }}
                   placeholder='Klicke auf "Antwort einsprechen" oder tippe direkt hier…'
                   rows={3}
-                  className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
+                  className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-none overflow-hidden"
                 />
               )}
             </div>
@@ -2872,12 +2883,13 @@ function AICheckWidget({
           {/* Text-only mode UI */}
           {(state.mode === 'text' || !speechSupported) && (
             <textarea
+              ref={autoResizeRef}
               value={state.currentText}
-              onChange={e => onSetText(e.target.value)}
+              onChange={e => { onSetText(e.target.value); autoResizeRef(e.target); }}
               placeholder="Tippe deine Antwort hier…"
               rows={3}
               autoFocus
-              className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-y"
+              className="w-full text-sm bg-[#1e2130] border border-[#2d3148] rounded-xl px-3 py-2 text-white placeholder-[#6b7280] focus:border-purple-500 focus:outline-none resize-none overflow-hidden"
             />
           )}
 

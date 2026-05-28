@@ -191,7 +191,7 @@ export async function probeAnswerForGaps(
 
   const hasGaps = gaps && gaps.length > 0;
   const gapsBlock = hasGaps
-    ? `\n### VORHERIGE LÜCKEN (vom Lernenden beim letzten Review selbst markiert)\n${gaps!.map(g => `- ${g}`).join('\n')}\n\nDer Lernende wusste diese Punkte beim letzten Mal nicht. Stelle — UNABHÄNGIG davon ob der Kern abgedeckt ist — EINE zusätzliche Frage die prüft ob er diese Lücke jetzt geschlossen hat. Du darfst dafür insgesamt bis zu 4 Folgefragen stellen.\n`
+    ? `\n### VORHERIGE LÜCKEN (vom Lernenden beim letzten Review selbst markiert)\n${gaps!.map(g => `- ${g}`).join('\n')}\n\nDer Lernende wusste diese Punkte beim letzten Mal nicht. Prüfe ZUERST, ob er diese Lücken bereits in seiner Erklärung abgedeckt hat.\n- Wenn ja → keine zusätzliche Lücken-Frage nötig. Fahre wie gewohnt fort (max. 3 Folgefragen, nur zu allgemeinen Lücken).\n- Wenn nein → füge am ENDE der Folgefragen EINE gezielte Frage zu der Lücke hinzu (insgesamt dann max. 4 Folgefragen).\n`
     : '';
 
   const maxProbes = hasGaps ? 4 : 3;
@@ -220,9 +220,9 @@ Entscheide: Hat der Lernende den KERN UND alle WICHTIGEN Aspekte aus der Mustera
    - "Wie wirkt sich das auf den Pflichtteilsanspruch aus?"
    - "Was passiert, wenn die Frist verstrichen ist?"
 3. **Verrate niemals das Stichwort selbst.** Schlecht: "Was ist die Pflichtteilsergänzung?". Gut: "Was passiert, wenn der Erblasser noch zu Lebzeiten Vermögen verschenkt hat?"
-4. **Maximal ${maxProbes} Folgefragen** — fokussiert auf die wichtigsten Lücken. Lieber 1 gute als 3 mittelmäßige.${hasGaps ? ' Wenn Vorherige Lücken vorhanden, reserviere EINE Frage dafür.' : ''}
+4. **Maximal ${maxProbes} Folgefragen** — fokussiert auf die wichtigsten Lücken. Lieber 1 gute als 3 mittelmäßige.${hasGaps ? ' Die Lücken-Frage (falls nötig) kommt immer ZULETZT.' : ''}
 5. **Prüferhafter Tonfall, höflich, auf Deutsch.**
-6. Wenn der Lernende bereits >80% abgedeckt hat und nur Kleinigkeiten fehlen → KEINE Folgefragen${hasGaps ? ' (außer zur Lücke — die wird trotzdem abgefragt)' : ''}, sondern direkt graden.
+6. Wenn der Lernende bereits >80% abgedeckt hat und nur Kleinigkeiten fehlen → KEINE Folgefragen${hasGaps ? ' (es sei denn, die markierten Lücken wurden nicht abgedeckt)' : ''}, sondern direkt graden.
 
 ### AUSGABE
 Antworte AUSSCHLIESSLICH mit gültigem JSON in EINEM dieser zwei Formate:

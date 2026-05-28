@@ -209,6 +209,8 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
   // is in "Rückblick"-mode: card is readable / flippable but not rateable.
   const [viewIdx, setViewIdx] = useState(restoredSession?.currentIdx ?? 0);
   const [isFlipped, setIsFlipped] = useState(false);
+  // Track mousedown position so we can suppress flip when user drags to select text
+  const cardMouseDownPos = useRef<{ x: number; y: number } | null>(null);
   const [ratings, setRatings] = useState<RatingCount>(
     restoredSession?.ratings ?? { nochmal: 0, schwer: 0, gut: 0, einfach: 0 }
   );
@@ -2017,7 +2019,21 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
           <div
             className="card-inner cursor-pointer"
             style={{ transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)' }}
-            onClick={() => setIsFlipped(f => !f)}
+            onMouseDown={(e) => { cardMouseDownPos.current = { x: e.clientX, y: e.clientY }; }}
+            onClick={(e) => {
+              // Suppress flip when the user dragged to select text
+              const down = cardMouseDownPos.current;
+              cardMouseDownPos.current = null;
+              if (down) {
+                const dx = Math.abs(e.clientX - down.x);
+                const dy = Math.abs(e.clientY - down.y);
+                if (dx > 4 || dy > 4) return; // was a drag, not a tap
+              }
+              // Also suppress if there's still an active text selection
+              const sel = window.getSelection();
+              if (sel && sel.toString().length > 0) return;
+              setIsFlipped(f => !f);
+            }}
           >
             {/* Front */}
             <div className="card-face bg-[#1e2130] border border-[#2d3148] rounded-3xl flex flex-col select-none relative">
@@ -2933,7 +2949,7 @@ function AICheckWidget({
                   key={i}
                   className={`w-1.5 h-1.5 rounded-full ${
                     i < state.idx ? 'bg-green-400' :
-                    i === state.idx ? (hasGaps ? 'bg-red-400' : 'bg-purple-400') :
+                    i === state.idx ? (hasGaps && i === state.followUps.length - 1 ? 'bg-red-400' : 'bg-purple-400') :
                     'bg-[#2d3148]'
                   }`}
                 />
@@ -2941,13 +2957,18 @@ function AICheckWidget({
             </div>
           </div>
 
-          {/* The follow-up question — red tint when card has gaps (gap-aware session) */}
-          <div className={`px-3 py-2.5 rounded-xl border ${hasGaps ? 'bg-red-500/10 border-red-500/30' : 'bg-purple-500/10 border-purple-500/30'}`}>
-            <p className={`text-[11px] font-semibold uppercase tracking-wider mb-1 ${hasGaps ? 'text-red-300/80' : 'text-purple-300/80'}`}>
-              {hasGaps ? '📌 Wissenslücke · Frage' : 'Frage'}
-            </p>
-            <p className="text-sm text-white leading-snug">{state.followUps[state.idx]}</p>
-          </div>
+          {/* The follow-up question — only the last question is red when it's gap-specific */}
+          {(() => {
+            const isGapQuestion = hasGaps && state.idx === state.followUps.length - 1;
+            return (
+              <div className={`px-3 py-2.5 rounded-xl border ${isGapQuestion ? 'bg-red-500/10 border-red-500/30' : 'bg-purple-500/10 border-purple-500/30'}`}>
+                <p className={`text-[11px] font-semibold uppercase tracking-wider mb-1 ${isGapQuestion ? 'text-red-300/80' : 'text-purple-300/80'}`}>
+                  {isGapQuestion ? '📌 Wissenslücke · Frage' : 'Frage'}
+                </p>
+                <p className="text-sm text-white leading-snug">{state.followUps[state.idx]}</p>
+              </div>
+            );
+          })()}
 
           {/* Mic mode UI for the follow-up */}
           {state.mode === 'mic' && speechSupported && (

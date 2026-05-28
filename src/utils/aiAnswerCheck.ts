@@ -75,6 +75,7 @@ export async function checkAnswerWithAI(
   front: string,
   back: string,
   userExplanation: string,
+  gaps?: string[],
 ): Promise<AnswerCheckResult> {
   if (!keys.gemini?.trim() && !keys.anthropic?.trim() && !keys.groq?.trim()) {
     throw new Error('Kein AI-Schlüssel konfiguriert. Bitte Gemini, Claude oder Groq in den Einstellungen hinterlegen.');
@@ -83,6 +84,10 @@ export async function checkAnswerWithAI(
     throw new Error('Keine Erklärung erhalten — bitte erst etwas eintippen oder einsprechen.');
   }
 
+  const gapsBlock = gaps && gaps.length > 0
+    ? `\n### VORHERIGE LÜCKEN (vom Lernenden beim letzten Review markiert)\n${gaps.map(g => `- ${g}`).join('\n')}\n\nAchte besonders darauf, ob diese Punkte in der Erklärung abgedeckt wurden. Falls nicht, liste sie unter "missing".\n`
+    : '';
+
   const prompt = `Du bist ein wohlwollender Prüfer. Ein Lernender hat eine Karteikarten-Frage selbst erklärt. Bewerte fair und konzeptbasiert.
 
 ### Frage auf der Karte
@@ -90,7 +95,7 @@ ${front}
 
 ### Vollständige Musterantwort
 ${back}
-
+${gapsBlock}
 ### Erklärung des Lernenden
 ${userExplanation.trim()}
 
@@ -175,6 +180,7 @@ export async function probeAnswerForGaps(
   front: string,
   back: string,
   userExplanation: string,
+  gaps?: string[],
 ): Promise<ProbeOrGradeResult> {
   if (!keys.gemini?.trim() && !keys.anthropic?.trim() && !keys.groq?.trim()) {
     throw new Error('Kein AI-Schlüssel konfiguriert.');
@@ -183,6 +189,13 @@ export async function probeAnswerForGaps(
     throw new Error('Keine Erklärung erhalten.');
   }
 
+  const hasGaps = gaps && gaps.length > 0;
+  const gapsBlock = hasGaps
+    ? `\n### VORHERIGE LÜCKEN (vom Lernenden beim letzten Review selbst markiert)\n${gaps!.map(g => `- ${g}`).join('\n')}\n\nDer Lernende wusste diese Punkte beim letzten Mal nicht. Stelle — UNABHÄNGIG davon ob der Kern abgedeckt ist — EINE zusätzliche Frage die prüft ob er diese Lücke jetzt geschlossen hat. Du darfst dafür insgesamt bis zu 4 Folgefragen stellen.\n`
+    : '';
+
+  const maxProbes = hasGaps ? 4 : 3;
+
   const prompt = `Du bist ein gründlicher, aber wohlwollender mündlicher Prüfer. Ein Lernender hat eine Karteikarten-Frage selbst erklärt.
 
 ### Frage auf der Karte
@@ -190,7 +203,7 @@ ${front}
 
 ### Vollständige Musterantwort
 ${back}
-
+${gapsBlock}
 ### Erklärung des Lernenden
 ${userExplanation.trim()}
 
@@ -198,7 +211,7 @@ ${userExplanation.trim()}
 Entscheide: Hat der Lernende den KERN UND alle WICHTIGEN Aspekte aus der Musterantwort erfasst?
 
 - Wenn ja → modus "graded": Bewerte die Antwort wie ein wohlwollender Prüfer.
-- Wenn nein → modus "probe": Stelle 1–3 prüferhafte Folgefragen, die das fehlende Wissen aus dem Lernenden herauskitzeln. Genau wie in einer echten mündlichen Prüfung, wo der Prüfer nachhakt.
+- Wenn nein → modus "probe": Stelle 1–${maxProbes} prüferhafte Folgefragen, die das fehlende Wissen aus dem Lernenden herauskitzeln. Genau wie in einer echten mündlichen Prüfung, wo der Prüfer nachhakt.
 
 ### REGELN FÜR FOLGEFRAGEN
 1. **Nur zu Aspekten, die in der Musterantwort explizit vorkommen**, aber vom Lernenden nicht (oder nur unklar) erfasst wurden.
@@ -207,9 +220,9 @@ Entscheide: Hat der Lernende den KERN UND alle WICHTIGEN Aspekte aus der Mustera
    - "Wie wirkt sich das auf den Pflichtteilsanspruch aus?"
    - "Was passiert, wenn die Frist verstrichen ist?"
 3. **Verrate niemals das Stichwort selbst.** Schlecht: "Was ist die Pflichtteilsergänzung?". Gut: "Was passiert, wenn der Erblasser noch zu Lebzeiten Vermögen verschenkt hat?"
-4. **Maximal 3 Folgefragen** — fokussiert auf die wichtigsten Lücken. Lieber 1 gute als 3 mittelmäßige.
+4. **Maximal ${maxProbes} Folgefragen** — fokussiert auf die wichtigsten Lücken. Lieber 1 gute als 3 mittelmäßige.${hasGaps ? ' Wenn Vorherige Lücken vorhanden, reserviere EINE Frage dafür.' : ''}
 5. **Prüferhafter Tonfall, höflich, auf Deutsch.**
-6. Wenn der Lernende bereits >80% abgedeckt hat und nur Kleinigkeiten fehlen → KEINE Folgefragen, sondern direkt graden.
+6. Wenn der Lernende bereits >80% abgedeckt hat und nur Kleinigkeiten fehlen → KEINE Folgefragen${hasGaps ? ' (außer zur Lücke — die wird trotzdem abgefragt)' : ''}, sondern direkt graden.
 
 ### AUSGABE
 Antworte AUSSCHLIESSLICH mit gültigem JSON in EINEM dieser zwei Formate:
@@ -256,7 +269,7 @@ Wenn nachgebohrt werden soll:
 
   if (modus === 'probe') {
     const followUps = asStringArray(raw.followUps ?? raw.follow_ups ?? raw.folgefragen ?? raw.fragen)
-      .slice(0, 3); // hard cap
+      .slice(0, maxProbes); // hard cap (4 when gaps present, else 3)
     if (followUps.length === 0) {
       // Probe with no questions = nonsense. Fall through to graded path if possible.
       const graded = normalize(raw);
@@ -281,6 +294,7 @@ export async function finalGradeWithProbes(
   back: string,
   originalExplanation: string,
   probes: ProbeAnswer[],
+  gaps?: string[],
 ): Promise<AnswerCheckResult> {
   if (!keys.gemini?.trim() && !keys.anthropic?.trim() && !keys.groq?.trim()) {
     throw new Error('Kein AI-Schlüssel konfiguriert.');
@@ -291,6 +305,10 @@ export async function finalGradeWithProbes(
     : probes.map((p, i) =>
         `**Folgefrage ${i + 1}:** ${p.question}\n**Antwort:** ${p.answer.trim() || '(übersprungen / keine Antwort)'}`
       ).join('\n\n');
+
+  const gapsBlock = gaps && gaps.length > 0
+    ? `\n### VORHERIGE LÜCKEN (beim letzten Review markiert)\n${gaps.map(g => `- ${g}`).join('\n')}\n\nErwähne in "reasoning" explizit ob diese Lücken jetzt geschlossen wurden oder noch fehlen.\n`
+    : '';
 
   const prompt = `Du bist ein wohlwollender Prüfer. Ein Lernender hat eine Karteikarten-Frage in zwei Phasen beantwortet:
 1. Eine erste freie Erklärung
@@ -303,7 +321,7 @@ ${front}
 
 ### Vollständige Musterantwort
 ${back}
-
+${gapsBlock}
 ### Erste freie Erklärung des Lernenden
 ${originalExplanation.trim()}
 

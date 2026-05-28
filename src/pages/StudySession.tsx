@@ -874,13 +874,13 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
 
     try {
       if (probeMode === 'strict') {
-        const result = await checkAnswerWithAI(keys, currentCard.front, currentCard.back, explanation);
+        const result = await checkAnswerWithAI(keys, currentCard.front, currentCard.back, explanation, currentCard.gaps);
         setAiCheck({ cardId, status: 'result', mode, text: explanation, result });
         return;
       }
 
       // Nachbohren: ask AI whether to probe or grade directly
-      const probeResult = await probeAnswerForGaps(keys, currentCard.front, currentCard.back, explanation);
+      const probeResult = await probeAnswerForGaps(keys, currentCard.front, currentCard.back, explanation, currentCard.gaps);
       if (probeResult.kind === 'graded') {
         setAiCheck({ cardId, status: 'result', mode, text: explanation, result: probeResult.result });
       } else {
@@ -927,6 +927,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
         currentCard.back,
         state.originalText,
         probes,
+        currentCard.gaps,
       );
       setAiCheck({
         cardId, status: 'result', mode: state.mode,

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { Flashcard, Difficulty, AppSettings, CardImage, CardSet, CardLink, SRSStatus } from '../types/card';
 import { getSRSStatus } from '../types/card';
 import ImageInput from '../components/ImageInput';
@@ -74,6 +74,15 @@ function srsStatusToFields(status: SRSStatus): SRSOverride {
 }
 
 export default function CardEditor({ card, settings, sets, allCards, links, onSave, onCancel, onAddLink, onRemoveLink, onGenerateMC, onDeleteMC, onSplitCard, userEmail, onApiError }: Props) {
+  const frontRef = useRef<HTMLTextAreaElement>(null);
+  const backRef  = useRef<HTMLTextAreaElement>(null);
+
+  const autoResize = useCallback((el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }, []);
+
   const [front, setFront] = useState(card?.front ?? '');
   const [back, setBack] = useState(card?.back ?? '');
   const [frontImage, setFrontImage] = useState<CardImage | undefined>(card?.frontImage);
@@ -136,7 +145,15 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
       setBlacklisted(card.blacklisted ?? false);
       setSrsStatus(getSRSStatus(card));
     }
-  }, [card]);
+    // Resize after state flush so textareas reflect the loaded content
+    setTimeout(() => { autoResize(frontRef.current); autoResize(backRef.current); }, 0);
+  }, [card, autoResize]);
+
+  // Also resize on initial mount (new card = empty, existing card = pre-filled)
+  useEffect(() => {
+    autoResize(frontRef.current);
+    autoResize(backRef.current);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const validate = () => {
     const errs: string[] = [];
@@ -193,11 +210,12 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
               Vorderseite (Frage)
             </h3>
             <textarea
+              ref={frontRef}
               value={front}
-              onChange={e => setFront(e.target.value)}
+              onChange={e => { setFront(e.target.value); autoResize(e.target); }}
               placeholder="Frage oder Begriff…"
               rows={3}
-              className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2.5 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none resize-none"
+              className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2.5 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none resize-none overflow-hidden"
             />
             <ImageInput value={frontImage} onChange={setFrontImage} label="Bild Vorderseite" />
           </div>
@@ -209,11 +227,12 @@ export default function CardEditor({ card, settings, sets, allCards, links, onSa
               Rückseite (Antwort)
             </h3>
             <textarea
+              ref={backRef}
               value={back}
-              onChange={e => setBack(e.target.value)}
+              onChange={e => { setBack(e.target.value); autoResize(e.target); }}
               placeholder="Antwort oder Erklärung…"
               rows={3}
-              className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2.5 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none resize-none"
+              className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2.5 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none resize-none overflow-hidden"
             />
             <ImageInput value={backImage} onChange={setBackImage} label="Bild Rückseite" />
 

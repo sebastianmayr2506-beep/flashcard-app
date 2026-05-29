@@ -226,6 +226,9 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
   const [pendingGapsClear, setPendingGapsClear] = useState<{
     cardId: string; rating: RatingValue; nextAction: () => void;
   } | null>(null);
+  // Mobile gap input: shown when 📌 is tapped without a text selection
+  const [gapInputOpen, setGapInputOpen] = useState(false);
+  const [gapInputText, setGapInputText] = useState('');
   const [mcHint, setMcHint] = useState<MCHintState | null>(null);
   const [aiCheck, setAiCheck] = useState<AICheckState | null>(null);
   const recognizerRef = useRef<RecognizerHandle | null>(null);
@@ -656,14 +659,34 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
 
   // ── Gaps / Lücken ───────────────────────────────────────────────────────────
   const handleAddGap = () => {
-    const text = window.getSelection()?.toString().trim();
-    if (!text || !currentCard) return;
+    const selectedText = window.getSelection()?.toString().trim();
+    if (selectedText) {
+      // Desktop: use text selection directly
+      if (!currentCard) return;
+      const existing = currentCard.gaps ?? [];
+      if (existing.includes(selectedText)) { window.getSelection()?.removeAllRanges(); return; }
+      const updated = [...existing, selectedText];
+      onUpdateCard(currentCard.id, { gaps: updated });
+      setSessionCards(prev => prev.map(c => c.id === currentCard.id ? { ...c, gaps: updated } : c));
+      window.getSelection()?.removeAllRanges();
+    } else {
+      // Mobile / no selection: open freetext input
+      setGapInputText('');
+      setGapInputOpen(true);
+    }
+  };
+
+  const handleAddGapFromInput = () => {
+    const text = gapInputText.trim();
+    if (!text || !currentCard) { setGapInputOpen(false); return; }
     const existing = currentCard.gaps ?? [];
-    if (existing.includes(text)) { window.getSelection()?.removeAllRanges(); return; }
-    const updated = [...existing, text];
-    onUpdateCard(currentCard.id, { gaps: updated });
-    setSessionCards(prev => prev.map(c => c.id === currentCard.id ? { ...c, gaps: updated } : c));
-    window.getSelection()?.removeAllRanges();
+    if (!existing.includes(text)) {
+      const updated = [...existing, text];
+      onUpdateCard(currentCard.id, { gaps: updated });
+      setSessionCards(prev => prev.map(c => c.id === currentCard.id ? { ...c, gaps: updated } : c));
+    }
+    setGapInputOpen(false);
+    setGapInputText('');
   };
 
   const handleRemoveGap = (gap: string) => {
@@ -1966,6 +1989,48 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
           <button className="absolute top-4 right-4 text-white text-3xl leading-none">✕</button>
         </div>
       )}
+
+      {/* Gap freetext input — shown on mobile when 📌 tapped without selection */}
+      {gapInputOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4"
+          onClick={() => setGapInputOpen(false)}
+        >
+          <div
+            className="w-full max-w-md bg-[#1e2130] border border-amber-500/30 rounded-2xl p-5 space-y-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <p className="text-sm font-semibold text-amber-300">📌 Was hast du nicht gewusst?</p>
+            <p className="text-xs text-[#9ca3af] leading-snug">
+              Tippe kurz den Begriff oder Punkt ein, den du vergessen hattest — er wird beim nächsten Review hervorgehoben.
+            </p>
+            <textarea
+              autoFocus
+              rows={3}
+              value={gapInputText}
+              onChange={e => setGapInputText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddGapFromInput(); } }}
+              placeholder={'z.B. „Pflichtteilsergänzungsanspruch“ oder „Frist beträgt 10 Jahre“'}
+              className="w-full bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2.5 text-sm text-white placeholder-[#4b5563] resize-none focus:outline-none focus:border-amber-500/50"
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setGapInputOpen(false)}
+                className="px-4 py-2 rounded-xl text-sm text-[#9ca3af] hover:bg-[#252840] transition-colors"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleAddGapFromInput}
+                disabled={!gapInputText.trim()}
+                className="px-4 py-2 rounded-xl text-sm font-semibold bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Lücke speichern
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Progress bar */}
       <div className="shrink-0">
         <div className="flex items-center justify-between px-4 md:px-8 py-3 border-b border-[#2d3148]">
@@ -2226,7 +2291,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                   })()}
                   <button
                     onClick={e => { e.stopPropagation(); handleAddGap(); }}
-                    title="Markierten Text als Lücke speichern — Text zuerst mit der Maus/Finger auswählen"
+                    title="Lücke markieren — Text auswählen dann tippen, oder einfach antippen um frei einzugeben"
                     className="text-base px-1.5 sm:px-2 py-1.5 rounded-lg border border-transparent text-[#6b7280] hover:text-amber-400 hover:bg-[#252840] transition-colors shrink-0"
                   >
                     📌

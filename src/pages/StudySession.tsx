@@ -43,6 +43,8 @@ interface Props {
   onUpdateSettings?: (patch: Partial<AppSettings>) => void;
   onSessionComplete: () => void;
   onNavigate: (page: string) => void;
+  /** Page to return to when session ends or is aborted. Defaults to 'dashboard'. */
+  returnPage?: string;
   onApiError?: (message: string) => void;
 }
 
@@ -88,7 +90,7 @@ interface RatingCount {
   nochmal: number; schwer: number; gut: number; einfach: number;
 }
 
-export default function StudySession({ cards, settings, sets, links, userId, preFilteredCards, dailyPlan, onRate, onUpdateCard, onDeleteCard, onSplitCard, onGenerateMC, onUpdateSettings, onSessionComplete, onNavigate, onApiError }: Props) {
+export default function StudySession({ cards, settings, sets, links, userId, preFilteredCards, dailyPlan, onRate, onUpdateCard, onDeleteCard, onSplitCard, onGenerateMC, onUpdateSettings, onSessionComplete, onNavigate, returnPage = 'dashboard', onApiError }: Props) {
   const isDailyMode = !!dailyPlan;
 
   // Restore in-progress study session from sessionStorage on mount.
@@ -1436,7 +1438,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
           )}
 
           <div className="flex gap-3 mt-5">
-            <button onClick={() => onNavigate('dashboard')}
+            <button onClick={() => onNavigate(returnPage)}
               className="flex-1 py-3 rounded-xl border border-[#2d3148] text-[#9ca3af] hover:text-white transition-colors font-medium">
               Zurück
             </button>
@@ -1554,7 +1556,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
                   className="flex-1 py-2.5 rounded-xl border border-[#2d3148] text-[#9ca3af] hover:text-white transition-colors text-sm font-medium">
                   🎯 MC-Session wiederholen
                 </button>
-                <button onClick={() => { onSessionComplete(); onNavigate('dashboard'); }}
+                <button onClick={() => { onSessionComplete(); onNavigate(returnPage); }}
                   className="flex-1 py-2.5 rounded-xl bg-[#252840] hover:bg-[#2d3148] text-[#9ca3af] hover:text-white transition-colors text-sm font-medium">
                   Fertig
                 </button>
@@ -1621,7 +1623,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
               className="flex-1 py-3 rounded-xl border border-[#2d3148] text-[#9ca3af] hover:text-white transition-colors font-medium">
               Wiederholen
             </button>
-            <button onClick={() => { onSessionComplete(); onNavigate('dashboard'); }}
+            <button onClick={() => { onSessionComplete(); onNavigate(returnPage); }}
               className="flex-1 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-semibold transition-colors">
               Fertig
             </button>

@@ -117,6 +117,7 @@ export default function App() {
   const [editingCard, setEditingCard] = useState<Flashcard | undefined>();
   const [viewingSet, setViewingSet] = useState<CardSet | undefined>();
   const [studyFilteredCards, setStudyFilteredCards] = useState<Flashcard[] | null>(null);
+  const [studyReturnPage, setStudyReturnPage] = useState<string>('dashboard');
   const [activeDailyPlan, setActiveDailyPlan] = useState<DailyPlanSession | null>(null);
   const [libraryInitialSrs, setLibraryInitialSrs] = useState<string | undefined>();
 
@@ -180,9 +181,10 @@ export default function App() {
     setPage('library');
   }, [editingCard, addCard, updateCard, showToast]);
 
-  const handleStudyFiltered = useCallback((filtered: Flashcard[]) => {
+  const handleStudyFiltered = useCallback((filtered: Flashcard[], returnPage = 'dashboard') => {
     setActiveDailyPlan(null);
     setStudyFilteredCards(filtered);
+    setStudyReturnPage(returnPage);
     setPage('study');
   }, []);
 
@@ -960,6 +962,7 @@ export default function App() {
           onUpdateSettings={updateSettings}
           onSessionComplete={handleSessionComplete}
           onNavigate={navigate}
+          returnPage={studyReturnPage}
           onApiError={msg => showToast(msg, 'error')}
         />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
@@ -1068,7 +1071,7 @@ export default function App() {
             onBack={() => navigate('sets')}
             onEdit={handleEditCard}
             onDelete={handleDeleteCard}
-            onStudy={handleStudyFiltered}
+            onStudy={(cards) => handleStudyFiltered(cards, 'set-detail')}
             showToast={showToast}
           />
         )}

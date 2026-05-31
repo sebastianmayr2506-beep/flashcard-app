@@ -120,6 +120,9 @@ export default function App() {
   const [studyReturnPage, setStudyReturnPage] = useState<string>('dashboard');
   const [activeDailyPlan, setActiveDailyPlan] = useState<DailyPlanSession | null>(null);
   const [libraryInitialSrs, setLibraryInitialSrs] = useState<string | undefined>();
+  // When a card is edited from the library preview, store its ID so the
+  // preview re-opens automatically after saving.
+  const [libraryPreviewCardId, setLibraryPreviewCardId] = useState<string | undefined>();
 
   // AI merge state
   const [mergeLoading, setMergeLoading] = useState(false);
@@ -156,7 +159,8 @@ export default function App() {
     setPage('library');
   }, []);
 
-  const handleEditCard = useCallback((card: Flashcard) => {
+  const handleEditCard = useCallback((card: Flashcard, fromPreview = false) => {
+    setLibraryPreviewCardId(fromPreview ? card.id : undefined);
     setEditingCard(card);
     setPage('edit-card');
   }, []);
@@ -179,6 +183,7 @@ export default function App() {
     }
     setEditingCard(undefined);
     setPage('library');
+    // libraryPreviewCardId stays set so Library can re-open the preview
   }, [editingCard, addCard, updateCard, showToast]);
 
   const handleStudyFiltered = useCallback((filtered: Flashcard[], returnPage = 'dashboard') => {
@@ -1029,6 +1034,8 @@ export default function App() {
             onGenerateMC={handleGenerateMCForCards}
             onNavigate={navigate}
             initialSrsFilter={libraryInitialSrs}
+            initialPreviewCardId={libraryPreviewCardId}
+            onClearPreviewCardId={() => setLibraryPreviewCardId(undefined)}
           />
         )}
         {(page === 'new-card' || page === 'edit-card') && (

@@ -19,7 +19,7 @@ interface Props {
   links: CardLink[];
   flagAttempts: FlagAttempt[];
   userId: string | null;
-  onEdit: (card: Flashcard) => void;
+  onEdit: (card: Flashcard, fromPreview?: boolean) => void;
   onDelete: (id: string) => void;
   onStudyFiltered: (cards: Flashcard[]) => void;
   onBulkAssignSet: (cardIds: string[], setId: string | undefined) => void;
@@ -31,6 +31,9 @@ interface Props {
   onGenerateMC: (cardIds: string[]) => Promise<{ okIds: string[]; failedIds: string[] }>;
   onNavigate: (page: string) => void;
   initialSrsFilter?: string;
+  /** If set, open the preview for this card ID immediately on mount (after edit). */
+  initialPreviewCardId?: string;
+  onClearPreviewCardId?: () => void;
 }
 
 type ViewMode = 'grid' | 'list';
@@ -72,7 +75,7 @@ function saveLibraryFilters(filters: PersistedFilters): void {
   } catch { /* localStorage voll oder disabled — fail silently */ }
 }
 
-export default function Library({ cards, settings, sets, links, flagAttempts, userId, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onBulkSetBlacklist, onUpdateCard, onMergeCards, onGenerateMC, onNavigate, initialSrsFilter }: Props) {
+export default function Library({ cards, settings, sets, links, flagAttempts, userId, onEdit, onDelete, onStudyFiltered, onBulkAssignSet, onBulkCreateAndAssignSet, onBulkDelete, onBulkSetBlacklist, onUpdateCard, onMergeCards, onGenerateMC, onNavigate, initialSrsFilter, initialPreviewCardId, onClearPreviewCardId }: Props) {
   // Filter-State persistiert in localStorage damit beim Navigieren in
   // CardEditor + zurück die Filter nicht resetten.
   const persisted = loadLibraryFilters();
@@ -142,6 +145,14 @@ export default function Library({ cards, settings, sets, links, flagAttempts, us
   const [previewCard, setPreviewCard] = useState<Flashcard | null>(null);
   // Which cards have a saved AI chat — for the 💬-badge in preview
   const chatCardIds = useChatExistsSet(userId);
+
+  // Re-open preview after returning from card editor (edit-from-preview flow)
+  useEffect(() => {
+    if (!initialPreviewCardId) return;
+    const card = cards.find(c => c.id === initialPreviewCardId);
+    if (card) { setPreviewCard(card); onClearPreviewCardId?.(); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPreviewCardId]);
 
   // Examiners available given current catalog filter (or all if no catalog selected)
   const activeExaminers = useMemo(() => {
@@ -1061,7 +1072,7 @@ function CardPreviewModal({
 }: {
   card: Flashcard;
   onClose: () => void;
-  onEdit: (c: Flashcard) => void;
+  onEdit: (c: Flashcard, fromPreview?: boolean) => void;
   userId: string | null;
   hasChat: boolean;
   onUpdateCard: (id: string, patch: Partial<Flashcard>) => void;
@@ -1092,7 +1103,7 @@ function CardPreviewModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-xl flex flex-col gap-4"
+        className="w-full max-w-3xl flex flex-col gap-4"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -1111,7 +1122,7 @@ function CardPreviewModal({
               </button>
             )}
             <button
-              onClick={() => { onClose(); onEdit(card); }}
+              onClick={() => { onClose(); onEdit(card, true); }}
               className="text-sm px-3 py-1.5 rounded-xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/30 transition-colors"
             >
               Bearbeiten
@@ -1121,7 +1132,7 @@ function CardPreviewModal({
         </div>
 
         {/* Card */}
-        <div className="perspective" style={{ height: '320px' }}>
+        <div className="perspective" style={{ height: 'clamp(340px, 48vh, 560px)' }}>
           <div
             className="card-inner cursor-pointer"
             style={{ transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)' }}

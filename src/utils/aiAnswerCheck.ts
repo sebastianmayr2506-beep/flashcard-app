@@ -67,7 +67,14 @@ function normalize(raw: any): AnswerCheckResult | null {
   // Sanity check — at least *some* signal must be present
   if (captured.length === 0 && missing.length === 0 && !reasoning) return null;
 
-  return { score, captured, missing, suggestedRating, reasoning };
+  // Score/rating consistency guard: the AI sometimes returns contradictory
+  // values (e.g. score=92 but suggestedRating=0). Clamp to a sensible range.
+  let rating = suggestedRating;
+  if (score >= 88 && rating < 3) rating = 3;       // near-perfect → Einfach
+  else if (score >= 70 && rating < 2) rating = 2;  // solid → at least Gut
+  else if (score <= 20 && rating > 1) rating = 1;  // very weak → at most Schwer
+
+  return { score, captured, missing, suggestedRating: rating, reasoning };
 }
 
 export async function checkAnswerWithAI(

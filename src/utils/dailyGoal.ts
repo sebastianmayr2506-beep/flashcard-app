@@ -53,7 +53,10 @@ export function calculatePaceMetrics(
     : requiredNewPerDay;
 
   // ── Simulate daily review load ──────────────────────────────────────────────
-  const horizon = daysUntilExam + 1;
+  // Cap horizon to prevent stack overflow: Math.max(...arr) crashes above ~120k
+  // elements, and simulating years of daily reviews is pointless anyway.
+  const MAX_HORIZON = 1500; // ~4 years — more than enough for any exam prep
+  const horizon = Math.min(daysUntilExam + 1, MAX_HORIZON);
   const reviewsPerDay = new Float32Array(horizon);
 
   // Reviews from already-seen cards
@@ -82,9 +85,14 @@ export function calculatePaceMetrics(
   }
 
   // Average daily reviews (skip first 2 days, which are usually low)
-  const slice = Array.from(reviewsPerDay.slice(2));
-  const avgDailyReviews = Math.round(slice.reduce((a, b) => a + b, 0) / Math.max(1, slice.length));
-  const peakDailyLoad = Math.round(Math.max(...slice)) + actualNewPerDay;
+  const slice = reviewsPerDay.subarray(2);
+  let sliceSum = 0, sliceMax = 0;
+  for (let i = 0; i < slice.length; i++) {
+    sliceSum += slice[i];
+    if (slice[i] > sliceMax) sliceMax = slice[i];
+  }
+  const avgDailyReviews = Math.round(sliceSum / Math.max(1, slice.length));
+  const peakDailyLoad = Math.round(sliceMax) + actualNewPerDay;
 
   // ── Mastery projection ──────────────────────────────────────────────────────
   const alreadyMastered = seenCards.filter(c => c.repetitions >= MASTERY_REVIEWS).length;

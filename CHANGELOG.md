@@ -7,6 +7,22 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-06-09 — MC-Antworten auf Mobile nicht scrollbar
+
+**Was war kaputt:** Im MC-Modus konnten User auf kleinen Bildschirmen nur die
+ersten 2 Antwortoptionen sehen — der Rest war abgeschnitten und nicht scrollbar.
+
+**Root Cause:** Klassischer Flexbox-Overflow-Bug. Der MC-Content-Container hatte
+`flex-1 overflow-y-auto`, aber kein `min-h-0`. Ohne `min-h-0` berechnet Flexbox
+die Mindesthöhe aus dem Inhalt, sodass der Container nie kleiner wird als sein
+Content und `overflow-y-auto` nie greift.
+
+**Fix:** `min-h-0` zum MC-Content-Container hinzugefügt.
+
+**Dateien:** `src/pages/StudySession.tsx`
+
+---
+
 ## 2026-05-23 — Multi-Set-Membership für Karten
 
 **Was war kaputt:** Karte hatte `setId?: string` — also nur ein Set pro Karte.

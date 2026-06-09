@@ -1723,7 +1723,7 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
         </div>
 
         {/* MC content */}
-        <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-3xl w-full mx-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-8 py-6 max-w-3xl w-full mx-auto">
           {/* Card-Context: the original question text + action row */}
           <div className="mb-5 bg-[#1e2130] border border-[#2d3148] rounded-2xl p-4">
             <div className="flex items-start justify-between gap-3 mb-1.5">

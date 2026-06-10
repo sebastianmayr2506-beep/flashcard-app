@@ -143,9 +143,14 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
         .filter((c): c is Flashcard => !!c);
       if (resolved.length === 0) return null;
       const mode: 'classic' | 'mc' = obj.sessionMode === 'mc' ? 'mc' : 'classic';
+      // Classic sessions: always land on setup so the user sees the mode picker
+      // (MC vs Karteikarten). Classic ratings are saved card-by-card so there's
+      // no cumulative progress to lose. MC sessions keep auto-resume because
+      // their score/progress IS cumulative within the session.
+      const initialState = mode === 'mc' && obj.sessionState === 'studying' ? 'studying' : 'setup';
       return {
         mode,
-        initialState: obj.sessionState === 'studying' ? 'studying' : 'setup',
+        initialState,
         sessionCards: resolved,
         pausedAt: typeof obj.pausedAt === 'number' ? obj.pausedAt : 0,
         currentIdx: Math.min(Math.max(obj.currentIdx ?? 0, 0), resolved.length - 1),
@@ -486,9 +491,10 @@ export default function StudySession({ cards, settings, sets, links, userId, pre
       setCurrentIdx(Math.min(Math.max(remote.currentIdx ?? 0, 0), resolved.length - 1));
       setRatings(remote.ratings ?? { nochmal: 0, schwer: 0, gut: 0, einfach: 0 });
     }
-    // For active 'studying' sessions, land directly in the session view.
+    // For active MC 'studying' sessions, land directly in the session view.
+    // Classic sessions always land on setup so the user sees the mode picker.
     // For paused-after-Beenden, stay on setup so the resume banner is visible.
-    if (remote.sessionState === 'studying') {
+    if (remote.sessionState === 'studying' && remote.mode === 'mc') {
       setSessionState('studying');
     }
   }, [settings.pausedSession, cards, sessionState, localPausedAt]);

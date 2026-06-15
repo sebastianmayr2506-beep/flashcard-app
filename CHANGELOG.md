@@ -7,6 +7,25 @@ and the files touched. Goal is that future-Claude (and future-Sebi) can see
 
 ---
 
+## 2026-06-15 — KI-Prüfung Scroll-Bug bei Spracheingabe
+
+**Was war kaputt:** Im Karteikarten-Modus mit KI-Prüfung: nach der Spracheingabe
+konnte man nicht zum "Bewerten lassen"-Button runterscrollen — die App scrollte
+immer wieder hoch.
+
+**Root Cause:** Die Textareas im AICheckWidget hatten `autoResizeRef` — einen
+Ref-Callback der bei jedem Render `height: auto` → `height: scrollHeight` setzte.
+Bei Spracherkennung kamen laufend State-Updates (neue Transkript-Chunks), jedes
+verursachte einen Re-Render, die kurze Höhen-Kollabierung (`auto`) resettte die
+Scroll-Position des Parent-Containers (`max-h-[60%] overflow-y-auto`).
+
+**Fix:** Auto-Resize komplett entfernt. Textareas haben jetzt feste `max-h-[120px]`
+mit `overflow-y-auto` — sie scrollen intern statt den Container zu relayouten.
+
+**Dateien:** `src/pages/StudySession.tsx`
+
+---
+
 ## 2026-06-09 — MC-Antworten auf Mobile nicht scrollbar
 
 **Was war kaputt:** Im MC-Modus konnten User auf kleinen Bildschirmen nur die

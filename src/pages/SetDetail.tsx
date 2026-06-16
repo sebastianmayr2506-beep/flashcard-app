@@ -18,6 +18,7 @@ interface Props {
   onEdit: (card: Flashcard) => void;
   onDelete: (id: string) => void;
   onStudy: (cards: Flashcard[]) => void;
+  onUpdateCard: (id: string, data: Partial<Flashcard>) => void;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
@@ -30,6 +31,7 @@ function CardRow({
   card,
   onEdit,
   onDelete,
+  onToggleFlag,
   selectionMode = false,
   selected = false,
   onToggleSelect,
@@ -37,6 +39,7 @@ function CardRow({
   card: Flashcard;
   onEdit: (c: Flashcard) => void;
   onDelete: (id: string) => void;
+  onToggleFlag: (id: string) => void;
   selectionMode?: boolean;
   selected?: boolean;
   onToggleSelect?: () => void;
@@ -126,6 +129,16 @@ function CardRow({
           )}
           <div className="flex gap-2 mt-4">
             <button
+              onClick={() => onToggleFlag(card.id)}
+              className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                card.flagged
+                  ? 'bg-orange-500/15 border-orange-500/40 text-orange-400 hover:bg-orange-500/25'
+                  : 'bg-[#252840] hover:bg-orange-500/15 text-[#9ca3af] hover:text-orange-400 border-[#2d3148]'
+              }`}
+            >
+              🚩 {card.flagged ? 'Entflaggen' : 'Flaggen'}
+            </button>
+            <button
               onClick={() => onEdit(card)}
               className="text-xs px-3 py-1.5 rounded-lg bg-[#252840] hover:bg-indigo-500/20 text-[#9ca3af] hover:text-indigo-400 border border-[#2d3148] transition-colors"
             >
@@ -145,7 +158,7 @@ function CardRow({
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function SetDetail({ set, cards, links, userId, onBack, onEdit, onDelete, onStudy, showToast }: Props) {
+export default function SetDetail({ set, cards, links, userId, onBack, onEdit, onDelete, onStudy, onUpdateCard, showToast }: Props) {
   const [shareCode, setShareCode] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [copyLabel, setCopyLabel] = useState('Kopieren');
@@ -635,6 +648,7 @@ export default function SetDetail({ set, cards, links, userId, onBack, onEdit, o
                   card={card}
                   onEdit={onEdit}
                   onDelete={onDelete}
+                  onToggleFlag={(id) => onUpdateCard(id, { flagged: !card.flagged })}
                   selectionMode={selectionMode}
                   selected={selectedIds.has(card.id)}
                   onToggleSelect={() => toggleSelection(card.id)}

@@ -1079,6 +1079,7 @@ export default function App() {
             onEdit={handleEditCard}
             onDelete={handleDeleteCard}
             onStudy={(cards) => handleStudyFiltered(cards, 'set-detail')}
+            onUpdateCard={(id, data) => updateCard(id, data)}
             showToast={showToast}
           />
         )}

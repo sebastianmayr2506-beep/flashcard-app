@@ -22,7 +22,7 @@ type ContentBlock =
   | { type: 'formula'; lines: string[] }
   | { type: 'formulaDetailed'; steps: { code: string; label: string; desc: string; sign: string }[] }
   | { type: 'example'; title: string; scenario: string; result: string }
-  | { type: 'wcRule'; rules: { situation: string; meaning: string; effect: string; cfEffect: '+' | '−'; color: 'emerald' | 'red' }[] }
+  | { type: 'wcRule'; rules: { situation: string; meaning: string; effect: string; cfEffect: '+' | '−' | '±'; color: ColorKey }[] }
   | { type: 'assetSale'; title: string; buchwert: number; verkauf: number; diff: number }
   | { type: 'correction'; steps: string[] }
   | { type: 'summary'; items: string[] };
@@ -62,10 +62,10 @@ const theoryPages: TheoryPage[] = [
         items: [
           { label: 'Operativer CF', abbr: 'oCF', desc: 'Geld aus dem laufenden Geschäft. Verkaufe ich genug Würstel?', color: 'cyan', icon: '⚙️' },
           { label: 'Investitions-CF', abbr: 'invCF', desc: 'Geld für Anlagen. Habe ich Maschinen gekauft oder verkauft?', color: 'amber', icon: '🏗️' },
-          { label: 'Free Cash-Flow', abbr: 'fCF', desc: 'Was nach Betrieb + Investitionen übrig bleibt. Die echte Stärke.', color: 'emerald', icon: '🎯' },
+          { label: 'Finanzieller CF', abbr: 'finCF', desc: 'Geld aus Finanzierung. Kredite aufgenommen oder getilgt? Dividenden gezahlt?', color: 'purple', icon: '🏦' },
         ],
       },
-      { type: 'formula', lines: ['oCF + invCF = fCF', 'fCF + finCF = Δ LM (Zahlungsüberschuss)'] },
+      { type: 'formula', lines: ['oCF + invCF = fCF (Free Cash-Flow)', 'fCF + finCF = Δ LM (Zahlungsüberschuss)'] },
     ],
   },
   {
@@ -131,10 +131,62 @@ const theoryPages: TheoryPage[] = [
     ],
   },
   {
+    title: 'Der finanzielle Cash-Flow',
+    icon: '🏦',
+    content: [
+      { type: 'text', value: 'Der finanzielle Cash-Flow (finCF) zeigt, wie das Unternehmen seine Finanzierung gestaltet – also Geldflüsse mit Eigenkapitalgebern und Fremdkapitalgebern.' },
+      {
+        type: 'stack',
+        items: [
+          { label: 'Einzahlungen', abbr: '+', desc: 'Kreditaufnahme, Ausgabe neuer Aktien, Kapitalerhöhung', color: 'emerald', icon: '📥' },
+          { label: 'Auszahlungen', abbr: '−', desc: 'Kredittilgung, Dividendenzahlungen, Aktienrückkäufe', color: 'red', icon: '📤' },
+        ],
+      },
+      {
+        type: 'formulaDetailed',
+        steps: [
+          { code: '+ Kredit', label: 'Kreditaufnahme', desc: 'Frisches Geld von der Bank → Einzahlung', sign: '+' },
+          { code: '− Tilgung', label: 'Kreditrückzahlung', desc: 'Schulden werden reduziert → Auszahlung', sign: '−' },
+          { code: '+ EK', label: 'Kapitalerhöhung', desc: 'Neue Eigenkapitaleinlagen der Gesellschafter', sign: '+' },
+          { code: '− Div.', label: 'Dividendenausschüttung', desc: 'Gewinnausschüttung an Eigentümer', sign: '−' },
+          { code: '= finCF', label: 'Finanzieller CF', desc: 'Netto-Geldfluss aus Finanzierungstätigkeit', sign: '=' },
+        ],
+      },
+      { type: 'callout', emoji: '💡', value: 'Zinszahlungen können je nach Methode im oCF oder finCF stehen – in Österreich meist im oCF. Dividenden gehören immer in den finCF!' },
+    ],
+  },
+  {
+    title: 'Gesamt: Δ LM',
+    icon: '🔢',
+    content: [
+      { type: 'text', value: 'Jetzt fügen wir alles zusammen. Der Zahlungsüberschuss (Δ LM = Veränderung der liquiden Mittel) ist das Endergebnis der Kapitalflussrechnung.' },
+      {
+        type: 'formulaDetailed',
+        steps: [
+          { code: 'oCF', label: 'Operativer Cash-Flow', desc: 'Geld aus dem laufenden Geschäft', sign: '' },
+          { code: '+ invCF', label: 'Investitions-CF', desc: 'Geld aus Investitionstätigkeit', sign: '+' },
+          { code: '= fCF', label: 'Free Cash-Flow', desc: 'Operative Stärke nach Investitionen', sign: '=' },
+          { code: '+ finCF', label: 'Finanzieller CF', desc: 'Geld aus Finanzierungstätigkeit', sign: '+' },
+          { code: '= Δ LM', label: 'Zahlungsüberschuss', desc: 'Gesamtveränderung des Kassenbestands', sign: '=' },
+        ],
+      },
+      { type: 'callout', emoji: '🔍', value: 'Probe: LM-Anfangsbestand + Δ LM = LM-Endbestand. Stimmt das mit der Bilanz überein? Wenn ja – die Kapitalflussrechnung ist korrekt!' },
+      {
+        type: 'wcRule',
+        rules: [
+          { situation: 'Δ LM positiv', meaning: 'Mehr Geld als Vorjahr', effect: 'Liquidität gestiegen', cfEffect: '+', color: 'emerald' },
+          { situation: 'Δ LM negativ', meaning: 'Weniger Geld als Vorjahr', effect: 'Liquidität gesunken', cfEffect: '−', color: 'red' },
+          { situation: 'fCF pos., Δ LM neg.', meaning: 'Kredite getilgt oder Dividenden gezahlt', effect: 'Gesunde Entschuldung möglich', cfEffect: '±', color: 'amber' },
+          { situation: 'fCF neg., Δ LM pos.', meaning: 'Neue Kredite aufgenommen', effect: 'Investitionen fremdfinanziert', cfEffect: '±', color: 'purple' },
+        ],
+      },
+    ],
+  },
+  {
     title: 'Bereit zum Üben!',
     icon: '🚀',
     content: [
-      { type: 'text', value: 'Du kennst jetzt alle Bausteine. Hier nochmal die Kurzfassung:' },
+      { type: 'text', value: 'Du kennst jetzt alle Bausteine. Hier nochmal die vollständige Kurzfassung:' },
       {
         type: 'summary',
         items: [
@@ -145,9 +197,11 @@ const theoryPages: TheoryPage[] = [
           'Working Capital: Forderungen ↑ = minus, Verbindlichkeiten ↑ = plus',
           'invCF: Echte Geldflüsse aus Käufen und Verkäufen von Anlagen',
           'fCF = oCF + invCF → die echte wirtschaftliche Stärke',
+          'finCF: Kredite, Tilgungen, Kapitalerhöhungen, Dividenden',
+          'Δ LM = fCF + finCF → Gesamtveränderung der liquiden Mittel',
         ],
       },
-      { type: 'callout', emoji: '🎯', value: 'Auf der nächsten Seite warten Übungsbeispiele. Lies den Text genau, achte auf die Vorzeichen, und denk immer daran: Wo fließt echtes Geld?' },
+      { type: 'callout', emoji: '🎯', value: 'Auf der nächsten Seite warten Übungsbeispiele – jetzt mit allen drei CFs und dem Gesamt-Zahlungsüberschuss. Achte auf die Vorzeichen!' },
     ],
   },
 ];
@@ -165,13 +219,16 @@ interface Scenario {
   invFields: { label: string; correct: number }[];
   invCF: number;
   fCF: number;
+  finFields: { label: string; hint?: string; correct: number }[];
+  finCF: number;
+  deltaLM: number;
   tip: string;
 }
 
 const practiceScenarios: Scenario[] = [
   {
     id: 1, difficulty: 'Einsteiger', diffColor: 'emerald', title: 'Die Pizzeria',
-    text: 'Eine Pizzeria hat einen Jahresüberschuss von 40.000 €. Die Abschreibungen auf den Pizzaofen betrugen 5.000 €. Es wurden langfristige Rückstellungen in Höhe von 2.000 € neu gebildet. Ein alter Lieferwagen (Buchwert 8.000 €) wurde um 8.000 € verkauft – also genau zum Buchwert. Die Forderungen sind um 1.000 € gesunken. Es wurde ein neuer Lieferwagen um 20.000 € gekauft.',
+    text: 'Eine Pizzeria hat einen Jahresüberschuss von 40.000 €. Die Abschreibungen auf den Pizzaofen betrugen 5.000 €. Es wurden langfristige Rückstellungen in Höhe von 2.000 € neu gebildet. Ein alter Lieferwagen (Buchwert 8.000 €) wurde um 8.000 € verkauft – also genau zum Buchwert. Die Forderungen sind um 1.000 € gesunken. Es wurde ein neuer Lieferwagen um 20.000 € gekauft. Die Pizzeria hat einen Kredit über 15.000 € aufgenommen und Dividenden von 5.000 € ausgeschüttet.',
     fields: [
       { label: 'JÜ', hint: 'Jahresüberschuss', correct: 40000 },
       { label: '+ AfA', hint: 'Nicht zahlungswirksam', correct: 5000 },
@@ -185,11 +242,16 @@ const practiceScenarios: Scenario[] = [
       { label: 'Verkauf Lieferwagen', correct: 8000 },
     ],
     invCF: -12000, fCF: 36000,
-    tip: 'Verkauf genau zum Buchwert → kein Buchgewinn, kein Buchverlust → Korrektur = 0!',
+    finFields: [
+      { label: 'Kreditaufnahme', hint: 'Neues Fremdkapital = ?', correct: 15000 },
+      { label: 'Dividenden', hint: 'Ausschüttung = ?', correct: -5000 },
+    ],
+    finCF: 10000, deltaLM: 46000,
+    tip: 'Verkauf genau zum Buchwert → kein Buchgewinn, kein Buchverlust → Korrektur = 0! finCF = Kredit − Dividenden = +10.000',
   },
   {
     id: 2, difficulty: 'Einsteiger', diffColor: 'emerald', title: 'Der Friseursalon',
-    text: 'Ein Friseursalon weist einen Jahresüberschuss von 28.000 € aus. Abschreibungen auf Einrichtung: 6.000 €. Langfristige Rückstellungen wurden um 1.500 € aufgelöst. Ein alter Friseurstuhl (Buchwert 500 €) wurde um 200 € verkauft. Die Verbindlichkeiten sind um 3.000 € gestiegen. Es wurden neue Waschplätze um 12.000 € angeschafft.',
+    text: 'Ein Friseursalon weist einen Jahresüberschuss von 28.000 € aus. Abschreibungen auf Einrichtung: 6.000 €. Langfristige Rückstellungen wurden um 1.500 € aufgelöst. Ein alter Friseurstuhl (Buchwert 500 €) wurde um 200 € verkauft. Die Verbindlichkeiten sind um 3.000 € gestiegen. Es wurden neue Waschplätze um 12.000 € angeschafft. Ein laufender Kredit wurde um 8.000 € getilgt. Keine Dividenden.',
     fields: [
       { label: 'JÜ', hint: 'Jahresüberschuss', correct: 28000 },
       { label: '+ AfA', hint: 'Nicht zahlungswirksam', correct: 6000 },
@@ -203,11 +265,15 @@ const practiceScenarios: Scenario[] = [
       { label: 'Verkauf Friseurstuhl', correct: 200 },
     ],
     invCF: -11800, fCF: 24000,
-    tip: 'Buchverlust: Buchwert 500, verkauft um 200 → Verlust 300. Der drückt den JÜ, also addieren wir ihn im oCF.',
+    finFields: [
+      { label: 'Kredittilgung', hint: 'Rückzahlung = ?', correct: -8000 },
+    ],
+    finCF: -8000, deltaLM: 16000,
+    tip: 'Buchverlust: BW 500, verkauft um 200 → Verlust 300 → addieren. Tilgung ist immer negativ im finCF.',
   },
   {
     id: 3, difficulty: 'Mittel', diffColor: 'amber', title: 'Die Autowerkstatt',
-    text: 'Eine Autowerkstatt erzielt einen Jahresüberschuss von 65.000 €. Abschreibungen auf Hebebühnen und Werkzeug: 18.000 €. Rückstellungen wurden um 4.000 € dotiert. Eine Hebebühne (Buchwert 12.000 €) wurde um 17.000 € verkauft. Die Forderungen sind um 5.000 € gestiegen, die Verbindlichkeiten um 2.000 € gestiegen. Es wurde ein Diagnosegerät um 25.000 € und eine neue Hebebühne um 35.000 € gekauft.',
+    text: 'Eine Autowerkstatt erzielt einen Jahresüberschuss von 65.000 €. Abschreibungen auf Hebebühnen und Werkzeug: 18.000 €. Rückstellungen wurden um 4.000 € dotiert. Eine Hebebühne (Buchwert 12.000 €) wurde um 17.000 € verkauft. Die Forderungen sind um 5.000 € gestiegen, die Verbindlichkeiten um 2.000 € gestiegen. Es wurde ein Diagnosegerät um 25.000 € und eine neue Hebebühne um 35.000 € gekauft. Die Bank gewährte einen neuen Investitionskredit über 30.000 €. Außerdem wurden Dividenden von 12.000 € ausgeschüttet.',
     fields: [
       { label: 'JÜ', hint: 'Jahresüberschuss', correct: 65000 },
       { label: '+ AfA', hint: 'Nicht zahlungswirksam', correct: 18000 },
@@ -222,11 +288,16 @@ const practiceScenarios: Scenario[] = [
       { label: 'Verkauf Hebebühne', correct: 17000 },
     ],
     invCF: -43000, fCF: 36000,
-    tip: 'WC: Forderungen ↑5.000 (schlecht) + Verbindlichkeiten ↑2.000 (gut) = netto −3.000',
+    finFields: [
+      { label: 'Kreditaufnahme', hint: 'Investitionskredit = ?', correct: 30000 },
+      { label: 'Dividenden', hint: 'Ausschüttung = ?', correct: -12000 },
+    ],
+    finCF: 18000, deltaLM: 54000,
+    tip: 'WC: Forderungen ↑5k (−) + Verbindlichkeiten ↑2k (+) = −3.000. finCF: +30k Kredit − 12k Dividende = +18k.',
   },
   {
     id: 4, difficulty: 'Mittel', diffColor: 'amber', title: 'Das Architekturbüro',
-    text: 'Ein Architekturbüro hat einen Jahresüberschuss von 95.000 €. Abschreibungen auf IT und Büromöbel: 11.000 €. Langfristige Rückstellungen wurden um 6.000 € aufgelöst. Ein 3D-Drucker (Buchwert 7.000 €) wurde um 3.000 € verkauft. Die Forderungen sind um 15.000 € gestiegen, die Verbindlichkeiten um 8.000 € gestiegen. Es wurde neue CAD-Software um 18.000 € lizenziert und Büromöbel um 9.000 € angeschafft.',
+    text: 'Ein Architekturbüro hat einen Jahresüberschuss von 95.000 €. Abschreibungen auf IT und Büromöbel: 11.000 €. Langfristige Rückstellungen wurden um 6.000 € aufgelöst. Ein 3D-Drucker (Buchwert 7.000 €) wurde um 3.000 € verkauft. Die Forderungen sind um 15.000 € gestiegen, die Verbindlichkeiten um 8.000 € gestiegen. Es wurde neue CAD-Software um 18.000 € lizenziert und Büromöbel um 9.000 € angeschafft. Ein neuer Gesellschafter legte 10.000 € Eigenkapital ein, und es wurde ein Kredit von 20.000 € getilgt.',
     fields: [
       { label: 'JÜ', hint: 'Jahresüberschuss', correct: 95000 },
       { label: '+ AfA', hint: 'Nicht zahlungswirksam', correct: 11000 },
@@ -241,11 +312,16 @@ const practiceScenarios: Scenario[] = [
       { label: 'Verkauf 3D-Drucker', correct: 3000 },
     ],
     invCF: -24000, fCF: 73000,
-    tip: 'Buchverlust: BW 7.000 − Verkauf 3.000 = 4.000 Verlust → addieren. WC: Ford ↑15k (−) + Verb ↑8k (+) = −7.000',
+    finFields: [
+      { label: 'Kapitaleinlage', hint: 'Eigenkapital-Einzahlung = ?', correct: 10000 },
+      { label: 'Kredittilgung', hint: 'Rückzahlung = ?', correct: -20000 },
+    ],
+    finCF: -10000, deltaLM: 63000,
+    tip: 'Buchverlust: BW 7k − Verkauf 3k = 4k → addieren. WC: Ford ↑15k (−) + Verb ↑8k (+) = −7k. finCF: +10k EK − 20k Tilgung = −10k.',
   },
   {
     id: 5, difficulty: 'Fortgeschritten', diffColor: 'red', title: 'Die Brauerei',
-    text: 'Eine Brauerei hat einen Jahresüberschuss von 120.000 €. Abschreibungen auf Brauanlagen und Lager: 35.000 €. Langfristige Rückstellungen wurden um 12.000 € dotiert. Ein alter Gabelstapler (Buchwert 9.000 €) wurde um 15.000 € verkauft. Außerdem wurde ein Lieferwagen (Buchwert 22.000 €) um 18.000 € verkauft. Die Forderungen sind um 10.000 € gesunken, die Verbindlichkeiten um 6.000 € gesunken. Es wurde eine neue Abfüllanlage um 200.000 € und neue Lagertanks um 50.000 € gekauft.',
+    text: 'Eine Brauerei hat einen Jahresüberschuss von 120.000 €. Abschreibungen auf Brauanlagen und Lager: 35.000 €. Langfristige Rückstellungen wurden um 12.000 € dotiert. Ein alter Gabelstapler (Buchwert 9.000 €) wurde um 15.000 € verkauft. Außerdem wurde ein Lieferwagen (Buchwert 22.000 €) um 18.000 € verkauft. Die Forderungen sind um 10.000 € gesunken, die Verbindlichkeiten um 6.000 € gesunken. Es wurde eine neue Abfüllanlage um 200.000 € und neue Lagertanks um 50.000 € gekauft. Ein neuer Investitionskredit über 180.000 € wurde aufgenommen, und ein alter Kredit von 25.000 € wurde zurückgezahlt.',
     fields: [
       { label: 'JÜ', hint: 'Jahresüberschuss', correct: 120000 },
       { label: '+ AfA', hint: 'Nicht zahlungswirksam', correct: 35000 },
@@ -261,7 +337,12 @@ const practiceScenarios: Scenario[] = [
       { label: 'Verkauf Lieferwagen', correct: 18000 },
     ],
     invCF: -217000, fCF: -48000,
-    tip: 'Gabelstapler: +6.000 Buchgewinn. Lieferwagen: −4.000 Buchverlust. Netto: +6.000−4.000 = +2.000 Buchgewinn → −2.000 Korrektur im oCF. WC: Ford ↓10k (+) + Verb ↓6k (−) = +4.000',
+    finFields: [
+      { label: 'Kreditaufnahme', hint: 'Investitionskredit = ?', correct: 180000 },
+      { label: 'Kredittilgung', hint: 'Alter Kredit = ?', correct: -25000 },
+    ],
+    finCF: 155000, deltaLM: 107000,
+    tip: 'Gabelstapler: +6k Buchgewinn. Lieferwagen: −4k Buchverlust. Netto: +2k → −2k Korrektur. WC: Ford ↓10k (+) + Verb ↓6k (−) = +4k. finCF: +180k − 25k = +155k.',
   },
 ];
 
@@ -606,7 +687,9 @@ function PracticeView({
 }) {
   const [ocfVals, setOcfVals] = useState<string[]>(() => Array(scenario.fields.length).fill(''));
   const [invVals, setInvVals] = useState<string[]>(() => Array(scenario.invFields.length).fill(''));
+  const [finVals, setFinVals] = useState<string[]>(() => Array(scenario.finFields.length).fill(''));
   const [fCFVal, setFCFVal] = useState('');
+  const [deltaLMVal, setDeltaLMVal] = useState('');
   const [checked, setChecked] = useState(false);
   const [score, setScore] = useState<{ correct: number; total: number } | null>(null);
   const [showHints, setShowHints] = useState(true);
@@ -619,20 +702,25 @@ function PracticeView({
 
   const ocfSum = calcSum(ocfVals, scenario.fields.length);
   const invSum = calcSum(invVals, scenario.invFields.length);
+  const finSum = calcSum(finVals, scenario.finFields.length);
 
   const allFilled = () =>
     scenario.fields.every((_, i) => ocfVals[i] !== '') &&
     scenario.invFields.every((_, i) => invVals[i] !== '') &&
-    fCFVal !== '';
+    scenario.finFields.every((_, i) => finVals[i] !== '') &&
+    fCFVal !== '' && deltaLMVal !== '';
 
   const handleCheck = () => {
     let c = 0;
-    const t = scenario.fields.length + scenario.invFields.length + 3;
+    const t = scenario.fields.length + scenario.invFields.length + scenario.finFields.length + 5;
     scenario.fields.forEach((f, i) => { if (parseInt(ocfVals[i]) === f.correct) c++; });
     if (ocfSum === scenario.ocf) c++;
     scenario.invFields.forEach((f, i) => { if (parseInt(invVals[i]) === f.correct) c++; });
     if (invSum === scenario.invCF) c++;
     if (parseInt(fCFVal) === scenario.fCF) c++;
+    scenario.finFields.forEach((f, i) => { if (parseInt(finVals[i]) === f.correct) c++; });
+    if (finSum === scenario.finCF) c++;
+    if (parseInt(deltaLMVal) === scenario.deltaLM) c++;
     setScore({ correct: c, total: t });
     setChecked(true);
   };
@@ -640,7 +728,9 @@ function PracticeView({
   const handleNext = () => {
     setOcfVals(Array(scenario.fields.length).fill(''));
     setInvVals(Array(scenario.invFields.length).fill(''));
+    setFinVals(Array(scenario.finFields.length).fill(''));
     setFCFVal('');
+    setDeltaLMVal('');
     setChecked(false);
     setScore(null);
     onNext();
@@ -648,6 +738,7 @@ function PracticeView({
 
   const diffC = colorPalette[scenario.diffColor];
   const fCFCorrect = checked && parseInt(fCFVal) === scenario.fCF;
+  const deltaLMCorrect = checked && parseInt(deltaLMVal) === scenario.deltaLM;
 
   return (
     <div>
@@ -720,7 +811,7 @@ function PracticeView({
       </div>
 
       {/* fCF */}
-      <div className="mb-5">
+      <div className="mb-4">
         <div className="text-[11px] font-bold text-emerald-400 uppercase tracking-widest mb-2 pl-0.5">
           🎯 Free Cash-Flow
         </div>
@@ -741,6 +832,53 @@ function PracticeView({
           {checked && !fCFCorrect && (
             <div className="text-xs text-red-400 font-mono mt-1">
               Richtig: {fmtSigned(scenario.fCF)} €
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* finCF */}
+      <div className="mb-4">
+        <div className="text-[11px] font-bold text-purple-400 uppercase tracking-widest mb-2 pl-0.5">
+          🏦 Finanzieller Cash-Flow
+        </div>
+        <div className="flex flex-col gap-2">
+          {scenario.finFields.map((f, i) => (
+            <PracticeInput
+              key={i}
+              field={{ label: f.label, correct: f.correct, hint: f.hint || '' }}
+              value={finVals[i]}
+              onChange={(v) => { const n = [...finVals]; n[i] = v; setFinVals(n); }}
+              checked={checked}
+              showHint={showHints}
+            />
+          ))}
+          <PracticeSum label="= finCF" value={finSum} checked={checked} correct={scenario.finCF} color="purple" />
+        </div>
+      </div>
+
+      {/* Δ LM */}
+      <div className="mb-5">
+        <div className="text-[11px] font-bold text-indigo-400 uppercase tracking-widest mb-2 pl-0.5">
+          📊 Δ LM (Zahlungsüberschuss)
+        </div>
+        <div className="px-3.5 py-3 rounded-lg bg-indigo-500/10 border border-indigo-500/30">
+          <span className="text-[11px] font-bold text-indigo-400">= Δ LM (fCF + finCF)</span>
+          <div className="flex items-center gap-2 mt-1.5">
+            <input
+              type="number"
+              inputMode="numeric"
+              value={deltaLMVal}
+              onChange={(e) => setDeltaLMVal(e.target.value)}
+              disabled={checked}
+              placeholder="Ergebnis"
+              className="flex-1 px-3 py-2 rounded-lg border-none bg-[#252840] disabled:bg-transparent text-indigo-400 text-xl font-mono font-bold outline-none placeholder:text-[#4b5563]"
+            />
+            {checked && <span className="text-lg">{deltaLMCorrect ? '✅' : '❌'}</span>}
+          </div>
+          {checked && !deltaLMCorrect && (
+            <div className="text-xs text-red-400 font-mono mt-1">
+              Richtig: {fmtSigned(scenario.deltaLM)} €
             </div>
           )}
         </div>

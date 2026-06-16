@@ -98,7 +98,7 @@ const MGK_P = pct(MGK, MEK_T), FGK_P = pct(FGK, FEK_T);
 const VwGK_P = pct(VwGK, HK_VAL), VtGK_P = pct(VtGK, HK_VAL);
 
 const closeEur = (a: number, b: number) => Math.abs(a - b) <= Math.max(Math.abs(b) * 0.005, 200);
-const closePct = (a: number, b: number) => Math.abs(a - b) < 1;
+const closePct = (a: number, b: number) => Math.abs(a - b) < 1.5;
 
 const STEPS: StepNavItem[] = [
   { id: 'p1', n: 1, label: 'Klassifizierung',  group: 'büb' },
@@ -614,33 +614,33 @@ function PracticeView({ onBackToTheory }: { onBackToTheory: () => void }) {
     const w = it.filter(f => reasons[f.id] !== f.reason);
     if (w.length) return err(`Falsch: ${w.map(x => x.name).join(', ')}`);
     const s = it.reduce((a, f) => a + f.amount, 0);
-    if (numFromInput(nSum) !== s) return err('Begründungen stimmen, Summe falsch.');
+    if (numFromInput(nSum) !== s) return err(`Begründungen stimmen, Summe falsch. Richtig: ${fmtEur(s)}`);
     suc(`Neutraler Aufwand: −${fmtEur(s)}`); ok('p2');
   };
   const c3 = () => {
     const it = FIBU.filter(f => f.type === 'anderskosten');
     for (const f of it) {
-      if (numFromInput(kV[f.id]) !== f.kalkValue) return err(`${f.name}: Kalk. Wert falsch.`);
-      if (numFromInput(dV[f.id]) !== (f.kalkValue! - f.amount)) return err(`${f.name}: Differenz falsch.`);
+      if (numFromInput(kV[f.id]) !== f.kalkValue) return err(`${f.name}: Kalk. Wert falsch. Richtig: ${fmtEur(f.kalkValue!)}`);
+      if (numFromInput(dV[f.id]) !== (f.kalkValue! - f.amount)) return err(`${f.name}: Differenz falsch. Richtig: ${fmtEur(f.kalkValue! - f.amount)}`);
     }
     const s = it.reduce((a, f) => a + (f.kalkValue! - f.amount), 0);
-    if (numFromInput(dSum) !== s) return err('Gesamtdifferenz falsch.');
+    if (numFromInput(dSum) !== s) return err(`Gesamtdifferenz falsch. Richtig: ${fmtEur(s)}`);
     suc(`Anderskosten-Differenz: +${fmtEur(s)}`); ok('p3');
   };
   const c4 = () => {
     const w = ZUSATZ.filter(z => numFromInput(zV[z.id]) !== z.amount);
     if (w.length) return err(`Falsch: ${w.map(z => z.name).join(', ')}`);
     const s = ZUSATZ.reduce((a, z) => a + z.amount, 0);
-    if (numFromInput(zSum) !== s) return err('Summe falsch.');
+    if (numFromInput(zSum) !== s) return err(`Summe falsch. Richtig: ${fmtEur(s)}`);
     suc(`Zusatzkosten: +${fmtEur(s)}`); ok('p4');
   };
   const c5 = () => {
-    if (numFromInput(koreA) !== KORE) return err(`${fmtEur(numFromInput(koreA))} ist falsch.`);
+    if (numFromInput(koreA) !== KORE) return err(`${fmtEur(numFromInput(koreA))} ist falsch. Richtig: ${fmtEur(KORE)}`);
     suc(`${fmtEur(KORE)} – BÜB abgeschlossen!`); ok('p5');
   };
   const c6 = () => {
-    if (numFromInput(ekA) !== EK_T) return err('Einzelkosten falsch.');
-    if (numFromInput(gkA) !== GK_T) return err('EK stimmt! GK falsch.');
+    if (numFromInput(ekA) !== EK_T) return err(`Einzelkosten falsch. Richtig: ${fmtEur(EK_T)}`);
+    if (numFromInput(gkA) !== GK_T) return err(`EK stimmt! GK falsch. Richtig: ${fmtEur(GK_T)}`);
     suc(`EK: ${fmtEur(EK_T)}, GK: ${fmtEur(GK_T)}`); ok('p6');
   };
   const c7 = () => {
@@ -661,11 +661,12 @@ function PracticeView({ onBackToTheory }: { onBackToTheory: () => void }) {
     ok('p7');
   };
   const c8 = () => {
-    if (!closeEur(numFromInput(hkA), HK_VAL)) return err('Herstellkosten falsch.');
+    if (!closeEur(numFromInput(hkA), HK_VAL)) return err(`Herstellkosten falsch. Richtig: ${fmtEur(HK_VAL)}`);
     const w: string[] = [];
+    const fP = (n: number) => n.toFixed(2).replace('.', ',') + ' %';
     ([['mgk', MGK_P, 'MGK'], ['fgk', FGK_P, 'FGK'], ['vwgk', VwGK_P, 'VwGK'], ['vtgk', VtGK_P, 'VtGK']] as const).forEach(([k, c, l]) => {
       const v = parseFloat(String(zsA[k] || '').replace(',', '.'));
-      if (isNaN(v) || !closePct(v, c)) w.push(l);
+      if (isNaN(v) || !closePct(v, c)) w.push(`${l} (=${fP(c)})`);
     });
     if (w.length) return err(`HK stimmt! Zuschlagssätze falsch: ${w.join(', ')}`);
     suc('Alle Zuschlagssätze korrekt!'); ok('p8');
@@ -676,7 +677,7 @@ function PracticeView({ onBackToTheory }: { onBackToTheory: () => void }) {
       ['r_mgk', rK.mgk], ['r_fgk', rK.fgk], ['r_hk', rK.hk], ['r_vwgk', rK.vwgk], ['r_vtgk', rK.vtgk], ['r_sk', rK.sk],
     ];
     const w = fs.filter(([k, v]) => !closeEur(numFromInput(ktA[k]), v));
-    if (w.length) return err(`${w.length} Werte falsch.`);
+    if (w.length) return err(`${w.length} Werte falsch. ${w.slice(0, 3).map(([, v]) => fmtEur(v)).join(', ')}`);
     suc(`Tische: ${fmtEur(tK.sk)} | Regale: ${fmtEur(rK.sk)}`); ok('p9');
   };
 

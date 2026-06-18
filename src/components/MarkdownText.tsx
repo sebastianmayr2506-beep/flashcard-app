@@ -1,4 +1,7 @@
-// Renders Markdown: ## headings, **bold**, *italic*, - bullets (nested), | tables |
+// Renders Markdown: ## headings, **bold**, *italic*, - bullets (nested), | tables |, $$LaTeX$$
+
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 
 const BULLET_MARKERS = ['•', '◦', '▪', '▫'];
 
@@ -20,6 +23,26 @@ export default function MarkdownText({ text, className = '' }: { text: string; c
   while (i < lines.length) {
     const rawLine = lines[i];
     const trimmed = rawLine.trimStart();
+
+    // Block LaTeX: $$ on its own line
+    if (trimmed.startsWith('$$') && !trimmed.endsWith('$$')) {
+      const texLines: string[] = [trimmed.slice(2)];
+      i++;
+      while (i < lines.length && !lines[i].trimStart().endsWith('$$')) {
+        texLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length) {
+        texLines.push(lines[i].trimStart().slice(0, -2));
+        i++;
+      }
+      output.push(
+        <span key={`tex-${i}`} className="block my-2 text-center overflow-x-auto">
+          {renderLatex(texLines.join(' ').trim(), true, `tex-${i}`)}
+        </span>
+      );
+      continue;
+    }
 
     // Fenced code block: ``` ... ``` — preserve ALL whitespace (critical for ASCII art)
     if (trimmed.startsWith('```')) {
@@ -180,18 +203,32 @@ function parseTableRow(line: string): string[] {
     .map(cell => cell.trim());
 }
 
+function renderLatex(tex: string, displayMode: boolean, key: string | number): React.ReactNode {
+  try {
+    const html = katex.renderToString(tex, { displayMode, throwOnError: false });
+    return <span key={key} dangerouslySetInnerHTML={{ __html: html }} />;
+  } catch {
+    return <code key={key}>{tex}</code>;
+  }
+}
+
 function parseInline(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
-  const regex = /(\*\*(.+?)\*\*|\*(.+?)\*)/g;
+  // Match $$block$$ first, then $inline$, then **bold**, then *italic*
+  const regex = /(\$\$(.+?)\$\$|\$(.+?)\$|\*\*(.+?)\*\*|\*(.+?)\*)/g;
   let last = 0;
   let match;
 
   while ((match = regex.exec(text)) !== null) {
     if (match.index > last) parts.push(text.slice(last, match.index));
-    if (match[0].startsWith('**')) {
-      parts.push(<strong key={match.index} className="font-semibold text-white">{match[2]}</strong>);
+    if (match[0].startsWith('$$')) {
+      parts.push(renderLatex(match[2], true, match.index));
+    } else if (match[0].startsWith('$')) {
+      parts.push(renderLatex(match[3], false, match.index));
+    } else if (match[0].startsWith('**')) {
+      parts.push(<strong key={match.index} className="font-semibold text-white">{match[4]}</strong>);
     } else {
-      parts.push(<em key={match.index} className="italic">{match[3]}</em>);
+      parts.push(<em key={match.index} className="italic">{match[5]}</em>);
     }
     last = match.index + match[0].length;
   }

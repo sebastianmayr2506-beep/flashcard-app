@@ -537,8 +537,10 @@ export function useCards(userId: string | null) {
   const importCards = useCallback(async (newCards: Flashcard[], merge: boolean): Promise<{ ok: boolean; saved: number; expected: number }> => {
     if (!userId) return { ok: false, saved: 0, expected: 0 };
     const base = merge ? cardsRef.current : [];
-    const existingIds = new Set(base.map(c => c.id));
-    const toAdd = newCards.filter(c => !existingIds.has(c.id));
+    const existingContent = new Set(base.map(c => `${c.front}\0${c.back}`));
+    const toAdd = newCards
+      .filter(c => !existingContent.has(`${c.front}\0${c.back}`))
+      .map(c => ({ ...c, id: uuidv4() }));
     const next = [...base, ...toAdd];
     setCards(next);
     cardsRef.current = next; // update immediately so sequential imports see correct state
@@ -557,7 +559,7 @@ export function useCards(userId: string | null) {
       const MAX_ATTEMPTS = 5;
       const BACKOFFS_MS = [300, 600, 1200, 2000];
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        const { error } = await supabase.from('cards').upsert(slice.map(c => toDb(c, userId)), { onConflict: 'id' });
+        const { error } = await supabase.from('cards').insert(slice.map(c => toDb(c, userId)));
         if (!error) return true;
         console.warn(`[importCards] chunk failed (size ${slice.length}, attempt ${attempt}):`, error.message);
         if (attempt < MAX_ATTEMPTS) await new Promise(r => setTimeout(r, BACKOFFS_MS[attempt - 1] ?? 2000));

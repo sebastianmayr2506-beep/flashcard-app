@@ -557,7 +557,7 @@ export function useCards(userId: string | null) {
       const MAX_ATTEMPTS = 5;
       const BACKOFFS_MS = [300, 600, 1200, 2000];
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        const { error } = await supabase.from('cards').insert(slice.map(c => toDb(c, userId)));
+        const { error } = await supabase.from('cards').upsert(slice.map(c => toDb(c, userId)), { onConflict: 'id' });
         if (!error) return true;
         console.warn(`[importCards] chunk failed (size ${slice.length}, attempt ${attempt}):`, error.message);
         if (attempt < MAX_ATTEMPTS) await new Promise(r => setTimeout(r, BACKOFFS_MS[attempt - 1] ?? 2000));

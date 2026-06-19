@@ -40,7 +40,7 @@ import SplitPreviewModal from './components/SplitPreviewModal';
 type Page = 'dashboard' | 'library' | 'new-card' | 'edit-card' | 'study' | 'import-export' | 'settings' | 'sets' | 'set-detail' | 'exam' | 'exercises';
 
 export default function App() {
-  const { user, loading: authLoading, signOut } = useAuth();
+  const { user, loading: authLoading, signOut, needsPasswordReset, updatePassword } = useAuth();
   const userId = user?.id ?? null;
 
   const { cards, loading: cardsLoading, loadError: cardsLoadError, addCard, updateCard, bulkUpdate, removeCard, bulkRemove, rateCard, importCards } = useCards(userId);
@@ -896,6 +896,8 @@ export default function App() {
 
   if (!user) return <AuthPage />;
 
+  if (needsPasswordReset) return <PasswordResetForm onSubmit={updatePassword} onCancel={signOut} />;
+
   // CRITICAL: if cards failed to load, block the app completely.
   // Showing an empty library would cause users to panic-import and lose data.
   if (cardsLoadError) {
@@ -1179,6 +1181,100 @@ export default function App() {
       )}
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+    </div>
+  );
+}
+
+function PasswordResetForm({ onSubmit, onCancel }: { onSubmit: (pw: string) => Promise<void>; onCancel: () => void }) {
+  const [pw, setPw] = useState('');
+  const [pw2, setPw2] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pw.length < 6) { setError('Mindestens 6 Zeichen'); return; }
+    if (pw !== pw2) { setError('Passwörter stimmen nicht überein'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      await onSubmit(pw);
+      setSuccess(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (success) {
+    return (
+      <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4">
+        <div className="w-full max-w-sm bg-[#1e2130] border border-[#2d3148] rounded-2xl p-6 text-center">
+          <div className="text-4xl mb-3">✅</div>
+          <h2 className="text-lg font-semibold text-white mb-2">Passwort geändert!</h2>
+          <p className="text-sm text-[#9ca3af]">Du wirst jetzt weitergeleitet…</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="text-4xl mb-3">🔑</div>
+          <h1 className="text-2xl font-bold text-white">Neues Passwort setzen</h1>
+          <p className="text-[#9ca3af] text-sm mt-1">Wähle ein neues Passwort für dein Konto</p>
+        </div>
+        <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-6">
+          {error && (
+            <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
+              <p className="text-red-400 text-sm">{error}</p>
+            </div>
+          )}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-1.5">Neues Passwort</label>
+              <input
+                type="password"
+                value={pw}
+                onChange={e => setPw(e.target.value)}
+                required
+                minLength={6}
+                placeholder="••••••••"
+                className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2.5 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-[#9ca3af] uppercase tracking-wider block mb-1.5">Passwort bestätigen</label>
+              <input
+                type="password"
+                value={pw2}
+                onChange={e => setPw2(e.target.value)}
+                required
+                minLength={6}
+                placeholder="••••••••"
+                className="w-full text-sm bg-[#252840] border border-[#2d3148] rounded-xl px-3 py-2.5 text-white placeholder-[#6b7280] focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold transition-colors"
+            >
+              {loading ? 'Laden…' : 'Passwort ändern'}
+            </button>
+          </form>
+          <button
+            onClick={onCancel}
+            className="w-full mt-3 text-sm text-[#6b7280] hover:text-[#9ca3af] transition-colors"
+          >
+            Abbrechen & Abmelden
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -121,6 +121,14 @@ export default function MarkdownText({ text, className = '' }: { text: string; c
         </span>
       );
     }
+    // H4
+    else if (trimmed.startsWith('#### ')) {
+      output.push(
+        <span key={i} className="block text-sm font-semibold text-indigo-300 mt-2 mb-0.5">
+          {parseInline(trimmed.slice(5))}
+        </span>
+      );
+    }
     // H3
     else if (trimmed.startsWith('### ')) {
       output.push(

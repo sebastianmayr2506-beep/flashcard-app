@@ -1,8 +1,30 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import type { Flashcard, CardSet } from '../types/card';
 import { exportCSV, exportBackupJSON, exportShareJSON } from '../utils/export';
 import { importFromJSON, importFromCSV, extractParentLinks } from '../utils/import';
 import { importByShareCode } from '../utils/shareCode';
+
+interface ImportRecord {
+  filename: string;
+  count: number;
+  date: string;
+  mode: 'merge' | 'replace' | 'set' | 'share-code';
+}
+
+const HISTORY_KEY = 'importHistory';
+const MAX_HISTORY = 50;
+
+function loadHistory(): ImportRecord[] {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function saveToHistory(record: ImportRecord) {
+  const h = loadHistory();
+  h.unshift(record);
+  if (h.length > MAX_HISTORY) h.length = MAX_HISTORY;
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
+}
 
 interface Props {
   cards: Flashcard[];
@@ -30,6 +52,16 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
   // save it to a file first.
   const [pasteText, setPasteText] = useState('');
   const [pasteLoading, setPasteLoading] = useState(false);
+  const [history, setHistory] = useState<ImportRecord[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  useEffect(() => { setHistory(loadHistory()); }, []);
+
+  const logImport = (filename: string, count: number, mode: ImportRecord['mode']) => {
+    const record: ImportRecord = { filename, count, date: new Date().toISOString(), mode };
+    saveToHistory(record);
+    setHistory(loadHistory());
+  };
 
   const handleExportCSV = () => {
     exportCSV(cards);
@@ -62,6 +94,7 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
             setCards,
             userId
           );
+          logImport(file.name, setCards.length, 'set');
           showToast(`Set "${setData.name}" mit ${setCards.length} Karten importiert!`, 'success');
           return null;
         }
@@ -115,6 +148,10 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
       }
 
       await onImport(allCards, mergeMode);
+      for (const f of files) {
+        const r = parsed[files.indexOf(f)];
+        if (r) logImport(f.name, r.cards.length, mergeMode ? 'merge' : 'replace');
+      }
       showToast(
         `${allCards.length} Karten aus ${results.length} Datei${results.length !== 1 ? 'en' : ''} importiert!`,
         'success'
@@ -182,6 +219,7 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
         nextReviewDate: new Date().toISOString(),
       }));
       onImportSet(payload.set, freshCards, userId, payload.links);
+      logImport(`Share: ${code}`, freshCards.length, 'share-code');
       showToast(`Set "${payload.set.name}" mit ${freshCards.length} Karten importiert!`, 'success');
       setShareCodeInput('');
     } catch (err) {
@@ -362,6 +400,39 @@ export default function ImportExport({ cards, sets, userId, onImport, onImportSe
           🔗 JSON für Link-Reparatur wählen
         </button>
       </div>
+
+      {/* Import history */}
+      {history.length > 0 && (
+        <div className="bg-[#1e2130] border border-[#2d3148] rounded-2xl p-5 space-y-3">
+          <div
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => setShowHistory(!showHistory)}
+          >
+            <h3 className="font-semibold text-white">📋 Import-Verlauf</h3>
+            <span className="text-[#9ca3af] text-sm">{showHistory ? '▲' : '▼'} {history.length} Einträge</span>
+          </div>
+          {showHistory && (
+            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+              {history.map((r, i) => (
+                <div key={i} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-[#252840] text-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-base flex-shrink-0">
+                      {r.mode === 'set' ? '📦' : r.mode === 'share-code' ? '🔗' : r.mode === 'replace' ? '🔄' : '➕'}
+                    </span>
+                    <span className="text-white truncate">{r.filename}</span>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <span className="text-indigo-400 font-mono text-xs">{r.count} Karten</span>
+                    <span className="text-[#6b7280] text-xs">
+                      {new Date(r.date).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <input ref={jsonRef} type="file" accept=".json" multiple className="hidden" onChange={handleFile} />
       <input ref={csvRef} type="file" accept=".csv" multiple className="hidden" onChange={handleFile} />

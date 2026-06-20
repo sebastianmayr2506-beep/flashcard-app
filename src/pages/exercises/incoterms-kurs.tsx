@@ -368,6 +368,96 @@ function TimelineMini({ term }: { term: Incoterm }) {
 // THEORIE — Overview Chart (alle 11 Terms als Balken)
 // ─────────────────────────────────────────────────────────────────────────
 
+// SVG transport-chain icons matching the textbook diagram
+const TI = {
+  factory: (
+    <svg viewBox="0 0 32 32" fill="currentColor" className="w-full h-full">
+      <rect x="2" y="14" width="28" height="16" rx="1" opacity=".15"/>
+      <rect x="4" y="16" width="6" height="4" rx=".5" opacity=".3"/>
+      <rect x="13" y="16" width="6" height="4" rx=".5" opacity=".3"/>
+      <rect x="22" y="16" width="6" height="4" rx=".5" opacity=".3"/>
+      <rect x="4" y="22" width="6" height="4" rx=".5" opacity=".3"/>
+      <rect x="13" y="22" width="6" height="4" rx=".5" opacity=".3"/>
+      <rect x="22" y="22" width="6" height="4" rx=".5" opacity=".3"/>
+      <rect x="6" y="4" width="4" height="10" rx=".5"/>
+      <rect x="14" y="7" width="4" height="7" rx=".5"/>
+      <rect x="22" y="2" width="4" height="12" rx=".5"/>
+      <path d="M7 4 L8 1 L9 4" strokeWidth=".5" stroke="currentColor" fill="none"/>
+      <path d="M15 7 L16 4 L17 7" strokeWidth=".5" stroke="currentColor" fill="none"/>
+      <path d="M23 2 L24 -1 L25 2" strokeWidth=".5" stroke="currentColor" fill="none"/>
+    </svg>
+  ),
+  warehouse: (
+    <svg viewBox="0 0 32 32" fill="currentColor" className="w-full h-full">
+      <path d="M2 15 L16 6 L30 15 V30 H2 Z" opacity=".15"/>
+      <path d="M2 15 L16 6 L30 15" fill="none" stroke="currentColor" strokeWidth="1.5"/>
+      <rect x="2" y="15" width="28" height="15" rx="1" opacity=".2"/>
+      <rect x="12" y="20" width="8" height="10" rx="1" opacity=".35"/>
+    </svg>
+  ),
+  truck: (
+    <svg viewBox="0 0 36 28" fill="currentColor" className="w-full h-full">
+      <rect x="1" y="6" width="20" height="14" rx="2" opacity=".2"/>
+      <rect x="21" y="10" width="12" height="10" rx="1.5" opacity=".3"/>
+      <path d="M33 12 L35 12 L35 18 L33 18" opacity=".15"/>
+      <circle cx="8" cy="23" r="3" opacity=".4"/>
+      <circle cx="8" cy="23" r="1.5" fill="#0f1117"/>
+      <circle cx="28" cy="23" r="3" opacity=".4"/>
+      <circle cx="28" cy="23" r="1.5" fill="#0f1117"/>
+    </svg>
+  ),
+  customs: (
+    <svg viewBox="0 0 28 32" fill="currentColor" className="w-full h-full">
+      <rect x="4" y="10" width="20" height="20" rx="1.5" opacity=".15"/>
+      <rect x="8" y="2" width="12" height="8" rx="1" opacity=".25"/>
+      <text x="14" y="8" textAnchor="middle" fontSize="6" fontWeight="bold" opacity=".6">Z</text>
+      <path d="M9 18 H19 M9 22 H19 M9 26 H15" stroke="currentColor" strokeWidth="1" opacity=".25"/>
+    </svg>
+  ),
+  ship: (
+    <svg viewBox="0 0 40 32" fill="currentColor" className="w-full h-full">
+      <path d="M4 22 Q4 28 10 28 H30 Q36 28 36 22 L34 16 H6 Z" opacity=".2"/>
+      <rect x="10" y="8" width="20" height="8" rx="1" opacity=".25"/>
+      <rect x="14" y="10" width="4" height="4" rx=".5" fill="#0f1117" opacity=".4"/>
+      <rect x="22" y="10" width="4" height="4" rx=".5" fill="#0f1117" opacity=".4"/>
+      <rect x="18" y="2" width="3" height="8" rx=".5" opacity=".35"/>
+      <path d="M2 30 Q6 26 10 30 Q14 26 18 30 Q22 26 26 30 Q30 26 34 30 Q38 26 40 30" fill="none" stroke="currentColor" strokeWidth="1" opacity=".2"/>
+    </svg>
+  ),
+  crane: (
+    <svg viewBox="0 0 32 32" fill="currentColor" className="w-full h-full">
+      <rect x="13" y="8" width="6" height="22" rx="1" opacity=".2"/>
+      <rect x="4" y="6" width="24" height="4" rx="1" opacity=".25"/>
+      <path d="M6 6 V4 L16 1 L26 4 V6" fill="none" stroke="currentColor" strokeWidth="1" opacity=".3"/>
+      <rect x="4" y="10" width="3" height="14" rx=".5" opacity=".15"/>
+      <rect x="3" y="24" width="5" height="4" rx=".5" opacity=".2"/>
+    </svg>
+  ),
+  plane: (
+    <svg viewBox="0 0 36 24" fill="currentColor" className="w-full h-full">
+      <path d="M2 14 L10 12 L24 6 L34 4 L32 8 L24 10 L14 14 L10 14 Z" opacity=".25"/>
+      <path d="M12 14 L14 20 L18 14" opacity=".2"/>
+      <circle cx="33" cy="5" r="1.5" opacity=".3"/>
+    </svg>
+  ),
+};
+
+const TRANSPORT_CHAIN = [
+  { icon: TI.factory, label: 'Werk' },
+  { icon: TI.warehouse, label: '' },
+  { icon: TI.truck, label: '' },
+  { icon: TI.customs, label: 'Export' },
+  { icon: TI.plane, label: '' },
+  { icon: TI.crane, label: '' },
+  { icon: TI.ship, label: '' },
+  { icon: TI.crane, label: '' },
+  { icon: TI.plane, label: '' },
+  { icon: TI.customs, label: 'Import' },
+  { icon: TI.truck, label: '' },
+  { icon: TI.warehouse, label: '' },
+  { icon: TI.factory, label: 'Käufer' },
+];
+
 function OverviewChart() {
   const n = STAGES.length;
   const w = 100 / (n - 1);
@@ -375,17 +465,37 @@ function OverviewChart() {
 
   return (
     <Card className="mb-4">
-      <h2 className="text-lg font-bold mb-3.5">Incoterms 2020 — Gesamtübersicht</h2>
-      <p className="text-xs text-[#9ca3af] mb-4">
+      <h2 className="text-lg font-bold mb-1">Incoterms 2020 — Gesamtübersicht</h2>
+      <p className="text-xs text-[#9ca3af] mb-3">
         Jede Zeile zeigt einen Incoterm. Die obere Linie (orange) ist die Kostengrenze, die untere (rot) die Risikogrenze — beide markieren, ab wo der <b className="text-white">Käufer</b> übernimmt.
       </p>
 
-      {/* Stage labels — hidden on mobile, visible on sm+ */}
-      <div className="hidden sm:flex ml-14 mb-1.5">
+      {/* Transport chain illustration — hidden on very small screens */}
+      <div className="hidden sm:block ml-14 mb-1 overflow-x-auto">
+        <div className="relative flex items-end" style={{ minWidth: 0 }}>
+          {/* ground line */}
+          <div className="absolute bottom-0 left-0 right-0 h-px bg-[#3d4168]" />
+          {TRANSPORT_CHAIN.map((item, i) => (
+            <div
+              key={i}
+              className="flex flex-col items-center flex-1"
+              style={{ minWidth: 0 }}
+            >
+              <div className="w-5 h-5 md:w-6 md:h-6 text-[#6b7280] mb-0.5">{item.icon}</div>
+              {item.label && (
+                <span className="text-[7px] text-[#5e6173] leading-none">{item.label}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Stage labels — hidden on mobile */}
+      <div className="hidden sm:flex ml-14 mb-1.5 mt-1">
         {STAGES.map((s, i) => (
           <div
             key={i}
-            className="text-[8.5px] text-[#5e6173] text-center leading-tight px-px"
+            className="text-[7.5px] md:text-[8.5px] text-[#5e6173] text-center leading-tight px-px"
             style={{
               flex: i === 0 || i === n - 1 ? '0 0 auto' : 1,
               width: i === 0 || i === n - 1 ? `${w}%` : undefined,
@@ -425,13 +535,39 @@ function OverviewChart() {
                 {term.code}
               </div>
               <div className="relative flex-1 h-4">
+                {/* Seller bars (solid) */}
                 <div
-                  className="absolute top-0.5 left-0 h-1 bg-amber-500 rounded-sm"
-                  style={{ width: `${term.kostenStage * w}%`, opacity: isHover ? 1 : 0.5 }}
+                  className="absolute top-0.5 left-0 h-[5px] rounded-sm"
+                  style={{
+                    width: `${term.kostenStage * w}%`,
+                    background: isHover ? '#f59e0b' : '#b45309',
+                    opacity: isHover ? 1 : 0.6,
+                  }}
                 />
                 <div
-                  className="absolute top-[9px] left-0 h-1 bg-red-500 rounded-sm"
-                  style={{ width: `${term.risikoStage * w}%`, opacity: isHover ? 1 : 0.7 }}
+                  className="absolute top-[9px] left-0 h-[5px] rounded-sm"
+                  style={{
+                    width: `${term.risikoStage * w}%`,
+                    background: isHover ? '#ef4444' : '#991b1b',
+                    opacity: isHover ? 1 : 0.7,
+                  }}
+                />
+                {/* Buyer bars (faded continuation) */}
+                <div
+                  className="absolute top-0.5 h-[5px] rounded-sm"
+                  style={{
+                    left: `${term.kostenStage * w}%`,
+                    right: 0,
+                    background: isHover ? 'rgba(245,158,11,0.2)' : 'rgba(180,83,9,0.12)',
+                  }}
+                />
+                <div
+                  className="absolute top-[9px] h-[5px] rounded-sm"
+                  style={{
+                    left: `${term.risikoStage * w}%`,
+                    right: 0,
+                    background: isHover ? 'rgba(239,68,68,0.2)' : 'rgba(153,27,27,0.12)',
+                  }}
                 />
                 {!term.allTransport && (
                   <div className="absolute -right-0.5 -top-px text-[9px] text-indigo-400" title="Nur See-/Binnenschifffahrt">
@@ -444,9 +580,20 @@ function OverviewChart() {
         })}
       </div>
 
+      {/* Legend */}
       <div className="flex gap-3 sm:gap-4 text-[11px] sm:text-xs mt-4 pt-3 border-t border-[#2d3148] flex-wrap">
-        <span><span className="text-amber-500">●</span> Kosten ab Käufer</span>
-        <span><span className="text-red-500">●</span> Risiko ab Käufer</span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-5 h-[5px] rounded-sm bg-amber-500" /> Kosten Verkäufer
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-5 h-[5px] rounded-sm bg-red-500" /> Risiko Verkäufer
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-5 h-[5px] rounded-sm bg-amber-500/20" /> Kosten Käufer
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-5 h-[5px] rounded-sm bg-red-500/20" /> Risiko Käufer
+        </span>
         <span><span className="text-indigo-400">⚓</span> nur See-/Binnenschiff</span>
       </div>
     </Card>

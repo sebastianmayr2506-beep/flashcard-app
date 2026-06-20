@@ -74,6 +74,16 @@ export const EXERCISES: ExerciseMeta[] = [
     estimatedMinutes: 45,
     component: lazy(() => import('./kennzahlen-kurs')),
   },
+  {
+    slug: 'incoterms-kurs',
+    title: 'Incoterms 2020',
+    description: 'Alle 11 Incoterms 2020 mit Theorie (Gesamtübersicht, 4 Gruppen, Detailkarten) + 6-stufige Übungsprogression: Gruppen-Matching, Kürzel-Zuordnung, Kategorisierung, interaktive Zeitleiste, Direktvergleiche, Fallstudien.',
+    subject: 'Internationaler Handel',
+    difficulty: 'mittel',
+    icon: '🚢',
+    estimatedMinutes: 40,
+    component: lazy(() => import('./incoterms-kurs')),
+  },
 ];
 
 export function findExercise(slug: string): ExerciseMeta | undefined {

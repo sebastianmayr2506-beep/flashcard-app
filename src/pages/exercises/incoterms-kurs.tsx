@@ -481,9 +481,9 @@ function OverviewChart() {
               className="flex flex-col items-center flex-1"
               style={{ minWidth: 0 }}
             >
-              <div className="w-5 h-5 md:w-6 md:h-6 text-[#6b7280] mb-0.5">{item.icon}</div>
+              <div className="w-5 h-5 md:w-6 md:h-6 text-[#9ca3af] mb-0.5">{item.icon}</div>
               {item.label && (
-                <span className="text-[7px] text-[#5e6173] leading-none">{item.label}</span>
+                <span className="text-[8px] text-[#9ca3af] font-medium leading-none">{item.label}</span>
               )}
             </div>
           ))}
